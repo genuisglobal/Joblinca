@@ -129,3 +129,4 @@ This repository is a starting point.  Many modules (messaging, payments, vetting
 ---
 
 Feel free to adapt and extend JobLinca for your needs.  We hope it accelerates the deployment of inclusive hiring platforms across Africa.
+
