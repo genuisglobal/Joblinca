@@ -20,12 +20,12 @@ export default function RegisterPage() {
     e.preventDefault();
     setError(null);
 
-    // 1) Create auth user
-    const { data, error } = await supabase.auth.signUp({
+    // 1) Create the auth user in Supabase
+    const { data, error: signUpError } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        // metadata (optional, but fine to keep)
+        // Store extra info as user metadata (optional)
         data: {
           role,
           phone,
@@ -33,28 +33,21 @@ export default function RegisterPage() {
       },
     });
 
-    if (error) {
-      setError(error.message);
+    if (signUpError || !data.user) {
+      setError(signUpError?.message || "Unable to create user account.");
       return;
     }
 
     const user = data.user;
 
-    if (!user) {
-      setError("Unable to create user account.");
-      return;
-    }
-
-    // 2) Create matching profile row – id MUST equal auth user id
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .insert({
-        id: user.id,                        // satisfies: with check (auth.uid() = id)
-        email: user.email,                  // make sure this column exists in profiles
-        phone,                              // and this column too
-        role,                               // 'candidate' or 'recruiter'
-        created_at: new Date().toISOString() // optional, if you have created_at
-      });
+    // 2) Create a matching profile row.
+    // NOTE: profiles.id MUST be UUID and match auth user id (auth.uid()).
+    const { error: profileError } = await supabase.from("profiles").insert({
+      id: user.id,   // satisfies RLS policies like: with check (auth.uid() = id)
+      email,         // make sure 'email' column exists in profiles
+      phone,         // and 'phone' column too
+      role,          // 'candidate' | 'recruiter'
+    });
 
     if (profileError) {
       console.error("Profile insert error:", profileError);
