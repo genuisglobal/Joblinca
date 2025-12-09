@@ -1,5 +1,7 @@
 "use client";
 
+import React from "react";
+import { motion } from "framer-motion";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
