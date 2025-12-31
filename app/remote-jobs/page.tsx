@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import Link from 'next/link';
 
 interface RemoteJobSummary {
@@ -38,6 +36,10 @@ async function getRemoteJobs(): Promise<RemoteJobSummary[]> {
     return [];
   }
 }
+
+// This page fetches remote job listings from an external API.  Mark it as
+// dynamic so Next.js does not attempt to pre-render it at build time.
+export const dynamic = 'force-dynamic';
 
 export default async function RemoteJobsPage() {
   const jobs = await getRemoteJobs();
