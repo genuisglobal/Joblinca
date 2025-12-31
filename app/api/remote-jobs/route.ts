@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       id: job.id,
       title: job.title,
       company_name: job.company_name,
-      company_logo: job.company_logo || job.company_logo_url,
+      company_logo: job.company_logo,
       category: job.category,
       tags: job.tags,
       job_type: job.job_type,
