@@ -52,6 +52,11 @@ export default function RootLayout({
                   For Recruiters
                 </Link>
               </li>
+              <li>
+                <Link href="/global-jobs" className="hover:text-yellow-400 transition-colors">
+                  Global Jobs
+                </Link>
+              </li>
             </ul>
             {/* Auth actions */}
             <div className="hidden md:flex items-center space-x-4">
@@ -85,6 +90,9 @@ export default function RootLayout({
             </Link>
             <Link href="/learn-more/recruiters" className="hover:text-yellow-400">
               Recruiters
+            </Link>
+            <Link href="/global-jobs" className="hover:text-yellow-400">
+              Global Jobs
             </Link>
             <Link href="/auth/login" className="hover:text-yellow-400">
               Login
