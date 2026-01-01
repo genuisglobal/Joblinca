@@ -5,8 +5,8 @@ export function createServerSupabaseClient() {
   const cookieStore = cookies();
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
     {
       cookies: {
         getAll() {
@@ -18,7 +18,7 @@ export function createServerSupabaseClient() {
               cookieStore.set(name, value, options);
             });
           } catch {
-            // This can fail in Server Components; it's safe to ignore there.
+            // Ignore if called from a Server Component where setting cookies isn't allowed
           }
         },
       },
