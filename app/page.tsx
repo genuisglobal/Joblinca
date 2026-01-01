@@ -1,19 +1,23 @@
-"use client";
-
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
+import SearchJobsBar from '@/components/SearchJobsBar';
+import { BrainCircuit, PhoneCall, ShieldCheck } from 'lucide-react';
 
 export default function HomePage() {
   return (
     <main className="bg-gray-900 text-gray-100 overflow-hidden">
       {/* Hero Section */}
-      <section className="relative isolate flex flex-col items-center justify-center min-h-[80vh] px-4 py-24 text-center">
-        {/* Gradient glows behind content */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 overflow-hidden"
-        >
+      <section className="relative isolate flex flex-col items-center justify-center min-h-[85vh] px-4 py-24 text-center">
+        {/* Background illustration */}
+        <div aria-hidden="true" className="absolute inset-0 overflow-hidden">
+          <Image
+            src="/assets/hero-illustration.png"
+            alt="Cameroonian professionals illustration"
+            fill
+            className="object-cover object-center opacity-30"
+          />
+          {/* subtle glows to reinforce brand colours */}
           <div className="absolute -top-20 -left-40 w-1/2 h-1/2 bg-blue-600 rounded-full blur-3xl opacity-30"></div>
           <div className="absolute bottom-0 right-0 w-1/2 h-1/2 bg-yellow-500 rounded-full blur-3xl opacity-20"></div>
         </div>
@@ -21,31 +25,61 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8 }}
-          className="relative z-10 max-w-3xl mx-auto"
+          className="relative z-10 flex flex-col items-center w-full"
         >
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold mb-6">
+          {/* Brand logo: icon and wordmark */}
+          <div className="flex flex-col sm:flex-row items-center justify-center mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
+            <Image
+              src="/assets/logo-icon.png"
+              alt="JobLinca logo icon"
+              width={120}
+              height={120}
+              priority
+            />
+            <Image
+              src="/assets/logo-wordmark.png"
+              alt="JobLinca wordmark"
+              width={240}
+              height={80}
+              priority
+            />
+          </div>
+          {/* Hero headline */}
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold mb-4 max-w-4xl mx-auto leading-tight">
             Cameroon’s AI‑Powered Job Marketplace for Local &amp; Global Opportunities
           </h1>
-          <p className="text-lg sm:text-xl mb-8">
-            Find Jobs. Hire Faster. Apply from WhatsApp. Screen with AI.
-          </p>
-          <div className="flex flex-wrap justify-center gap-4">
+          {/* Tagline with icons */}
+          <div className="flex flex-wrap items-center justify-center gap-4 text-base sm:text-lg text-gray-300 mb-6 max-w-3xl">
+            <span className="flex items-center space-x-2">
+              <BrainCircuit size={20} className="text-blue-500" />
+              <span>AI‑powered matching</span>
+            </span>
+            <span className="flex items-center space-x-2">
+              <PhoneCall size={20} className="text-green-400" />
+              <span>WhatsApp apply</span>
+            </span>
+            <span className="flex items-center space-x-2">
+              <ShieldCheck size={20} className="text-yellow-400" />
+              <span>Secure platform</span>
+            </span>
+          </div>
+          {/* Search bar */}
+          <SearchJobsBar />
+          {/* Primary CTAs */}
+          <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link
               href="/jobs"
-              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md transition-colors"
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md transition-colors font-medium"
             >
               Find Jobs
             </Link>
             <Link
               href="/recruiter/post-job"
-              className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors"
+              className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors font-medium"
             >
               Post a Job
             </Link>
           </div>
-          <p className="mt-4 text-sm uppercase tracking-wide text-gray-400">
-            Powered by AI • WhatsApp Automation • Secure Platform
-          </p>
         </motion.div>
       </section>
 
@@ -74,11 +108,12 @@ export default function HomePage() {
                 </ul>
               </div>
               <div className="mt-6">
+                {/* Convert learn more link into a button for better visibility */}
                 <Link
                   href="/learn-more/jobseekers"
-                  className="inline-block text-blue-400 hover:text-blue-500 font-medium"
+                  className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors font-medium"
                 >
-                  Learn More &rarr;
+                  Learn More
                 </Link>
               </div>
             </motion.div>
@@ -100,11 +135,12 @@ export default function HomePage() {
                 </ul>
               </div>
                 <div className="mt-6">
+                {/* Convert learn more link into a button for better visibility */}
                 <Link
                   href="/learn-more/recruiters"
-                  className="inline-block text-blue-400 hover:text-blue-500 font-medium"
+                  className="inline-block bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-4 py-2 rounded-md transition-colors font-medium"
                 >
-                  Learn More &rarr;
+                  Learn More
                 </Link>
               </div>
             </motion.div>
