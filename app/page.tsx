@@ -1,5 +1,3 @@
-"use client";
-
 import Link from 'next/link';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
@@ -29,20 +27,20 @@ export default function HomePage() {
           transition={{ duration: 0.8 }}
           className="relative z-10 flex flex-col items-center w-full"
         >
-          {/* Brand logo: icon and wordmark */}
-          <div className="flex flex-col sm:flex-row items-center justify-center mb-6 space-y-4 sm:space-y-0 sm:space-x-4">
+          {/* Brand logo: icon and wordmark combined */}
+          <div className="flex items-center justify-center mb-8 space-x-3">
             <Image
               src="/assets/logo-icon.png"
-              alt="JobLinca logo icon"
-              width={120}
-              height={120}
+              alt="JobLinca icon"
+              width={96}
+              height={96}
               priority
             />
             <Image
               src="/assets/logo-wordmark.png"
               alt="JobLinca wordmark"
-              width={240}
-              height={80}
+              width={200}
+              height={64}
               priority
             />
           </div>
