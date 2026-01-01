@@ -18,8 +18,7 @@ export function createServerSupabaseClient() {
               cookieStore.set(name, value, options);
             });
           } catch {
-            // If called from a Server Component, Next may block setting cookies.
-            // It's safe to ignore here; middleware/route handlers can set cookies.
+            // This can fail in Server Components; it's safe to ignore there.
           }
         },
       },

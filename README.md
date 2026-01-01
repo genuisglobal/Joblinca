@@ -110,7 +110,14 @@ Complex AI tasks (CV screening, matching, grading and chatbots) should be implem
 
 ### International Remote Jobs
 
-JobLinca integrates with the public Remotive API to surface verified global remote job opportunities.  These listings are clearly separated from locally posted recruiter jobs.  Cameroonian job seekers can browse remote roles by category, see employer details and required locations, and apply via the original job link.  In accordance with Remotive’s terms of service, each listing links back to the source and credits Remotive【32704738240961†L16-L31】.
+JobLinca integrates with multiple public job feeds to surface verified global opportunities.  Listings are stored in the `external_jobs` table and served on the **Global Opportunities** page.  Jobs are categorised (e.g. *Teaching*, *Visa Sponsorship*) by scanning titles and descriptions for keywords.  Cameroonian job seekers can browse by category, search by keyword and apply via the original listing site.  Data is refreshed via the `/api/refresh-external-jobs` route, which aggregates feeds such as:
+
+- **Remotive** – a free remote jobs API.  Each listing links back to Remotive and includes job title, company, location and salary when available【335617390489077†L72-L125】.  We respect Remotive’s guidelines and only refresh the feed a few times per day.
+- **Jobicy remote jobs feed** – an open JSON feed of remote jobs.  Our integration requests a limited number of listings to minimise load.  Titles and industries are analysed to assign categories like *Teaching* or *Visa Sponsorship*.
+
+These international jobs are clearly separated from local recruiter‑posted jobs to preserve the integrity of the domestic job board.
+
+Additional providers can be integrated by implementing the corresponding fetch functions in [`lib/externalJobs.ts`](./lib/externalJobs.ts).  For example, Upwork’s API requires OAuth credentials (client ID and secret) and is disabled by default.  To enable Upwork integration you must set `UPWORK_CLIENT_ID` and `UPWORK_CLIENT_SECRET` in your environment and implement the OAuth flow.  Similarly, Findwork provides an API key–protected feed; add your `FINDWORK_API_KEY` to `.env.local` to enable fetching those listings.
 
 ## Contributing
 
