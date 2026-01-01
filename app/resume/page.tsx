@@ -175,13 +175,14 @@ export default function ResumePage() {
         </label>
         {loading && <p className="text-sm text-gray-400">Processing...</p>}
       </div>
-      {/*
-       * Lighter card background and input styling to improve contrast on the
-       * dark theme.  Inputs use a mid‑tone grey with lighter borders for
-       * better definition.  This ensures the resume builder remains
-       * accessible and easy to use.
-       */
+            {/*
+        Lighter card background and input styling to improve contrast on the
+        dark theme. Inputs use a mid-tone grey with lighter borders for
+        better definition. This ensures the resume builder remains accessible
+        and easy to use.
+      */}
       <form onSubmit={handleSave} className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
+
         <div>
           <label className="block text-sm font-medium text-gray-300">Full Name</label>
           <input
