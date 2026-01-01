@@ -32,6 +32,7 @@ joblinka/
 - **Supabase** – Postgres database with **Row‑Level Security (RLS)** to ensure each user can only access their own data【841124215369508†L104-L108】.  Built‑in Auth manages email/phone sign‑up and session cookies.  
 - **Tailwind CSS** – Utility‑first styling with dark‑mode support.  
 - **OpenAI API** – Used by separate microservices (deployable on Replit) for CV screening, matching, grading and chatbot logic.  
+  It is also leveraged by the built‑in resume optimiser to suggest improvements to job seeker CVs.  An `OPENAI_API_KEY` must be provided via environment variables to enable this feature.
 - **WhatsApp & SMS providers** – Generic REST clients integrate messaging flows via webhooks.
 
 ## Database schema & migrations
@@ -105,6 +106,7 @@ Complex AI tasks (CV screening, matching, grading and chatbots) should be implem
 - **Vetting & Hiring service** – Recruiters request vetting packages (Basic, Standard, Premium).  Admin assigns vetting officers.  AI pre‑screens candidates and officers finalise shortlists.  Results are stored in `vetting_results`.
 - **Projects & Portfolio** – Candidates showcase projects with files, GitHub/Youtube links and tags.  Public portfolio pages allow recruiters to browse skills.
 - **Certifications & Tests** – Admins create MCQ/practical tests.  Candidates attempt tests and earn badges (Bronze, Silver, Gold, Platinum).  Certificates are PDF files with QR codes for public verification.
+- **Resume Builder & Optimiser** – Logged‑in job seekers and talents can create or upload CVs and edit them via a simple form.  Premium subscribers can leverage the built‑in AI to optimise their summary and bullet points once per day and generate an ATS‑friendly PDF.  All resumes are stored in the `resumes` table with per‑user Row‑Level Security and usage is tracked in `resume_usage` to enforce daily limits.
 - **Identity & Experience Verification** – Users upload IDs, selfies, certificates and employer references.  Verification officers approve or reject requests and verified users receive a badge.
 - **Admin dashboard** – Admins approve recruiters/jobs, manage users, vetting, verifications, payments, create tests and view analytics.
 
