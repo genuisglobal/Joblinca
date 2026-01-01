@@ -20,22 +20,17 @@ export default function RootLayout({
         {/* Global site header */}
         <header className="w-full z-50">
           <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 py-4">
-            <Link href="/" className="flex items-center space-x-2">
-              {/* Display the JobLinca icon and wordmark side by side for stronger branding */}
+            <Link href="/" className="flex items-center">
+              {/* Use a single combined logo image for the header.  The uploaded
+                 artwork includes both the icon and text and is scaled up
+                 to make it the most prominent element in the navbar. */}
               <Image
-                src="/assets/logo-icon.png"
-                alt="JobLinca icon"
-                width={32}
-                height={32}
+                src="/assets/header-logo.png"
+                alt="JobLinca logo"
+                width={220}
+                height={60}
                 priority
-              />
-              <Image
-                src="/assets/logo-wordmark.png"
-                alt="JobLinca wordmark"
-                width={100}
-                height={32}
-                priority
-                className="hidden sm:block"
+                className="object-contain"
               />
             </Link>
             {/* Primary navigation */}
@@ -89,9 +84,9 @@ export default function RootLayout({
           </nav>
         </header>
         {/* Mobile navigation */}
-        <div className="md:hidden px-4 pb-4">
-          {/* simple stacked nav for small screens */}
-          <nav className="flex flex-col space-y-2 text-sm font-medium mt-4">
+        <div className="md:hidden px-4 pb-6">
+          {/* simple stacked nav for small screens with larger text and spacing */}
+          <nav className="flex flex-col space-y-4 text-base font-medium mt-4">
             <Link href="/" className="hover:text-yellow-400">
               Home
             </Link>
