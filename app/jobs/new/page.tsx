@@ -74,75 +74,79 @@ export default function NewJobPage() {
   }
 
   return (
-    <main className="max-w-2xl mx-auto p-6">
+    <main className="max-w-2xl mx-auto p-6 text-gray-100">
       <h1 className="text-2xl font-bold mb-4">Post a New Job</h1>
-      {error && <p className="text-red-600 mb-4">{error}</p>}
-      <form onSubmit={handleSubmit} className="space-y-4">
+      {error && <p className="text-red-500 mb-4">{error}</p>}
+      {/* Use lighter card and input backgrounds for better readability */}
+      <form onSubmit={handleSubmit} className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
         <div>
-          <label className="block text-sm font-medium">Upload Job Description (PDF/DOCX/TXT)</label>
+          <label className="block text-sm font-medium text-gray-300">Upload Job Description (PDF/DOCX/TXT)</label>
           <input
             type="file"
             accept=".pdf,.doc,.docx,.txt"
             onChange={handleFileChange}
-            className="mt-1 w-full"
+            className="mt-1 w-full text-gray-100"
           />
-          {uploading && <p className="text-sm text-gray-500 mt-1">Parsing file…</p>}
+          {uploading && <p className="text-sm text-gray-400 mt-1">Parsing file…</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium">Job Title</label>
+          <label className="block text-sm font-medium text-gray-300">Job Title</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded"
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+            placeholder="e.g. Software Engineer"
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Company Name</label>
+          <label className="block text-sm font-medium text-gray-300">Company Name</label>
           <input
             type="text"
             value={companyName}
             onChange={(e) => setCompanyName(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded"
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
             placeholder="e.g. Acme Corp"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Company Logo URL (optional)</label>
+          <label className="block text-sm font-medium text-gray-300">Company Logo URL (optional)</label>
           <input
             type="url"
             value={companyLogoUrl}
             onChange={(e) => setCompanyLogoUrl(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded"
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
             placeholder="https://example.com/logo.png"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Location</label>
+          <label className="block text-sm font-medium text-gray-300">Location</label>
           <input
             type="text"
             value={location}
             onChange={(e) => setLocation(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded"
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+            placeholder="City / Region"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Salary (XAF)</label>
+          <label className="block text-sm font-medium text-gray-300">Salary (XAF)</label>
           <input
             type="number"
             value={salary}
             onChange={(e) => setSalary(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded"
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
             min="0"
+            placeholder="Optional"
           />
         </div>
         <div>
-          <label className="block text-sm font-medium">Work Type</label>
+          <label className="block text-sm font-medium text-gray-300">Work Type</label>
           <select
             value={workType}
             onChange={(e) => setWorkType(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded"
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
           >
             <option value="onsite">Onsite</option>
             <option value="remote">Remote</option>
@@ -150,18 +154,19 @@ export default function NewJobPage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium">Description</label>
+          <label className="block text-sm font-medium text-gray-300">Description</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="mt-1 w-full px-3 py-2 border rounded"
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+            placeholder="Describe the role, responsibilities and requirements"
             rows={5}
             required
           />
         </div>
         <button
           type="submit"
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
         >
           Create Job
         </button>

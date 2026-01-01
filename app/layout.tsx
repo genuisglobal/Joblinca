@@ -21,14 +21,22 @@ export default function RootLayout({
         <header className="w-full z-50">
           <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 py-4">
             <Link href="/" className="flex items-center space-x-2">
+              {/* Display the JobLinca icon and wordmark side by side for stronger branding */}
               <Image
-                src="/joblinca-logo.png"
-                alt="JobLinca logo"
-                width={40}
-                height={40}
+                src="/assets/logo-icon.png"
+                alt="JobLinca icon"
+                width={32}
+                height={32}
                 priority
               />
-              <span className="font-semibold text-lg hidden sm:inline">JobLinca</span>
+              <Image
+                src="/assets/logo-wordmark.png"
+                alt="JobLinca wordmark"
+                width={100}
+                height={32}
+                priority
+                className="hidden sm:block"
+              />
             </Link>
             {/* Primary navigation */}
             <ul className="hidden md:flex items-center space-x-8 text-sm font-medium">
@@ -55,6 +63,11 @@ export default function RootLayout({
               <li>
                 <Link href="/global-jobs" className="hover:text-yellow-400 transition-colors">
                   Global Jobs
+                </Link>
+              </li>
+              <li>
+                <Link href="/resume" className="hover:text-yellow-400 transition-colors">
+                  CV Builder
                 </Link>
               </li>
             </ul>
@@ -93,6 +106,9 @@ export default function RootLayout({
             </Link>
             <Link href="/global-jobs" className="hover:text-yellow-400">
               Global Jobs
+            </Link>
+            <Link href="/resume" className="hover:text-yellow-400">
+              CV Builder
             </Link>
             <Link href="/auth/login" className="hover:text-yellow-400">
               Login
