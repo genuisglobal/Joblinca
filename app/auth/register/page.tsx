@@ -85,36 +85,36 @@ export default function RegisterPage() {
    */
   function renderRoleSelection() {
     return (
-      <div className="max-w-xl w-full bg-white dark:bg-gray-800 shadow rounded p-8 text-center space-y-6">
+      <div className="max-w-xl w-full bg-gray-700 shadow rounded-lg p-8 text-center space-y-6 text-gray-100">
         <h2 className="text-2xl font-semibold mb-4">Create Your Account</h2>
-        <p className="mb-6 text-gray-600 dark:text-gray-300">Select the type of account you want to create:</p>
+        <p className="mb-6 text-gray-300">Select the type of account you want to create:</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <button
             type="button"
             onClick={() => setSelectedRole('job_seeker')}
-            className="p-4 border rounded hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none"
+            className="p-4 border border-gray-600 rounded hover:bg-gray-600 focus:outline-none"
           >
             <h3 className="font-medium text-lg">Job Seeker</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Find jobs, apply for free and get matched faster.</p>
+            <p className="text-sm text-gray-400 mt-2">Find jobs, apply for free and get matched faster.</p>
           </button>
           <button
             type="button"
             onClick={() => setSelectedRole('recruiter')}
-            className="p-4 border rounded hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none"
+            className="p-4 border border-gray-600 rounded hover:bg-gray-600 focus:outline-none"
           >
             <h3 className="font-medium text-lg">Recruiter</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Post jobs, receive AI‑filtered candidates and hire faster.</p>
+            <p className="text-sm text-gray-400 mt-2">Post jobs, receive AI‑filtered candidates and hire faster.</p>
           </button>
           <button
             type="button"
             onClick={() => setSelectedRole('talent')}
-            className="p-4 border rounded hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none"
+            className="p-4 border border-gray-600 rounded hover:bg-gray-600 focus:outline-none"
           >
             <h3 className="font-medium text-lg">Talent</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Showcase your projects while you study and prepare for the job market.</p>
+            <p className="text-sm text-gray-400 mt-2">Showcase your projects while you study and prepare for the job market.</p>
           </button>
         </div>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-6">
+        <p className="text-sm text-gray-400 mt-6">
           Are you a JobLinca staff member? Please contact an administrator to set up your account.
         </p>
       </div>
@@ -129,33 +129,41 @@ export default function RegisterPage() {
     return (
       <form
         onSubmit={handleRegister}
-        className="bg-white dark:bg-gray-800 shadow-md rounded px-8 pt-6 pb-8 mb-4 max-w-md w-full"
+        /*
+         * Use a slightly lighter card background and more legible text and
+         * input colours for better contrast on dark pages.  Inputs use
+         * a mid‑tone background and border to distinguish them from the
+         * card.
+         */
+        className="bg-gray-700 shadow-md rounded-lg px-8 pt-6 pb-8 mb-4 max-w-md w-full text-gray-100"
       >
         <h2 className="text-2xl font-semibold mb-4">
           {selectedRole === 'job_seeker' && 'Join as a Job Seeker'}
           {selectedRole === 'recruiter' && 'Create a Recruiter Account'}
           {selectedRole === 'talent' && 'Register as a Talent'}
         </h2>
-        {error && <p className="text-red-600 mb-4">{error}</p>}
-        <label className="block text-sm font-medium mb-2">
+        {error && <p className="text-red-500 mb-4">{error}</p>}
+        <label className="block text-sm font-medium mb-2 text-gray-300">
           Full Name
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+            placeholder="Your full name"
             required
           />
         </label>
         {/* Recruiter specific field */}
         {selectedRole === 'recruiter' && (
-          <label className="block text-sm font-medium mb-2">
+          <label className="block text-sm font-medium mb-2 text-gray-300">
             Company Name
             <input
               type="text"
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+              className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+              placeholder="Company name"
               required
             />
           </label>
@@ -163,55 +171,60 @@ export default function RegisterPage() {
         {/* Talent specific fields */}
         {selectedRole === 'talent' && (
           <>
-            <label className="block text-sm font-medium mb-2">
+            <label className="block text-sm font-medium mb-2 text-gray-300">
               Institution / University
               <input
                 type="text"
                 value={institution}
                 onChange={(e) => setInstitution(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+                placeholder="Institution / University"
                 required
               />
             </label>
-            <label className="block text-sm font-medium mb-2">
+            <label className="block text-sm font-medium mb-2 text-gray-300">
               Expected Graduation Year
               <input
                 type="number"
                 value={graduationYear}
                 onChange={(e) => setGraduationYear(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+                placeholder="2026"
                 required
               />
             </label>
           </>
         )}
-        <label className="block text-sm font-medium mb-2">
+        <label className="block text-sm font-medium mb-2 text-gray-300">
           Email
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+            placeholder="you@example.com"
             required
           />
         </label>
-        <label className="block text-sm font-medium mb-2">
+        <label className="block text-sm font-medium mb-2 text-gray-300">
           Phone Number
           <input
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+            placeholder="(+237) 6xx xxx xxx"
             required
           />
         </label>
-        <label className="block text-sm font-medium mb-4">
+        <label className="block text-sm font-medium mb-4 text-gray-300">
           Password
           <input
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 border rounded focus:outline-none focus:ring"
+            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+            placeholder="Create a strong password"
             required
           />
         </label>
@@ -219,13 +232,13 @@ export default function RegisterPage() {
           <button
             type="button"
             onClick={resetForm}
-            className="text-sm text-gray-600 dark:text-gray-400 hover:underline"
+            className="text-sm text-gray-400 hover:underline"
           >
             Change role
           </button>
           <button
             type="submit"
-            className="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700"
+            className="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition-colors"
           >
             Sign up
           </button>
