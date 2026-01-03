@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
     companyName,
     companyLogoUrl,
     workType,
+    jobType,
+    visibility,
   } = body;
   if (!title || !description) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -52,6 +54,8 @@ export async function POST(request: NextRequest) {
       company_name: companyName || null,
       company_logo_url: companyLogoUrl || null,
       work_type: workType || 'onsite',
+      job_type: jobType || 'job',
+      visibility: visibility || 'public',
     })
     .select('*')
     .single();

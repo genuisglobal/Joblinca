@@ -15,6 +15,8 @@ export default function NewJobPage() {
   const [companyName, setCompanyName] = useState('');
   const [companyLogoUrl, setCompanyLogoUrl] = useState('');
   const [workType, setWorkType] = useState('onsite');
+  const [jobType, setJobType] = useState('job');
+  const [visibility, setVisibility] = useState('public');
   const [uploading, setUploading] = useState(false);
 
   /**
@@ -62,6 +64,8 @@ export default function NewJobPage() {
         companyName: companyName || undefined,
         companyLogoUrl: companyLogoUrl || undefined,
         workType,
+        jobType,
+        visibility,
       }),
     });
     if (res.ok) {
@@ -151,6 +155,29 @@ export default function NewJobPage() {
             <option value="onsite">Onsite</option>
             <option value="remote">Remote</option>
             <option value="hybrid">Hybrid</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300">Job Type</label>
+          <select
+            value={jobType}
+            onChange={(e) => setJobType(e.target.value)}
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
+          >
+            <option value="job">Job</option>
+            <option value="internship">Internship</option>
+            <option value="gig">Gig</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-300">Visibility</label>
+          <select
+            value={visibility}
+            onChange={(e) => setVisibility(e.target.value)}
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
+          >
+            <option value="public">Public</option>
+            <option value="talent_only">Talent Only</option>
           </select>
         </div>
         <div>

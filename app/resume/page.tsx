@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, ChangeEvent, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
-import type { ResumeData } from '@/lib/resume';
-import { createEmptyResume } from '@/lib/resume';
+import { useState, ChangeEvent, FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import type { ResumeData } from "@/lib/resume";
+import { createEmptyResume } from "@/lib/resume";
 
 /**
  * Resume builder and optimiser page.  This page is available to
@@ -29,24 +29,28 @@ export default function ResumePage() {
   async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
+
     setLoading(true);
     setError(null);
+
     try {
-      const res = await fetch('/api/resume/parse', {
-        method: 'POST',
+      const res = await fetch("/api/resume/parse", {
+        method: "POST",
         body: formData,
       });
+
       if (res.ok) {
         const data = await res.json();
         setResume((r) => ({ ...r, ...data }));
-        setInfo('Resume parsed. Please review and edit the details below.');
+        setInfo("Resume parsed. Please review and edit the details below.");
       } else {
-        setError('Failed to parse resume');
+        setError("Failed to parse resume");
       }
     } catch {
-      setError('Failed to parse resume');
+      setError("Failed to parse resume");
     } finally {
       setLoading(false);
     }
@@ -56,7 +60,9 @@ export default function ResumePage() {
    * Handles input changes for the resume form.  It updates the
    * corresponding property on the resume state.
    */
-  function handleChange(e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
+  function handleChange(
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) {
     const { name, value } = e.target;
     setResume((prev) => ({ ...prev, [name]: value }));
   }
@@ -69,21 +75,24 @@ export default function ResumePage() {
     setLoading(true);
     setError(null);
     setInfo(null);
+
     try {
-      const res = await fetch('/api/resume/optimize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/resume/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(resume),
       });
+
       const data = await res.json();
+
       if (res.ok) {
         setResume((prev) => ({ ...prev, ...data }));
-        setInfo('Resume optimised successfully.');
+        setInfo("Resume optimised successfully.");
       } else {
-        setError(data.error || 'Unable to optimise resume');
+        setError(data.error || "Unable to optimise resume");
       }
     } catch {
-      setError('Unable to optimise resume');
+      setError("Unable to optimise resume");
     } finally {
       setLoading(false);
     }
@@ -98,20 +107,23 @@ export default function ResumePage() {
     setLoading(true);
     setError(null);
     setInfo(null);
+
     try {
-      const res = await fetch('/api/resume/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/resume/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(resume),
       });
+
       const data = await res.json();
+
       if (res.ok) {
-        router.push('/dashboard');
+        router.push("/dashboard");
       } else {
-        setError(data.error || 'Failed to save resume');
+        setError(data.error || "Failed to save resume");
       }
     } catch {
-      setError('Failed to save resume');
+      setError("Failed to save resume");
     } finally {
       setLoading(false);
     }
@@ -127,27 +139,29 @@ export default function ResumePage() {
     setLoading(true);
     setError(null);
     setInfo(null);
+
     try {
-      const res = await fetch('/api/resume/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/resume/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(resume),
       });
+
       const data = await res.json();
+
       if (res.ok && data.dataUrl) {
-        // Convert base64 to blob and download
-        const link = document.createElement('a');
+        const link = document.createElement("a");
         link.href = data.dataUrl;
-        link.download = 'resume.pdf';
+        link.download = "resume.pdf";
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setInfo('PDF generated successfully.');
+        setInfo("PDF generated successfully.");
       } else {
-        setError(data.error || 'Failed to generate PDF');
+        setError(data.error || "Failed to generate PDF");
       }
     } catch {
-      setError('Failed to generate PDF');
+      setError("Failed to generate PDF");
     } finally {
       setLoading(false);
     }
@@ -157,11 +171,13 @@ export default function ResumePage() {
     <main className="max-w-3xl mx-auto p-6 text-gray-100">
       <h1 className="text-2xl font-bold mb-4">Resume Builder &amp; Optimiser</h1>
       <p className="text-gray-400 mb-6">
-        Upload an existing resume or start from scratch. Premium members can optimise
-        their resume once per day and download a PDF version.
+        Upload an existing resume or start from scratch. Premium members can
+        optimise their resume once per day and download a PDF version.
       </p>
+
       {error && <p className="text-red-500 mb-4">{error}</p>}
       {info && <p className="text-green-400 mb-4">{info}</p>}
+
       <div className="mb-6">
         <label className="block text-sm font-medium text-gray-300 mb-2">
           Upload Resume (PDF/DOCX/TXT)
@@ -175,16 +191,22 @@ export default function ResumePage() {
         </label>
         {loading && <p className="text-sm text-gray-400">Processing...</p>}
       </div>
-            {/*
+
+      {/* 
         Lighter card background and input styling to improve contrast on the
         dark theme. Inputs use a mid-tone grey with lighter borders for
-        better definition. This ensures the resume builder remains accessible
-        and easy to use.
+        better definition. This ensures the resume builder remains
+        accessible and easy to use.
       */}
-      <form onSubmit={handleSave} className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
 
+      <form
+        onSubmit={handleSave}
+        className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md"
+      >
         <div>
-          <label className="block text-sm font-medium text-gray-300">Full Name</label>
+          <label className="block text-sm font-medium text-gray-300">
+            Full Name
+          </label>
           <input
             type="text"
             name="fullName"
@@ -195,8 +217,11 @@ export default function ResumePage() {
             required
           />
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-300">Email</label>
+          <label className="block text-sm font-medium text-gray-300">
+            Email
+          </label>
           <input
             type="email"
             name="email"
@@ -207,8 +232,11 @@ export default function ResumePage() {
             required
           />
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-300">Phone</label>
+          <label className="block text-sm font-medium text-gray-300">
+            Phone
+          </label>
           <input
             type="tel"
             name="phone"
@@ -219,8 +247,11 @@ export default function ResumePage() {
             required
           />
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-300">Summary</label>
+          <label className="block text-sm font-medium text-gray-300">
+            Summary
+          </label>
           <textarea
             name="summary"
             value={resume.summary}
@@ -230,8 +261,11 @@ export default function ResumePage() {
             placeholder="A brief summary about yourself"
           />
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-300">Experience</label>
+          <label className="block text-sm font-medium text-gray-300">
+            Experience
+          </label>
           <textarea
             name="experience"
             value={resume.experience}
@@ -241,8 +275,11 @@ export default function ResumePage() {
             placeholder="Describe your past roles and achievements"
           />
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-300">Education</label>
+          <label className="block text-sm font-medium text-gray-300">
+            Education
+          </label>
           <textarea
             name="education"
             value={resume.education}
@@ -252,8 +289,11 @@ export default function ResumePage() {
             placeholder="List your educational background"
           />
         </div>
+
         <div>
-          <label className="block text-sm font-medium text-gray-300">Skills (comma separated)</label>
+          <label className="block text-sm font-medium text-gray-300">
+            Skills (comma separated)
+          </label>
           <input
             type="text"
             name="skills"
@@ -263,6 +303,7 @@ export default function ResumePage() {
             placeholder="e.g. JavaScript, SQL, Communication"
           />
         </div>
+
         <div className="flex flex-wrap gap-4 mt-6">
           <button
             type="button"
@@ -272,6 +313,7 @@ export default function ResumePage() {
           >
             Optimise with AI
           </button>
+
           <button
             type="submit"
             className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
@@ -279,6 +321,7 @@ export default function ResumePage() {
           >
             Save Resume
           </button>
+
           <button
             type="button"
             onClick={handleGeneratePdf}

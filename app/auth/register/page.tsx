@@ -53,7 +53,7 @@ export default function RegisterPage() {
     setError(null);
     if (!selectedRole) return;
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         phone,
@@ -71,8 +71,27 @@ export default function RegisterPage() {
         setError(signUpError.message);
         return;
       }
-      // On successful sign up, redirect to dashboard (or login if email confirmation required).
-      router.push('/dashboard');
+      const user = signUpData?.user;
+      if (user && selectedRole) {
+        // Call API to create profile and role‑specific row
+        const res = await fetch('/api/profile/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user.id,
+            role: selectedRole,
+            fullName: name,
+            phone,
+            companyName,
+            institution,
+            graduationYear,
+          }),
+        });
+        // ignore errors for now; RLS will catch duplicate
+        // If creation fails, still proceed to onboarding
+      }
+      // After sign up, redirect to onboarding to fill required fields
+      router.push('/onboarding');
     } catch (err) {
       // Unexpected errors
       setError((err as Error).message);
