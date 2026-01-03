@@ -98,7 +98,7 @@ Complex AI tasks (CV screening, matching, grading and chatbots) should be implem
 
 ## Core modules (overview)
 
-- **Authentication & Profiles** – Email/phone authentication via Supabase, role‑based access, and editable user profiles.  The `profiles` table stores extended details.
+ - **Authentication & Profiles** – Email/phone authentication via Supabase, role‑based access, and editable user profiles.  The core `profiles` table stores basic details (full name, phone and role). Additional role‑specific information is stored in separate tables: `job_seeker_profiles` (location, headline, resume URL and career info), `talent_profiles` (school status, portfolio and internship eligibility) and `recruiter_profiles` (recruiter type, verification status, tier plan, company name and contact details).
 - **Job board system** – Recruiters can post, edit and delete jobs; candidates browse published jobs without logging in; search and SEO friendly pages; admin approves postings before they go live.
 - **Job application system** – Candidates apply quickly (name + phone + CV) or via their profile.  Applications are stored in the `applications` table and recruiters can track statuses.
 - **Messaging** – WhatsApp and SMS bots allow candidates to apply, receive alerts and interview updates.  Webhooks from providers post to `/api/webhooks/whatsapp` and `/api/webhooks/sms` (to be implemented).

@@ -1,75 +1,52 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
-// Prevent any caching of this API route
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+export const runtime = "nodejs"; // important for many Node libs
 
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const body = await req.json();
 
-    // If key is missing, don't crash the build—return a safe response
-    if (!apiKey) {
+    if (!process.env.OPENAI_API_KEY) {
       return NextResponse.json(
-        { error: "Missing OPENAI_API_KEY environment variable." },
+        { error: "Missing OPENAI_API_KEY in environment variables" },
         { status: 500 }
       );
     }
 
-    const resume = await req.json();
-
-    const client = new OpenAI({ apiKey });
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const prompt = `
 You are an expert resume writer.
-Rewrite the resume summary and experience bullets to improve clarity, impact, and ATS readability,
-while keeping the same meaning and facts. Return JSON only.
+Rewrite the following resume summary and experience bullet points to improve clarity and impact while keeping the same information.
+Return JSON only with fields: summary, experience.
 
-JSON schema:
-{
-  "summary": "string",
-  "experience": "string"
-}
-
-Resume data:
-${JSON.stringify(resume)}
+Resume:
+${JSON.stringify(body)}
 `.trim();
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
       temperature: 0.4,
-      messages: [
-        { role: "system", content: "You rewrite resumes. Return valid JSON only." },
-        { role: "user", content: prompt },
-      ],
     });
 
-    const content = completion.choices?.[0]?.message?.content?.trim() || "";
+    const text = completion.choices[0]?.message?.content ?? "";
 
-    // Try to parse JSON response from the model
-    let parsed: any;
+    // If your prompt returns JSON, parse it:
+    // If not, return text and handle it on the client.
+    let parsed: any = null;
     try {
-      parsed = JSON.parse(content);
+      parsed = JSON.parse(text);
     } catch {
-      // If the model returns non-JSON, still fail gracefully
-      return NextResponse.json(
-        { error: "AI returned invalid JSON. Try again." },
-        { status: 500 }
-      );
+      // fallback
+      parsed = { summary: body.summary, experience: body.experience, raw: text };
     }
 
-    // Merge the improved fields back
-    const improved = {
-      ...resume,
-      ...(parsed.summary ? { summary: parsed.summary } : {}),
-      ...(parsed.experience ? { experience: parsed.experience } : {}),
-    };
-
-    return NextResponse.json(improved);
-  } catch (err: any) {
+    return NextResponse.json(parsed);
+  } catch (e: any) {
     return NextResponse.json(
-      { error: err?.message || "Resume optimize failed." },
+      { error: e?.message || "Failed to optimise resume" },
       { status: 500 }
     );
   }
