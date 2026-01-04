@@ -1,53 +1,105 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import OpenAI from "openai";
 
-export const runtime = "nodejs"; // important for many Node libs
+// (Optional) Force Node runtime (recommended for OpenAI + Supabase server usage)
+export const runtime = "nodejs";
 
-export async function POST(req: Request) {
+export async function POST(request: NextRequest) {
+  const supabase = createServerSupabaseClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let resumeData: any;
   try {
-    const body = await req.json();
+    resumeData = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: "Missing OPENAI_API_KEY in environment variables" },
-        { status: 500 }
-      );
-    }
+  const { data: subscription } = await supabase
+    .from("subscriptions")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
 
-    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const isPremium = !!subscription;
 
-    const prompt = `
-You are an expert resume writer.
-Rewrite the following resume summary and experience bullet points to improve clarity and impact while keeping the same information.
-Return JSON only with fields: summary, experience.
+  const today = new Date().toISOString().slice(0, 10);
 
-Resume:
-${JSON.stringify(body)}
-`.trim();
+  const { data: usageRow } = await supabase
+    .from("resume_usage")
+    .select("*")
+    .eq("user_id", user.id)
+    .eq("date", today)
+    .maybeSingle();
 
-    const completion = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.4,
-    });
+  const used = usageRow?.used ?? 0;
 
-    const text = completion.choices[0]?.message?.content ?? "";
-
-    // If your prompt returns JSON, parse it:
-    // If not, return text and handle it on the client.
-    let parsed: any = null;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      // fallback
-      parsed = { summary: body.summary, experience: body.experience, raw: text };
-    }
-
-    return NextResponse.json(parsed);
-  } catch (e: any) {
+  if (!isPremium) {
     return NextResponse.json(
-      { error: e?.message || "Failed to optimise resume" },
-      { status: 500 }
+      { error: "Upgrade to premium to optimise resumes" },
+      { status: 402 }
     );
   }
+
+  if (used >= 1) {
+    return NextResponse.json(
+      { error: "Daily resume optimisation limit reached" },
+      { status: 429 }
+    );
+  }
+
+  let improved = resumeData;
+
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+      const prompt = `You are an expert resume writer.
+Rewrite the resume summary and bullet points to improve clarity and impact while keeping the same information.
+Return either JSON with updated fields OR plain text if JSON isn't possible.
+
+Resume data: ${JSON.stringify(resumeData)}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are a helpful assistant that improves resumes." },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: 600,
+      });
+
+      const aiResponse = completion.choices?.[0]?.message?.content?.trim();
+
+      if (aiResponse) {
+        try {
+          const parsed = JSON.parse(aiResponse);
+          improved = { ...resumeData, ...parsed };
+        } catch {
+          improved = { ...resumeData, summary: aiResponse };
+        }
+      }
+    } catch (err) {
+      console.error("OpenAI optimisation failed", err);
+      improved = resumeData;
+    }
+  }
+
+  // Increment usage
+  if (usageRow) {
+    await supabase.from("resume_usage").update({ used: used + 1 }).eq("id", usageRow.id);
+  } else {
+    await supabase.from("resume_usage").insert({ user_id: user.id, date: today, used: 1 });
+  }
+
+  return NextResponse.json(improved);
 }

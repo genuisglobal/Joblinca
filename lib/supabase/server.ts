@@ -1,5 +1,5 @@
-import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 export function createServerSupabaseClient() {
   const cookieStore = cookies();
@@ -12,10 +12,12 @@ export function createServerSupabaseClient() {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
-        // These are required by the type, but in Server Components cookies are read-only.
-        // They will be used in Route Handlers / Server Actions where cookies are mutable.
-        set() {},
-        remove() {},
+        set(name: string, value: string, options: any) {
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          cookieStore.set({ name, value: "", ...options, maxAge: 0 });
+        },
       },
     }
   );
