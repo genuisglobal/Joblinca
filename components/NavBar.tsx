@@ -2,57 +2,71 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-/**
- * Responsive navigation bar that adapts its links based on the user's
- * authentication state and role.  Recruiter‑specific actions are hidden
- * from non‑recruiters, and the CV Builder is hidden from recruiters since
- * they typically don't need to build a resume.  The nav also swaps
- * between login/get started and dashboard/logout depending on whether
- * a session exists.  On mobile, the menu is stacked for better spacing.
- */
+type Role = "job_seeker" | "talent" | "recruiter" | "admin" | "staff" | null;
+
 export default function NavBar() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
+  const pathname = usePathname();
+
   const [loading, setLoading] = useState(true);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<Role>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  useEffect(() => {
-    async function fetchUser() {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) {
-          setIsAuthenticated(false);
-          setUserRole(null);
-          setLoading(false);
-          return;
-        }
-        setIsAuthenticated(true);
-        // Fetch the profile to determine role
-        const { data: profile, error } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", user.id)
-          .single();
-        if (error || !profile) {
-          setUserRole(null);
-        } else {
-          setUserRole(profile.role as string);
-        }
-      } catch (err) {
-        // In case of network or client errors, treat as unauthenticated
+  const fetchUserAndRole = useCallback(async () => {
+    setLoading(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
         setIsAuthenticated(false);
         setUserRole(null);
-      } finally {
-        setLoading(false);
+        return;
       }
+
+      setIsAuthenticated(true);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      setUserRole((profile?.role as Role) ?? null);
+    } catch {
+      setIsAuthenticated(false);
+      setUserRole(null);
+    } finally {
+      setLoading(false);
     }
-    fetchUser();
   }, [supabase]);
+
+  useEffect(() => {
+    fetchUserAndRole();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      // Keep nav state accurate immediately after login/onboarding/logout
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        fetchUserAndRole();
+        router.refresh();
+      }
+    });
+
+    return () => {
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase, fetchUserAndRole, router]);
+
+  const isRecruiter = userRole === "recruiter";
+
+  const linkClass = (href: string) =>
+    `${pathname === href ? "text-yellow-400" : ""} hover:text-yellow-400 transition-colors`;
 
   if (loading) {
     return (
@@ -60,82 +74,84 @@ export default function NavBar() {
     );
   }
 
-  const isRecruiter = userRole === "recruiter";
-  const isTalent = userRole === "talent";
-  const isJobSeeker = userRole === "job_seeker";
-
   return (
     <>
       {/* Desktop navigation */}
       <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 py-4">
         <Link href="/" className="flex items-center">
-          {/* Separate icon and wordmark for clearer branding.  We avoid
-             including a dark box around the logo; instead, the SVG/PNG
-             itself has transparent background.  */}
+          {/* Use combined header logo (icon + wordmark) */}
           <Image
-            src="/assets/logo-icon.png"
-            alt="JobLinca icon"
-            width={32}
-            height={32}
-            className="mr-2"
-          />
-          <Image
-            src="/assets/logo-wordmark.png"
+            src="/assets/header-logo.png"
             alt="JobLinca"
-            width={140}
-            height={40}
+            width={220}
+            height={60}
             priority
+            className="object-contain"
           />
         </Link>
+
         {/* Primary nav links */}
         <ul className="hidden md:flex items-center space-x-8 text-sm font-medium">
           <li>
-            <Link href="/" className="hover:text-yellow-400 transition-colors">
+            <Link href="/" className={linkClass("/")}>
               Home
             </Link>
           </li>
           <li>
-            <Link href="/jobs" className="hover:text-yellow-400 transition-colors">
+            <Link href="/jobs" className={linkClass("/jobs")}>
               Jobs
             </Link>
           </li>
           <li>
-            <Link href="/learn-more/jobseekers" className="hover:text-yellow-400 transition-colors">
+            <Link href="/learn-more/jobseekers" className={linkClass("/learn-more/jobseekers")}>
               For Job Seekers
             </Link>
           </li>
           <li>
-            <Link href="/learn-more/recruiters" className="hover:text-yellow-400 transition-colors">
+            <Link href="/learn-more/recruiters" className={linkClass("/learn-more/recruiters")}>
               For Recruiters
             </Link>
           </li>
           <li>
-            <Link href="/global-jobs" className="hover:text-yellow-400 transition-colors">
+            <Link href="/global-jobs" className={linkClass("/global-jobs")}>
               Global Jobs
             </Link>
           </li>
-          {/* Show CV Builder only for job seekers or talent */}
+
+          {/* Recruiter-only nav item */}
+          {isRecruiter && (
+            <li>
+              <Link href="/recruiter/post-job" className={linkClass("/recruiter/post-job")}>
+                Post a Job
+              </Link>
+            </li>
+          )}
+
+          {/* CV Builder hidden for recruiters */}
           {!isRecruiter && (
             <li>
-              <Link href="/resume" className="hover:text-yellow-400 transition-colors">
+              <Link href="/resume" className={linkClass("/resume")}>
                 CV Builder
               </Link>
             </li>
           )}
         </ul>
+
         {/* Auth / dashboard actions */}
         <div className="hidden md:flex items-center space-x-4">
           {isAuthenticated ? (
             <>
               <Link
                 href="/dashboard"
-                className="px-4 py-2 rounded text-sm font-medium hover:underline"
+                className="px-4 py-2 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
               >
                 Dashboard
               </Link>
+
+              {/* Use server route logout */}
               <Link
                 href="/auth/logout"
-                className="px-4 py-2 rounded text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+                className="px-4 py-2 rounded text-sm font-medium border border-gray-600 hover:bg-gray-800 transition-colors"
               >
                 Logout
               </Link>
@@ -158,45 +174,53 @@ export default function NavBar() {
           )}
         </div>
       </nav>
+
       {/* Mobile navigation */}
       <div className="md:hidden px-4 pb-6">
         <nav className="flex flex-col space-y-4 text-base font-medium mt-4">
-          <Link href="/" className="hover:text-yellow-400">
+          <Link href="/" className={linkClass("/")}>
             Home
           </Link>
-          <Link href="/jobs" className="hover:text-yellow-400">
+          <Link href="/jobs" className={linkClass("/jobs")}>
             Jobs
           </Link>
-          <Link href="/learn-more/jobseekers" className="hover:text-yellow-400">
+          <Link href="/learn-more/jobseekers" className={linkClass("/learn-more/jobseekers")}>
             Job Seekers
           </Link>
-          <Link href="/learn-more/recruiters" className="hover:text-yellow-400">
+          <Link href="/learn-more/recruiters" className={linkClass("/learn-more/recruiters")}>
             Recruiters
           </Link>
-          <Link href="/global-jobs" className="hover:text-yellow-400">
+          <Link href="/global-jobs" className={linkClass("/global-jobs")}>
             Global Jobs
           </Link>
-          {/* CV Builder hidden for recruiters on mobile as well */}
+
+          {isRecruiter && (
+            <Link href="/recruiter/post-job" className={linkClass("/recruiter/post-job")}>
+              Post a Job
+            </Link>
+          )}
+
           {!isRecruiter && (
-            <Link href="/resume" className="hover:text-yellow-400">
+            <Link href="/resume" className={linkClass("/resume")}>
               CV Builder
             </Link>
           )}
+
           {isAuthenticated ? (
             <>
-              <Link href="/dashboard" className="hover:text-yellow-400">
+              <Link href="/dashboard" className={linkClass("/dashboard")}>
                 Dashboard
               </Link>
-              <Link href="/auth/logout" className="hover:text-yellow-400">
+              <Link href="/auth/logout" className="text-left hover:text-yellow-400">
                 Logout
               </Link>
             </>
           ) : (
             <>
-              <Link href="/auth/login" className="hover:text-yellow-400">
+              <Link href="/auth/login" className={linkClass("/auth/login")}>
                 Login
               </Link>
-              <Link href="/auth/register" className="hover:text-yellow-400">
+              <Link href="/auth/register" className={linkClass("/auth/register")}>
                 Get Started
               </Link>
             </>

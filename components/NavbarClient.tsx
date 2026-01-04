@@ -2,63 +2,63 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+type Role = "job_seeker" | "talent" | "recruiter" | "admin" | "staff" | null;
+
 export default function NavbarClient() {
-  // Create the Supabase client ONCE (prevents re-subscribing loops)
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const pathname = usePathname();
 
   const [loading, setLoading] = useState(true);
   const [isAuthed, setIsAuthed] = useState(false);
+  const [role, setRole] = useState<Role>(null);
 
-  useEffect(() => {
-    let mounted = true;
+  const fetchSessionAndRole = useCallback(async () => {
+    setLoading(true);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-    async function init() {
-      setLoading(true);
-      const { data } = await supabase.auth.getSession();
-      if (!mounted) return;
+      setIsAuthed(!!user);
 
-      setIsAuthed(!!data.session?.user);
+      if (!user) {
+        setRole(null);
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      setRole((profile?.role as Role) ?? null);
+    } finally {
       setLoading(false);
     }
+  }, [supabase]);
 
-    init();
+  useEffect(() => {
+    fetchSessionAndRole();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      // Update local state
-      setIsAuthed(!!session?.user);
-
-      // DO NOT refresh on TOKEN_REFRESHED (this is what causes constant refreshing)
-      // Only refresh on real auth boundary changes.
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        fetchSessionAndRole();
         router.refresh();
       }
     });
 
     return () => {
-      mounted = false;
       sub.subscription.unsubscribe();
     };
-  }, [supabase, router]);
+  }, [supabase, fetchSessionAndRole, router]);
 
-  async function handleLogout() {
-    setLoading(true);
-    const { error } = await supabase.auth.signOut();
-    setLoading(false);
-
-    if (error) {
-      console.error("Logout error:", error.message);
-      return;
-    }
-
-    router.push("/");
-    router.refresh();
-  }
+  const isRecruiter = role === "recruiter";
 
   const linkClass = (href: string) =>
     `${pathname === href ? "text-yellow-400" : ""} hover:text-yellow-400 transition-colors`;
@@ -70,7 +70,7 @@ export default function NavbarClient() {
           <Link href="/" className="flex items-center">
             <Image
               src="/assets/header-logo.png"
-              alt="JobLinca logo"
+              alt="JobLinca"
               width={220}
               height={60}
               priority
@@ -84,7 +84,14 @@ export default function NavbarClient() {
             <li><Link href="/learn-more/jobseekers" className={linkClass("/learn-more/jobseekers")}>For Job Seekers</Link></li>
             <li><Link href="/learn-more/recruiters" className={linkClass("/learn-more/recruiters")}>For Recruiters</Link></li>
             <li><Link href="/global-jobs" className={linkClass("/global-jobs")}>Global Jobs</Link></li>
-            <li><Link href="/resume" className={linkClass("/resume")}>CV Builder</Link></li>
+
+            {!isRecruiter && (
+              <li><Link href="/resume" className={linkClass("/resume")}>CV Builder</Link></li>
+            )}
+
+            {isRecruiter && (
+              <li><Link href="/recruiter/post-job" className={linkClass("/recruiter/post-job")}>Post a Job</Link></li>
+            )}
           </ul>
 
           <div className="hidden md:flex items-center space-x-4">
@@ -98,13 +105,14 @@ export default function NavbarClient() {
                 >
                   Dashboard
                 </Link>
-                <button
-                  type="button"
-                  onClick={handleLogout}
+
+                {/* Server route logout */}
+                <Link
+                  href="/auth/logout"
                   className="px-4 py-2 rounded text-sm font-medium border border-gray-600 hover:bg-gray-800 transition-colors"
                 >
                   Logout
-                </button>
+                </Link>
               </>
             ) : (
               <>
@@ -125,26 +133,33 @@ export default function NavbarClient() {
 
       <div className="md:hidden px-4 pb-6">
         <nav className="flex flex-col space-y-4 text-base font-medium mt-4">
-          <Link href="/" className="hover:text-yellow-400">Home</Link>
-          <Link href="/jobs" className="hover:text-yellow-400">Jobs</Link>
-          <Link href="/learn-more/jobseekers" className="hover:text-yellow-400">Job Seekers</Link>
-          <Link href="/learn-more/recruiters" className="hover:text-yellow-400">Recruiters</Link>
-          <Link href="/global-jobs" className="hover:text-yellow-400">Global Jobs</Link>
-          <Link href="/resume" className="hover:text-yellow-400">CV Builder</Link>
+          <Link href="/" className={linkClass("/")}>Home</Link>
+          <Link href="/jobs" className={linkClass("/jobs")}>Jobs</Link>
+          <Link href="/learn-more/jobseekers" className={linkClass("/learn-more/jobseekers")}>Job Seekers</Link>
+          <Link href="/learn-more/recruiters" className={linkClass("/learn-more/recruiters")}>Recruiters</Link>
+          <Link href="/global-jobs" className={linkClass("/global-jobs")}>Global Jobs</Link>
+
+          {!isRecruiter && (
+            <Link href="/resume" className={linkClass("/resume")}>CV Builder</Link>
+          )}
+
+          {isRecruiter && (
+            <Link href="/recruiter/post-job" className={linkClass("/recruiter/post-job")}>Post a Job</Link>
+          )}
 
           {loading ? (
             <span className="text-sm text-gray-400">Loading...</span>
           ) : isAuthed ? (
             <>
-              <Link href="/dashboard" className="hover:text-yellow-400">Dashboard</Link>
-              <button type="button" onClick={handleLogout} className="text-left hover:text-yellow-400">
+              <Link href="/dashboard" className={linkClass("/dashboard")}>Dashboard</Link>
+              <Link href="/auth/logout" className="text-left hover:text-yellow-400">
                 Logout
-              </button>
+              </Link>
             </>
           ) : (
             <>
-              <Link href="/auth/login" className="hover:text-yellow-400">Login</Link>
-              <Link href="/auth/register" className="hover:text-yellow-400">Get Started</Link>
+              <Link href="/auth/login" className={linkClass("/auth/login")}>Login</Link>
+              <Link href="/auth/register" className={linkClass("/auth/register")}>Get Started</Link>
             </>
           )}
         </nav>

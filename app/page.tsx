@@ -5,8 +5,67 @@ import Image from "next/image";
 import { LazyMotion, domAnimation, m } from "framer-motion";
 import SearchJobsBar from "@/components/SearchJobsBar";
 import { BrainCircuit, PhoneCall, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+
+type Role = "job_seeker" | "talent" | "recruiter" | "admin" | "staff" | null;
 
 export default function HomePage() {
+  const supabase = useMemo(() => createClient(), []);
+  const [role, setRole] = useState<Role>(null);
+  const [roleLoaded, setRoleLoaded] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadRole() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!mounted) return;
+
+        if (!user) {
+          setRole(null);
+          setRoleLoaded(true);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (!mounted) return;
+
+        setRole((profile?.role as Role) ?? null);
+        setRoleLoaded(true);
+      } catch {
+        if (!mounted) return;
+        setRole(null);
+        setRoleLoaded(true);
+      }
+    }
+
+    loadRole();
+
+    // Keep homepage CTA accurate if auth changes without navigation
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event) => {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "USER_UPDATED") {
+        await loadRole();
+      }
+    });
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [supabase]);
+
+  const isRecruiter = role === "recruiter";
+
   return (
     <LazyMotion features={domAnimation}>
       <main className="bg-gray-900 text-gray-100 overflow-hidden">
@@ -30,6 +89,7 @@ export default function HomePage() {
             transition={{ duration: 0.8 }}
             className="relative z-10 flex flex-col items-center w-full"
           >
+            {/* Wordmark only in hero */}
             <div className="flex items-center justify-center mb-8">
               <Image
                 src="/assets/logo-wordmark.png"
@@ -62,6 +122,7 @@ export default function HomePage() {
 
             <SearchJobsBar />
 
+            {/* Role-aware primary CTAs */}
             <div className="mt-8 flex flex-wrap justify-center gap-4">
               <Link
                 href="/jobs"
@@ -69,12 +130,17 @@ export default function HomePage() {
               >
                 Find Jobs
               </Link>
-              <Link
-                href="/recruiter/post-job"
-                className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors font-medium"
-              >
-                Post a Job
-              </Link>
+
+              {/* Only show Post a Job for recruiters.
+                  While role is loading, hide it to avoid flicker for job seekers. */}
+              {roleLoaded && isRecruiter && (
+                <Link
+                  href="/recruiter/post-job"
+                  className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors font-medium"
+                >
+                  Post a Job
+                </Link>
+              )}
             </div>
           </m.div>
         </section>
@@ -266,12 +332,15 @@ export default function HomePage() {
                 Create Free Account
               </Link>
 
-              <Link
-                href="/recruiter/post-job"
-                className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors"
-              >
-                Post a Job
-              </Link>
+              {/* Only recruiters see Post a Job */}
+              {roleLoaded && isRecruiter && (
+                <Link
+                  href="/recruiter/post-job"
+                  className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors"
+                >
+                  Post a Job
+                </Link>
+              )}
             </div>
           </div>
         </section>
