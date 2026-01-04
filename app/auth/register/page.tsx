@@ -74,27 +74,27 @@ export default function RegisterPage() {
       const user = signUpData?.user;
       if (user && selectedRole) {
         // Call API to create profile and role‑specific row
-        const res = await fetch('/api/profile/create', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            userId: user.id,
-            role: selectedRole,
-            fullName: name,
-            phone,
-            companyName,
-            institution,
-            graduationYear,
-          }),
-        });
-        // ignore errors for now; RLS will catch duplicate
-        // If creation fails, still proceed to onboarding
+        try {
+          await fetch('/api/profile/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user.id,
+              role: selectedRole,
+              fullName: name,
+              phone,
+              companyName,
+              institution,
+              graduationYear,
+            }),
+          });
+        } catch {
+          // silently ignore; backend will log error
+        }
       }
-      // After sign up, redirect to onboarding to fill required fields
       router.push('/onboarding');
     } catch (err) {
-      // Unexpected errors
-      setError((err as Error).message);
+      setError('Unexpected error. Please try again.');
     }
   }
 

@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, ChangeEvent } from 'react';
+import { useState, ChangeEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 
 export default function NewJobPage() {
   const router = useRouter();
+  const supabase = createClient();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
@@ -18,6 +20,42 @@ export default function NewJobPage() {
   const [jobType, setJobType] = useState('job');
   const [visibility, setVisibility] = useState('public');
   const [uploading, setUploading] = useState(false);
+
+  // Gate access based on role.  We only allow recruiters to post jobs.
+  const [loading, setLoading] = useState(true);
+  const [allowed, setAllowed] = useState(false);
+
+  useEffect(() => {
+    async function checkRole() {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          // redirect unauthenticated users to login
+          router.replace('/auth/login');
+          return;
+        }
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        if (profile && profile.role === 'recruiter') {
+          setAllowed(true);
+        } else {
+          // Redirect non‑recruiters to dashboard
+          router.replace('/dashboard');
+        }
+      } catch (err) {
+        // On error, treat as not allowed
+        router.replace('/dashboard');
+      } finally {
+        setLoading(false);
+      }
+    }
+    checkRole();
+  }, [supabase, router]);
 
   /**
    * Handle file upload and invoke the parse API.  When a file is selected
@@ -51,30 +89,42 @@ export default function NewJobPage() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    const res = await fetch('/api/jobs', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        title,
-        description,
-        location,
-        salary,
-        companyName: companyName || undefined,
-        companyLogoUrl: companyLogoUrl || undefined,
-        workType,
-        jobType,
-        visibility,
-      }),
-    });
-    if (res.ok) {
-      const { id } = await res.json();
-      router.push(`/jobs/${id}`);
-    } else {
-      const data = await res.json();
-      setError(data.error || 'Unable to create job');
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          location,
+          salary,
+          companyName: companyName || undefined,
+          companyLogoUrl: companyLogoUrl || undefined,
+          workType,
+          jobType,
+          visibility,
+        }),
+      });
+      if (res.ok) {
+        const { id } = await res.json();
+        router.push(`/jobs/${id}`);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.error || 'Unable to create job');
+      }
+    } catch (err) {
+      setError('Unexpected error. Please try again.');
     }
+  }
+
+  // Show nothing while loading or when not allowed
+  if (loading) {
+    return null;
+  }
+  if (!allowed) {
+    return null;
   }
 
   return (

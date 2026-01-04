@@ -3,6 +3,13 @@ import React from 'react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
+
+// Dynamically import the NavBar to avoid issues during static build.  The
+// NavBar uses Supabase client (a browser‑only module) so it must be
+// loaded on the client side.  Using next/dynamic with ssr: false
+// ensures it won't run during server rendering.
+const NavBar = dynamic(() => import('../components/NavBar'), { ssr: false });
 
 export const metadata: Metadata = {
   title: 'JobLinca',
@@ -17,102 +24,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-gray-900 text-gray-100 relative">
-        {/* Global site header */}
+        {/* Global site header with dynamic navigation */}
         <header className="w-full z-50">
-          <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 py-4">
-            <Link href="/" className="flex items-center">
-              {/* Use a single combined logo image for the header.  The uploaded
-                 artwork includes both the icon and text and is scaled up
-                 to make it the most prominent element in the navbar. */}
-              <Image
-                src="/assets/header-logo.png"
-                alt="JobLinca logo"
-                width={220}
-                height={60}
-                priority
-                className="object-contain"
-              />
-            </Link>
-            {/* Primary navigation */}
-            <ul className="hidden md:flex items-center space-x-8 text-sm font-medium">
-              <li>
-                <Link href="/" className="hover:text-yellow-400 transition-colors">
-                  Home
-                </Link>
-              </li>
-              <li>
-                <Link href="/jobs" className="hover:text-yellow-400 transition-colors">
-                  Jobs
-                </Link>
-              </li>
-              <li>
-                <Link href="/learn-more/jobseekers" className="hover:text-yellow-400 transition-colors">
-                  For Job Seekers
-                </Link>
-              </li>
-              <li>
-                <Link href="/learn-more/recruiters" className="hover:text-yellow-400 transition-colors">
-                  For Recruiters
-                </Link>
-              </li>
-              <li>
-                <Link href="/global-jobs" className="hover:text-yellow-400 transition-colors">
-                  Global Jobs
-                </Link>
-              </li>
-              <li>
-                <Link href="/resume" className="hover:text-yellow-400 transition-colors">
-                  CV Builder
-                </Link>
-              </li>
-            </ul>
-            {/* Auth actions */}
-            <div className="hidden md:flex items-center space-x-4">
-              <Link
-                href="/auth/login"
-                className="px-4 py-2 rounded text-sm font-medium hover:underline"
-              >
-                Login
-              </Link>
-              <Link
-                href="/auth/register?role=candidate"
-                className="px-4 py-2 rounded text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-              >
-                Get Started
-              </Link>
-            </div>
-          </nav>
+          <NavBar />
         </header>
-        {/* Mobile navigation */}
-        <div className="md:hidden px-4 pb-6">
-          {/* simple stacked nav for small screens with larger text and spacing */}
-          <nav className="flex flex-col space-y-4 text-base font-medium mt-4">
-            <Link href="/" className="hover:text-yellow-400">
-              Home
-            </Link>
-            <Link href="/jobs" className="hover:text-yellow-400">
-              Jobs
-            </Link>
-            <Link href="/learn-more/jobseekers" className="hover:text-yellow-400">
-              Job Seekers
-            </Link>
-            <Link href="/learn-more/recruiters" className="hover:text-yellow-400">
-              Recruiters
-            </Link>
-            <Link href="/global-jobs" className="hover:text-yellow-400">
-              Global Jobs
-            </Link>
-            <Link href="/resume" className="hover:text-yellow-400">
-              CV Builder
-            </Link>
-            <Link href="/auth/login" className="hover:text-yellow-400">
-              Login
-            </Link>
-            <Link href="/auth/register?role=candidate" className="hover:text-yellow-400">
-              Get Started
-            </Link>
-          </nav>
-        </div>
         {children}
       </body>
     </html>
