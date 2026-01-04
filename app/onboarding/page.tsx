@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 interface Profile {
   id: string;
@@ -13,191 +13,237 @@ interface Profile {
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Form state
-  const [fullName, setFullName] = useState('');
-  const [location, setLocation] = useState('');
-  const [headline, setHeadline] = useState('');
-  const [resumeUrl, setResumeUrl] = useState('');
-  const [schoolStatus, setSchoolStatus] = useState('');
-  const [portfolio, setPortfolio] = useState('');
-  const [internshipEligible, setInternshipEligible] = useState(true);
-  const [recruiterType, setRecruiterType] = useState('company_hr');
-  const [companyName, setCompanyName] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
+  const [fullName, setFullName] = useState("");
+  const [location, setLocation] = useState("");
+  const [headline, setHeadline] = useState("");
+  const [resumeUrl, setResumeUrl] = useState("");
 
-  // Fetch profile and role‑specific data
+  const [schoolStatus, setSchoolStatus] = useState("");
+  const [portfolio, setPortfolio] = useState("");
+  const [internshipEligible, setInternshipEligible] = useState(true);
+
+  const [recruiterType, setRecruiterType] = useState("company_hr");
+  const [companyName, setCompanyName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+
+  // Fetch profile and role-specific data
   useEffect(() => {
+    let mounted = true;
+
     async function loadProfile() {
       setLoading(true);
+      setError(null);
+
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser();
+
+      if (!mounted) return;
+
       if (userError || !user) {
-        setError('You must be logged in to complete onboarding.');
+        setError("You must be logged in to complete onboarding.");
         setLoading(false);
         return;
       }
-      // Fetch profile
+
       const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
         .single();
+
+      if (!mounted) return;
+
       if (profileError || !profileData) {
-        setError(profileError?.message || 'Unable to load profile');
+        setError(profileError?.message || "Unable to load profile");
         setLoading(false);
         return;
       }
+
       setProfile(profileData as Profile);
 
-      // Pre‑fill full name
+      // Pre-fill full name
       if (profileData.full_name) setFullName(profileData.full_name);
 
-      // Fetch role specific rows and set defaults
-      if (profileData.role === 'job_seeker') {
-        const { data, error } = await supabase
-          .from('job_seeker_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-        if (!error && data) {
-          setLocation(data.location || '');
-          setHeadline(data.headline || '');
-          setResumeUrl(data.resume_url || '');
+      // Role-specific prefill
+      if (profileData.role === "job_seeker") {
+        const { data } = await supabase
+          .from("job_seeker_profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (data) {
+          setLocation(data.location || "");
+          setHeadline(data.headline || "");
+          setResumeUrl(data.resume_url || "");
         }
-      } else if (profileData.role === 'talent') {
-        const { data, error } = await supabase
-          .from('talent_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-        if (!error && data) {
-          setSchoolStatus(data.school_status || '');
-          setPortfolio(data.portfolio ? JSON.stringify(data.portfolio) : '');
-          setInternshipEligible(data.internship_eligible);
+      } else if (profileData.role === "talent") {
+        const { data } = await supabase
+          .from("talent_profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (data) {
+          setSchoolStatus(data.school_status || "");
+          setPortfolio(data.portfolio ? JSON.stringify(data.portfolio) : "");
+          setInternshipEligible(!!data.internship_eligible);
         }
-      } else if (profileData.role === 'recruiter') {
-        const { data, error } = await supabase
-          .from('recruiter_profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-        if (!error && data) {
-          setRecruiterType(data.recruiter_type || 'company_hr');
-          setCompanyName(data.company_name || '');
-          setContactEmail(data.contact_email || '');
-          setContactPhone(data.contact_phone || '');
+      } else if (profileData.role === "recruiter") {
+        const { data } = await supabase
+          .from("recruiter_profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (data) {
+          setRecruiterType(data.recruiter_type || "company_hr");
+          setCompanyName(data.company_name || "");
+          setContactEmail(data.contact_email || "");
+          setContactPhone(data.contact_phone || "");
         }
       }
 
       setLoading(false);
     }
+
     loadProfile();
+
+    return () => {
+      mounted = false;
+    };
   }, [supabase]);
+
+  // If already complete, redirect (use refresh + replace to fix nav update timing)
+  useEffect(() => {
+    if (loading || !profile) return;
+
+    let missing = false;
+
+    if (profile.role === "job_seeker") {
+      missing = !location || !headline || !resumeUrl;
+    } else if (profile.role === "talent") {
+      missing = !schoolStatus || !portfolio;
+    } else if (profile.role === "recruiter") {
+      missing = !companyName || !contactEmail || !contactPhone;
+    }
+
+    if (!missing) {
+      router.refresh();
+      router.replace("/dashboard");
+    }
+  }, [
+    loading,
+    profile,
+    location,
+    headline,
+    resumeUrl,
+    schoolStatus,
+    portfolio,
+    companyName,
+    contactEmail,
+    contactPhone,
+    router,
+  ]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!profile) return;
+
     setError(null);
     setLoading(true);
-    try {
-      if (profile.role === 'job_seeker') {
-        // Update profiles full name if changed
-        const updates: any = {};
-        if (fullName && fullName !== profile.full_name) updates.full_name = fullName;
-        if (Object.keys(updates).length > 0) {
-          const { error: profileUpdateError } = await supabase
-            .from('profiles')
-            .update(updates)
-            .eq('id', profile.id);
-          if (profileUpdateError) throw profileUpdateError;
-        }
-        // Upsert job seeker profile
-        const { error } = await supabase
-          .from('job_seeker_profiles')
-          .upsert({
-            user_id: profile.id,
-            location: location || null,
-            headline: headline || null,
-            resume_url: resumeUrl || null,
-          }, { onConflict: 'user_id' });
-        if (error) throw error;
-      } else if (profile.role === 'talent') {
-        const updates: any = {};
-        if (fullName && fullName !== profile.full_name) updates.full_name = fullName;
-        if (Object.keys(updates).length > 0) {
-          const { error: profileUpdateError } = await supabase
-            .from('profiles')
-            .update(updates)
-            .eq('id', profile.id);
-          if (profileUpdateError) throw profileUpdateError;
-        }
-        // Upsert talent profile
-        const { error } = await supabase
-          .from('talent_profiles')
-          .upsert({
-            user_id: profile.id,
-            school_status: schoolStatus || null,
-            portfolio: portfolio ? JSON.parse(portfolio) : null,
-            internship_eligible: internshipEligible,
-          }, { onConflict: 'user_id' });
-        if (error) throw error;
-      } else if (profile.role === 'recruiter') {
-        const updates: any = {};
-        if (fullName && fullName !== profile.full_name) updates.full_name = fullName;
-        if (Object.keys(updates).length > 0) {
-          const { error: profileUpdateError } = await supabase
-            .from('profiles')
-            .update(updates)
-            .eq('id', profile.id);
-          if (profileUpdateError) throw profileUpdateError;
-        }
-        const { error } = await supabase
-          .from('recruiter_profiles')
-          .upsert({
-            user_id: profile.id,
-            recruiter_type: recruiterType,
-            company_name: companyName || null,
-            contact_email: contactEmail || null,
-            contact_phone: contactPhone || null,
-          }, { onConflict: 'user_id' });
-        if (error) throw error;
-      }
-      // On success redirect to dashboard
-      router.push('/dashboard');
-    } catch (err: any) {
-      setError(err?.message || 'Failed to update profile');
-    } finally {
-      setLoading(false);
-    }
-  }
 
-  // Determine missing fields to decide whether to show form or redirect
-  useEffect(() => {
-    if (!loading && profile) {
-      let missing = false;
-      if (profile.role === 'job_seeker') {
-        missing = !location || !headline || !resumeUrl;
-      } else if (profile.role === 'talent') {
-        missing = !schoolStatus || !portfolio;
-      } else if (profile.role === 'recruiter') {
-        missing = !companyName || !contactEmail || !contactPhone;
-      } else {
-        missing = false;
+    try {
+      // Update profiles.full_name if changed
+      if (fullName && fullName !== profile.full_name) {
+        const { error: profileUpdateError } = await supabase
+          .from("profiles")
+          .update({ full_name: fullName })
+          .eq("id", profile.id);
+
+        if (profileUpdateError) throw profileUpdateError;
       }
-      if (!missing) {
-        // Already complete: go to dashboard
-        router.push('/dashboard');
+
+      if (profile.role === "job_seeker") {
+        const { error } = await supabase
+          .from("job_seeker_profiles")
+          .upsert(
+            {
+              user_id: profile.id,
+              location: location || null,
+              headline: headline || null,
+              resume_url: resumeUrl || null,
+            },
+            { onConflict: "user_id" }
+          );
+
+        if (error) throw error;
       }
+
+      if (profile.role === "talent") {
+        let parsedPortfolio: any = null;
+
+        if (portfolio) {
+          try {
+            parsedPortfolio = JSON.parse(portfolio);
+          } catch {
+            throw new Error("Portfolio must be valid JSON (example: [{\"title\":\"Project\",\"link\":\"...\"}])");
+          }
+        }
+
+        const { error } = await supabase
+          .from("talent_profiles")
+          .upsert(
+            {
+              user_id: profile.id,
+              school_status: schoolStatus || null,
+              portfolio: parsedPortfolio,
+              internship_eligible: internshipEligible,
+            },
+            { onConflict: "user_id" }
+          );
+
+        if (error) throw error;
+      }
+
+      if (profile.role === "recruiter") {
+        const { error } = await supabase
+          .from("recruiter_profiles")
+          .upsert(
+            {
+              user_id: profile.id,
+              recruiter_type: recruiterType,
+              company_name: companyName || null,
+              contact_email: contactEmail || null,
+              contact_phone: contactPhone || null,
+            },
+            { onConflict: "user_id" }
+          );
+
+        if (error) throw error;
+      }
+
+      // ✅ Critical fix: ensure navbar updates immediately
+      router.refresh();
+      router.replace("/dashboard");
+    } catch (err: any) {
+      setError(err?.message || "Failed to update profile");
+      setLoading(false);
+      return;
     }
-  }, [loading, profile, location, headline, resumeUrl, schoolStatus, portfolio, companyName, contactEmail, contactPhone, router]);
+
+    setLoading(false);
+  }
 
   if (loading) {
     return (
@@ -215,16 +261,19 @@ export default function OnboardingPage() {
     );
   }
 
-  if (!profile) {
-    return null;
-  }
+  if (!profile) return null;
 
-  // Render forms based on role
   return (
     <main className="min-h-screen flex items-center justify-center p-4 text-gray-100">
-      <form onSubmit={handleSubmit} className="bg-gray-700 shadow-md rounded-lg px-8 pt-6 pb-8 mb-4 max-w-lg w-full">
+      <form
+        onSubmit={handleSubmit}
+        className="bg-gray-700 shadow-md rounded-lg px-8 pt-6 pb-8 mb-4 max-w-lg w-full"
+      >
         <h2 className="text-2xl font-semibold mb-4">Complete Your Profile</h2>
-        <p className="mb-4 text-gray-300">Please provide the required information to finish onboarding.</p>
+        <p className="mb-4 text-gray-300">
+          Please provide the required information to finish onboarding.
+        </p>
+
         {/* Full name for all roles */}
         <label className="block text-sm font-medium mb-2 text-gray-300">
           Full Name
@@ -237,7 +286,8 @@ export default function OnboardingPage() {
             required
           />
         </label>
-        {profile.role === 'job_seeker' && (
+
+        {profile.role === "job_seeker" && (
           <>
             <label className="block text-sm font-medium mb-2 text-gray-300">
               Location
@@ -250,6 +300,7 @@ export default function OnboardingPage() {
                 required
               />
             </label>
+
             <label className="block text-sm font-medium mb-2 text-gray-300">
               Professional Headline
               <input
@@ -261,6 +312,7 @@ export default function OnboardingPage() {
                 required
               />
             </label>
+
             <label className="block text-sm font-medium mb-4 text-gray-300">
               Resume URL
               <input
@@ -274,7 +326,8 @@ export default function OnboardingPage() {
             </label>
           </>
         )}
-        {profile.role === 'talent' && (
+
+        {profile.role === "talent" && (
           <>
             <label className="block text-sm font-medium mb-2 text-gray-300">
               School Status
@@ -287,8 +340,9 @@ export default function OnboardingPage() {
                 required
               />
             </label>
+
             <label className="block text-sm font-medium mb-2 text-gray-300">
-              Portfolio (JSON or URL)
+              Portfolio (JSON)
               <textarea
                 value={portfolio}
                 onChange={(e) => setPortfolio(e.target.value)}
@@ -297,6 +351,7 @@ export default function OnboardingPage() {
                 required
               />
             </label>
+
             <label className="flex items-center mb-4">
               <input
                 type="checkbox"
@@ -304,11 +359,14 @@ export default function OnboardingPage() {
                 onChange={(e) => setInternshipEligible(e.target.checked)}
                 className="mr-2"
               />
-              <span className="text-sm text-gray-300">I am eligible for internships</span>
+              <span className="text-sm text-gray-300">
+                I am eligible for internships
+              </span>
             </label>
           </>
         )}
-        {profile.role === 'recruiter' && (
+
+        {profile.role === "recruiter" && (
           <>
             <label className="block text-sm font-medium mb-2 text-gray-300">
               Recruiter Type
@@ -324,6 +382,7 @@ export default function OnboardingPage() {
                 <option value="institution">Institution</option>
               </select>
             </label>
+
             <label className="block text-sm font-medium mb-2 text-gray-300">
               Company Name
               <input
@@ -335,6 +394,7 @@ export default function OnboardingPage() {
                 required
               />
             </label>
+
             <label className="block text-sm font-medium mb-2 text-gray-300">
               Contact Email
               <input
@@ -346,6 +406,7 @@ export default function OnboardingPage() {
                 required
               />
             </label>
+
             <label className="block text-sm font-medium mb-4 text-gray-300">
               Contact Phone
               <input
@@ -359,7 +420,9 @@ export default function OnboardingPage() {
             </label>
           </>
         )}
+
         {error && <p className="text-red-500 mb-4">{error}</p>}
+
         <div className="flex justify-end">
           <button
             type="submit"
