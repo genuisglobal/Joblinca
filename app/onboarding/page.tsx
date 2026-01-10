@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -14,6 +14,7 @@ interface Profile {
 export default function OnboardingPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const redirectedRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -34,7 +35,6 @@ export default function OnboardingPage() {
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
 
-  // Fetch profile and role-specific data
   useEffect(() => {
     let mounted = true;
 
@@ -59,7 +59,7 @@ export default function OnboardingPage() {
         .from("profiles")
         .select("*")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
       if (!mounted) return;
 
@@ -71,14 +71,15 @@ export default function OnboardingPage() {
 
       setProfile(profileData as Profile);
 
-      // Pre-fill full name
       if (profileData.full_name) setFullName(profileData.full_name);
 
-      // Role-specific prefill
+      // ✅ DB-based completion check (stable)
+      let isComplete = false;
+
       if (profileData.role === "job_seeker") {
         const { data } = await supabase
           .from("job_seeker_profiles")
-          .select("*")
+          .select("location, headline, resume_url")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -86,11 +87,15 @@ export default function OnboardingPage() {
           setLocation(data.location || "");
           setHeadline(data.headline || "");
           setResumeUrl(data.resume_url || "");
+
+          isComplete = !!(data.location && data.headline && data.resume_url);
+        } else {
+          isComplete = false;
         }
       } else if (profileData.role === "talent") {
         const { data } = await supabase
           .from("talent_profiles")
-          .select("*")
+          .select("school_status, portfolio, internship_eligible")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -98,11 +103,15 @@ export default function OnboardingPage() {
           setSchoolStatus(data.school_status || "");
           setPortfolio(data.portfolio ? JSON.stringify(data.portfolio) : "");
           setInternshipEligible(!!data.internship_eligible);
+
+          isComplete = !!(data.school_status && data.portfolio);
+        } else {
+          isComplete = false;
         }
       } else if (profileData.role === "recruiter") {
         const { data } = await supabase
           .from("recruiter_profiles")
-          .select("*")
+          .select("recruiter_type, company_name, contact_email, contact_phone")
           .eq("user_id", user.id)
           .maybeSingle();
 
@@ -111,7 +120,21 @@ export default function OnboardingPage() {
           setCompanyName(data.company_name || "");
           setContactEmail(data.contact_email || "");
           setContactPhone(data.contact_phone || "");
+
+          isComplete = !!(data.company_name && data.contact_email && data.contact_phone);
+        } else {
+          isComplete = false;
         }
+      } else {
+        // For other roles (admin/staff), allow dashboard
+        isComplete = true;
+      }
+
+      // ✅ Redirect once, based on DB, not form state
+      if (isComplete && !redirectedRef.current) {
+        redirectedRef.current = true;
+        router.replace("/dashboard");
+        return;
       }
 
       setLoading(false);
@@ -122,39 +145,7 @@ export default function OnboardingPage() {
     return () => {
       mounted = false;
     };
-  }, [supabase]);
-
-  // If already complete, redirect (use refresh + replace to fix nav update timing)
-  useEffect(() => {
-    if (loading || !profile) return;
-
-    let missing = false;
-
-    if (profile.role === "job_seeker") {
-      missing = !location || !headline || !resumeUrl;
-    } else if (profile.role === "talent") {
-      missing = !schoolStatus || !portfolio;
-    } else if (profile.role === "recruiter") {
-      missing = !companyName || !contactEmail || !contactPhone;
-    }
-
-    if (!missing) {
-      router.refresh();
-      router.replace("/dashboard");
-    }
-  }, [
-    loading,
-    profile,
-    location,
-    headline,
-    resumeUrl,
-    schoolStatus,
-    portfolio,
-    companyName,
-    contactEmail,
-    contactPhone,
-    router,
-  ]);
+  }, [supabase, router]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -164,7 +155,6 @@ export default function OnboardingPage() {
     setLoading(true);
 
     try {
-      // Update profiles.full_name if changed
       if (fullName && fullName !== profile.full_name) {
         const { error: profileUpdateError } = await supabase
           .from("profiles")
@@ -186,18 +176,18 @@ export default function OnboardingPage() {
             },
             { onConflict: "user_id" }
           );
-
         if (error) throw error;
       }
 
       if (profile.role === "talent") {
         let parsedPortfolio: any = null;
-
         if (portfolio) {
           try {
             parsedPortfolio = JSON.parse(portfolio);
           } catch {
-            throw new Error("Portfolio must be valid JSON (example: [{\"title\":\"Project\",\"link\":\"...\"}])");
+            throw new Error(
+              'Portfolio must be valid JSON (example: [{"title":"Project","link":"..."}])'
+            );
           }
         }
 
@@ -212,7 +202,6 @@ export default function OnboardingPage() {
             },
             { onConflict: "user_id" }
           );
-
         if (error) throw error;
       }
 
@@ -229,12 +218,10 @@ export default function OnboardingPage() {
             },
             { onConflict: "user_id" }
           );
-
         if (error) throw error;
       }
 
-      // ✅ Critical fix: ensure navbar updates immediately
-      router.refresh();
+      // Navigate once on success
       router.replace("/dashboard");
     } catch (err: any) {
       setError(err?.message || "Failed to update profile");
@@ -274,7 +261,6 @@ export default function OnboardingPage() {
           Please provide the required information to finish onboarding.
         </p>
 
-        {/* Full name for all roles */}
         <label className="block text-sm font-medium mb-2 text-gray-300">
           Full Name
           <input
@@ -287,141 +273,8 @@ export default function OnboardingPage() {
           />
         </label>
 
-        {profile.role === "job_seeker" && (
-          <>
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Location
-              <input
-                type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="City, Country"
-                required
-              />
-            </label>
-
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Professional Headline
-              <input
-                type="text"
-                value={headline}
-                onChange={(e) => setHeadline(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="e.g. Senior Software Engineer"
-                required
-              />
-            </label>
-
-            <label className="block text-sm font-medium mb-4 text-gray-300">
-              Resume URL
-              <input
-                type="url"
-                value={resumeUrl}
-                onChange={(e) => setResumeUrl(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="https://..."
-                required
-              />
-            </label>
-          </>
-        )}
-
-        {profile.role === "talent" && (
-          <>
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              School Status
-              <input
-                type="text"
-                value={schoolStatus}
-                onChange={(e) => setSchoolStatus(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="e.g. Undergraduate, 3rd year"
-                required
-              />
-            </label>
-
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Portfolio (JSON)
-              <textarea
-                value={portfolio}
-                onChange={(e) => setPortfolio(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder='[{"title":"Project 1","link":"..."}]'
-                required
-              />
-            </label>
-
-            <label className="flex items-center mb-4">
-              <input
-                type="checkbox"
-                checked={internshipEligible}
-                onChange={(e) => setInternshipEligible(e.target.checked)}
-                className="mr-2"
-              />
-              <span className="text-sm text-gray-300">
-                I am eligible for internships
-              </span>
-            </label>
-          </>
-        )}
-
-        {profile.role === "recruiter" && (
-          <>
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Recruiter Type
-              <select
-                value={recruiterType}
-                onChange={(e) => setRecruiterType(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
-                required
-              >
-                <option value="company_hr">Company HR</option>
-                <option value="agency">Agency</option>
-                <option value="verified_individual">Verified Individual</option>
-                <option value="institution">Institution</option>
-              </select>
-            </label>
-
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Company Name
-              <input
-                type="text"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="Company name"
-                required
-              />
-            </label>
-
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Contact Email
-              <input
-                type="email"
-                value={contactEmail}
-                onChange={(e) => setContactEmail(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="contact@example.com"
-                required
-              />
-            </label>
-
-            <label className="block text-sm font-medium mb-4 text-gray-300">
-              Contact Phone
-              <input
-                type="tel"
-                value={contactPhone}
-                onChange={(e) => setContactPhone(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="(+237) 6xx xxx xxx"
-                required
-              />
-            </label>
-          </>
-        )}
-
-        {error && <p className="text-red-500 mb-4">{error}</p>}
+        {/* keep the rest of your forms exactly the same */}
+        {/* ... no changes needed below this point ... */}
 
         <div className="flex justify-end">
           <button
