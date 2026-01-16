@@ -39,24 +39,34 @@ export default function NewJobPage() {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) {
-          // redirect unauthenticated users to login
-          router.replace('/auth/login');
+          // redirect unauthenticated users to login with redirect back to this page
+          router.replace('/auth/login?redirect=/jobs/new');
           return;
         }
-        const { data: profile } = await supabase
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', user.id)
           .single();
+
+        if (profileError) {
+          console.error('Profile fetch error:', profileError);
+          setError('Unable to verify your account. Please try logging in again.');
+          setLoading(false);
+          return;
+        }
+
         if (profile && profile.role === 'recruiter') {
           setAllowed(true);
         } else {
-          // Redirect non‑recruiters to dashboard
+          // Redirect non‑recruiters to dashboard with message
+          console.log('User role:', profile?.role, '- not a recruiter');
           router.replace('/dashboard');
         }
       } catch (err) {
-        // On error, treat as not allowed
-        router.replace('/dashboard');
+        console.error('Role check error:', err);
+        // On error, show error instead of redirecting
+        setError('Unable to verify your permissions. Please try again.');
       } finally {
         setLoading(false);
       }
@@ -152,6 +162,49 @@ export default function NewJobPage() {
             />
           </svg>
           <p className="text-gray-400">Loading...</p>
+        </div>
+      </main>
+    );
+  }
+
+  // Show error if permission check failed
+  if (error && !allowed) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
+            <svg
+              className="w-8 h-8 text-red-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-100 mb-2">
+            Access Error
+          </h2>
+          <p className="text-gray-400 mb-6">{error}</p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={() => router.push('/auth/login?redirect=/jobs/new')}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Log In
+            </button>
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="px-6 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+            >
+              Go to Dashboard
+            </button>
+          </div>
         </div>
       </main>
     );
