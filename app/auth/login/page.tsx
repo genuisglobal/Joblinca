@@ -1,14 +1,25 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [redirectTo, setRedirectTo] = useState('/dashboard');
+
+  useEffect(() => {
+    // Get redirect URL from query params
+    const redirect = searchParams.get('redirect');
+    if (redirect) {
+      setRedirectTo(redirect);
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -23,7 +34,7 @@ export default function LoginPage() {
         setError(error.message);
         setIsLoading(false);
       } else {
-        window.location.href = '/dashboard';
+        window.location.href = redirectTo;
       }
     } catch (err) {
       setError('Unexpected error. Please try again.');
