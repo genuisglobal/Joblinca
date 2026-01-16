@@ -29,6 +29,8 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   // Loading state
   const [isLoading, setIsLoading] = useState(false);
+  // Success state (for email confirmation required)
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
 
   /**
    * Reset all form fields and return to the role selection screen.
@@ -68,6 +70,7 @@ export default function RegisterPage() {
             institution: selectedRole === 'talent' ? institution : undefined,
             graduationYear: selectedRole === 'talent' ? graduationYear : undefined,
           },
+          emailRedirectTo: `${window.location.origin}/onboarding`,
         },
       });
       if (signUpError) {
@@ -76,6 +79,8 @@ export default function RegisterPage() {
         return;
       }
       const user = signUpData?.user;
+      const session = signUpData?.session;
+
       if (user && selectedRole) {
         // Call API to create profile and role‑specific row
         try {
@@ -96,7 +101,16 @@ export default function RegisterPage() {
           // silently ignore; backend will log error
         }
       }
-      window.location.href = '/onboarding';
+
+      // Check if we have a session (email confirmation not required)
+      if (session) {
+        // User is logged in, redirect to onboarding
+        window.location.href = '/onboarding';
+      } else if (user) {
+        // Email confirmation is required - show success message
+        setIsLoading(false);
+        setShowEmailConfirmation(true);
+      }
     } catch (err) {
       setError('Unexpected error. Please try again.');
       setIsLoading(false);
@@ -295,6 +309,44 @@ export default function RegisterPage() {
           </button>
         </div>
       </form>
+    );
+  }
+
+  // Show email confirmation success message
+  if (showEmailConfirmation) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-700 shadow rounded-lg p-8 text-center space-y-6 text-gray-100">
+          <div className="w-16 h-16 mx-auto bg-green-500/20 rounded-full flex items-center justify-center">
+            <svg
+              className="w-8 h-8 text-green-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-semibold">Check Your Email</h2>
+          <p className="text-gray-300">
+            We have sent a confirmation link to <strong>{email}</strong>. Please check your email and click the link to activate your account.
+          </p>
+          <p className="text-sm text-gray-400">
+            Did not receive the email? Check your spam folder or try registering again.
+          </p>
+          <button
+            onClick={() => router.push('/auth/login')}
+            className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            Go to Login
+          </button>
+        </div>
+      </main>
     );
   }
 
