@@ -3,6 +3,9 @@
 import { useState, ChangeEvent, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { CustomQuestion } from '@/lib/questions';
+import QuestionBuilder from './QuestionBuilder';
+import AIQuestionGenerator from './AIQuestionGenerator';
 
 export default function NewJobPage() {
   const router = useRouter();
@@ -20,6 +23,10 @@ export default function NewJobPage() {
   const [jobType, setJobType] = useState('job');
   const [visibility, setVisibility] = useState('public');
   const [uploading, setUploading] = useState(false);
+
+  // Custom screening questions
+  const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
+  const [showAIGenerator, setShowAIGenerator] = useState(false);
 
   // Gate access based on role.  We only allow recruiters to post jobs.
   const [loading, setLoading] = useState(true);
@@ -105,6 +112,7 @@ export default function NewJobPage() {
           workType,
           jobType,
           visibility,
+          customQuestions: customQuestions.length > 0 ? customQuestions : undefined,
         }),
       });
       if (res.ok) {
@@ -241,6 +249,14 @@ export default function NewJobPage() {
             required
           />
         </div>
+
+        {/* Custom Screening Questions */}
+        <QuestionBuilder
+          questions={customQuestions}
+          onChange={setCustomQuestions}
+          onOpenAIGenerator={() => setShowAIGenerator(true)}
+        />
+
         <button
           type="submit"
           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
@@ -248,6 +264,18 @@ export default function NewJobPage() {
           Create Job
         </button>
       </form>
+
+      {/* AI Question Generator Modal */}
+      {showAIGenerator && (
+        <AIQuestionGenerator
+          jobTitle={title}
+          jobDescription={description}
+          onClose={() => setShowAIGenerator(false)}
+          onAddQuestions={(questions) => {
+            setCustomQuestions((prev) => [...prev, ...questions]);
+          }}
+        />
+      )}
     </main>
   );
 }
