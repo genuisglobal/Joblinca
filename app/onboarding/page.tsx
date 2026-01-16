@@ -1,15 +1,10 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-
-interface Profile {
-  id: string;
-  full_name: string | null;
-  role: string;
-  phone: string | null;
-}
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { OnboardingStatus } from '@/lib/onboarding/types';
+import OnboardingWizard from './components/OnboardingWizard';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -17,274 +12,147 @@ export default function OnboardingPage() {
   const redirectedRef = useRef(false);
 
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // Form state
-  const [fullName, setFullName] = useState("");
-  const [location, setLocation] = useState("");
-  const [headline, setHeadline] = useState("");
-  const [resumeUrl, setResumeUrl] = useState("");
-
-  const [schoolStatus, setSchoolStatus] = useState("");
-  const [portfolio, setPortfolio] = useState("");
-  const [internshipEligible, setInternshipEligible] = useState(true);
-
-  const [recruiterType, setRecruiterType] = useState("company_hr");
-  const [companyName, setCompanyName] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
-  const [contactPhone, setContactPhone] = useState("");
+  const [status, setStatus] = useState<OnboardingStatus | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    async function loadProfile() {
+    async function resolveUserIdWithRetry(): Promise<string | null> {
+      // Quick local check
+      const { data: sessionData } = await supabase.auth.getSession();
+      const sessionUserId = sessionData?.session?.user?.id ?? null;
+      if (sessionUserId) return sessionUserId;
+
+      // Authoritative check
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData?.user?.id) return userData.user.id;
+
+      // Retry after delay
+      await new Promise((r) => setTimeout(r, 350));
+      const { data: sessionData2 } = await supabase.auth.getSession();
+      const sessionUserId2 = sessionData2?.session?.user?.id ?? null;
+      if (sessionUserId2) return sessionUserId2;
+
+      const { data: userData2 } = await supabase.auth.getUser();
+      if (userData2?.user?.id) return userData2.user.id;
+
+      return null;
+    }
+
+    async function loadOnboardingStatus() {
       setLoading(true);
       setError(null);
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
+      const userId = await resolveUserIdWithRetry();
       if (!mounted) return;
 
-      if (userError || !user) {
-        setError("You must be logged in to complete onboarding.");
+      if (!userId) {
         setLoading(false);
+        setError('Session not found. Please log in again.');
+        router.replace('/auth/login');
         return;
       }
 
-      const { data: profileData, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
+      try {
+        // Fetch onboarding status from API
+        const response = await fetch('/api/onboarding/status');
 
-      if (!mounted) return;
+        if (!response.ok) {
+          if (response.status === 401) {
+            router.replace('/auth/login');
+            return;
+          }
+          throw new Error('Failed to load onboarding status');
+        }
 
-      if (profileError || !profileData) {
-        setError(profileError?.message || "Unable to load profile");
+        const data: OnboardingStatus = await response.json();
+
+        if (!mounted) return;
+
+        // If onboarding is already completed or skipped, redirect to dashboard
+        if ((data.isCompleted || data.isSkipped) && !redirectedRef.current) {
+          redirectedRef.current = true;
+          router.replace('/dashboard');
+          return;
+        }
+
+        setStatus(data);
         setLoading(false);
-        return;
+      } catch (err) {
+        if (!mounted) return;
+        setError(err instanceof Error ? err.message : 'Failed to load profile');
+        setLoading(false);
       }
-
-      setProfile(profileData as Profile);
-
-      if (profileData.full_name) setFullName(profileData.full_name);
-
-      // ✅ DB-based completion check (stable)
-      let isComplete = false;
-
-      if (profileData.role === "job_seeker") {
-        const { data } = await supabase
-          .from("job_seeker_profiles")
-          .select("location, headline, resume_url")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (data) {
-          setLocation(data.location || "");
-          setHeadline(data.headline || "");
-          setResumeUrl(data.resume_url || "");
-
-          isComplete = !!(data.location && data.headline && data.resume_url);
-        } else {
-          isComplete = false;
-        }
-      } else if (profileData.role === "talent") {
-        const { data } = await supabase
-          .from("talent_profiles")
-          .select("school_status, portfolio, internship_eligible")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (data) {
-          setSchoolStatus(data.school_status || "");
-          setPortfolio(data.portfolio ? JSON.stringify(data.portfolio) : "");
-          setInternshipEligible(!!data.internship_eligible);
-
-          isComplete = !!(data.school_status && data.portfolio);
-        } else {
-          isComplete = false;
-        }
-      } else if (profileData.role === "recruiter") {
-        const { data } = await supabase
-          .from("recruiter_profiles")
-          .select("recruiter_type, company_name, contact_email, contact_phone")
-          .eq("user_id", user.id)
-          .maybeSingle();
-
-        if (data) {
-          setRecruiterType(data.recruiter_type || "company_hr");
-          setCompanyName(data.company_name || "");
-          setContactEmail(data.contact_email || "");
-          setContactPhone(data.contact_phone || "");
-
-          isComplete = !!(data.company_name && data.contact_email && data.contact_phone);
-        } else {
-          isComplete = false;
-        }
-      } else {
-        // For other roles (admin/staff), allow dashboard
-        isComplete = true;
-      }
-
-      // ✅ Redirect once, based on DB, not form state
-      if (isComplete && !redirectedRef.current) {
-        redirectedRef.current = true;
-        router.replace("/dashboard");
-        return;
-      }
-
-      setLoading(false);
     }
 
-    loadProfile();
+    loadOnboardingStatus();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT') {
+        router.replace('/auth/login');
+      }
+    });
 
     return () => {
       mounted = false;
+      sub.subscription.unsubscribe();
     };
   }, [supabase, router]);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!profile) return;
-
-    setError(null);
-    setLoading(true);
-
-    try {
-      if (fullName && fullName !== profile.full_name) {
-        const { error: profileUpdateError } = await supabase
-          .from("profiles")
-          .update({ full_name: fullName })
-          .eq("id", profile.id);
-
-        if (profileUpdateError) throw profileUpdateError;
-      }
-
-      if (profile.role === "job_seeker") {
-        const { error } = await supabase
-          .from("job_seeker_profiles")
-          .upsert(
-            {
-              user_id: profile.id,
-              location: location || null,
-              headline: headline || null,
-              resume_url: resumeUrl || null,
-            },
-            { onConflict: "user_id" }
-          );
-        if (error) throw error;
-      }
-
-      if (profile.role === "talent") {
-        let parsedPortfolio: any = null;
-        if (portfolio) {
-          try {
-            parsedPortfolio = JSON.parse(portfolio);
-          } catch {
-            throw new Error(
-              'Portfolio must be valid JSON (example: [{"title":"Project","link":"..."}])'
-            );
-          }
-        }
-
-        const { error } = await supabase
-          .from("talent_profiles")
-          .upsert(
-            {
-              user_id: profile.id,
-              school_status: schoolStatus || null,
-              portfolio: parsedPortfolio,
-              internship_eligible: internshipEligible,
-            },
-            { onConflict: "user_id" }
-          );
-        if (error) throw error;
-      }
-
-      if (profile.role === "recruiter") {
-        const { error } = await supabase
-          .from("recruiter_profiles")
-          .upsert(
-            {
-              user_id: profile.id,
-              recruiter_type: recruiterType,
-              company_name: companyName || null,
-              contact_email: contactEmail || null,
-              contact_phone: contactPhone || null,
-            },
-            { onConflict: "user_id" }
-          );
-        if (error) throw error;
-      }
-
-      // Navigate once on success
-      router.replace("/dashboard");
-    } catch (err: any) {
-      setError(err?.message || "Failed to update profile");
-      setLoading(false);
-      return;
-    }
-
-    setLoading(false);
-  }
-
+  // Loading state
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-4 text-gray-100">
-        Loading...
+      <main className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <p className="text-gray-400">Loading your profile...</p>
+        </div>
       </main>
     );
   }
 
+  // Error state
   if (error) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-4 text-red-500">
-        {error}
+      <main className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center">
+            <svg
+              className="w-8 h-8 text-red-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-100 mb-2">
+            Something went wrong
+          </h2>
+          <p className="text-gray-400 mb-6">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
       </main>
     );
   }
 
-  if (!profile) return null;
+  // No status loaded
+  if (!status) {
+    return null;
+  }
 
-  return (
-    <main className="min-h-screen flex items-center justify-center p-4 text-gray-100">
-      <form
-        onSubmit={handleSubmit}
-        className="bg-gray-700 shadow-md rounded-lg px-8 pt-6 pb-8 mb-4 max-w-lg w-full"
-      >
-        <h2 className="text-2xl font-semibold mb-4">Complete Your Profile</h2>
-        <p className="mb-4 text-gray-300">
-          Please provide the required information to finish onboarding.
-        </p>
-
-        <label className="block text-sm font-medium mb-2 text-gray-300">
-          Full Name
-          <input
-            type="text"
-            value={fullName}
-            onChange={(e) => setFullName(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="Your full name"
-            required
-          />
-        </label>
-
-        {/* keep the rest of your forms exactly the same */}
-        {/* ... no changes needed below this point ... */}
-
-        <div className="flex justify-end">
-          <button
-            type="submit"
-            className="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition-colors"
-          >
-            Save and Continue
-          </button>
-        </div>
-      </form>
-    </main>
-  );
+  // Render the wizard
+  return <OnboardingWizard initialStatus={status} />;
 }
