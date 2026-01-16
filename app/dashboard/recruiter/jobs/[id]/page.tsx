@@ -143,6 +143,7 @@ export default async function RecruiterJobDetailPage({
         <ApplicationsTable
           applications={applications || []}
           jobId={params.id}
+          customQuestions={job.custom_questions}
         />
       </div>
     </div>

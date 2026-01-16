@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import StatusBadge from '../../../components/StatusBadge';
+import { CustomQuestion, QuestionAnswer } from '@/lib/questions';
 
 interface Profile {
   id: string;
@@ -16,7 +17,7 @@ interface Application {
   job_id: string;
   applicant_id: string;
   cover_letter: string | null;
-  answers: Record<string, unknown> | null;
+  answers: QuestionAnswer[] | null;
   status: string;
   created_at: string;
   profiles: Profile;
@@ -25,6 +26,7 @@ interface Application {
 interface ApplicationsTableProps {
   applications: Application[];
   jobId: string;
+  customQuestions?: CustomQuestion[] | null;
 }
 
 const statusOptions = [
@@ -38,6 +40,7 @@ const statusOptions = [
 export default function ApplicationsTable({
   applications,
   jobId,
+  customQuestions,
 }: ApplicationsTableProps) {
   const [appStatuses, setAppStatuses] = useState<Record<string, string>>(
     Object.fromEntries(applications.map((app) => [app.id, app.status]))
@@ -166,18 +169,39 @@ export default function ApplicationsTable({
               )}
 
               {/* Custom Answers */}
-              {app.answers && Object.keys(app.answers).length > 0 && (
+              {app.answers && app.answers.length > 0 && customQuestions && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-400 mb-2">
-                    Additional Answers
+                    Screening Questions
                   </h4>
-                  <div className="bg-gray-900 p-4 rounded-lg space-y-2">
-                    {Object.entries(app.answers).map(([question, answer]) => (
-                      <div key={question}>
-                        <p className="text-sm text-gray-400">{question}</p>
-                        <p className="text-gray-300">{String(answer)}</p>
-                      </div>
-                    ))}
+                  <div className="bg-gray-900 p-4 rounded-lg space-y-4">
+                    {app.answers.map((answerObj) => {
+                      const question = customQuestions.find(
+                        (q) => q.id === answerObj.questionId
+                      );
+                      if (!question) return null;
+
+                      let displayAnswer: string;
+                      if (typeof answerObj.answer === 'boolean') {
+                        displayAnswer = answerObj.answer ? 'Yes' : 'No';
+                      } else if (Array.isArray(answerObj.answer)) {
+                        displayAnswer = answerObj.answer.join(', ');
+                      } else {
+                        displayAnswer = String(answerObj.answer);
+                      }
+
+                      return (
+                        <div key={answerObj.questionId}>
+                          <p className="text-sm text-gray-400 mb-1">
+                            {question.question}
+                            {question.required && (
+                              <span className="text-red-400 ml-1">*</span>
+                            )}
+                          </p>
+                          <p className="text-gray-300">{displayAnswer || '-'}</p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { CustomQuestion } from '@/lib/questions';
+import ApplicationForm from './ApplicationForm';
 
 interface Job {
   id: string;
@@ -13,6 +15,7 @@ interface Job {
   work_type: string | null;
   job_type: string | null;
   created_at: string;
+  custom_questions: CustomQuestion[] | null;
 }
 
 interface JobsListProps {
@@ -23,11 +26,8 @@ interface JobsListProps {
 export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
   const [search, setSearch] = useState('');
   const [workTypeFilter, setWorkTypeFilter] = useState('all');
-  const [applyingTo, setApplyingTo] = useState<string | null>(null);
   const [appliedJobs, setAppliedJobs] = useState<Set<string>>(appliedJobIds);
   const [showApplyModal, setShowApplyModal] = useState<Job | null>(null);
-  const [coverLetter, setCoverLetter] = useState('');
-  const [applyError, setApplyError] = useState<string | null>(null);
 
   const filteredJobs = jobs.filter((job) => {
     const matchesSearch =
@@ -41,34 +41,10 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
     return matchesSearch && matchesWorkType;
   });
 
-  const handleApply = async () => {
-    if (!showApplyModal) return;
-
-    setApplyingTo(showApplyModal.id);
-    setApplyError(null);
-
-    try {
-      const response = await fetch('/api/applications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: showApplyModal.id,
-          coverLetter: coverLetter || null,
-        }),
-      });
-
-      if (response.ok) {
-        setAppliedJobs((prev) => new Set([...prev, showApplyModal.id]));
-        setShowApplyModal(null);
-        setCoverLetter('');
-      } else {
-        const data = await response.json();
-        setApplyError(data.error || 'Failed to submit application');
-      }
-    } catch (error) {
-      setApplyError('An unexpected error occurred');
-    } finally {
-      setApplyingTo(null);
+  const handleApplicationSuccess = () => {
+    if (showApplyModal) {
+      setAppliedJobs((prev) => new Set([...prev, showApplyModal.id]));
+      setShowApplyModal(null);
     }
   };
 
@@ -227,80 +203,11 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
 
       {/* Apply Modal */}
       {showApplyModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-xl max-w-lg w-full p-6">
-            <h2 className="text-xl font-semibold text-white mb-2">
-              Apply to {showApplyModal.title}
-            </h2>
-            <p className="text-gray-400 mb-6">
-              {showApplyModal.company_name || 'Company'}
-            </p>
-
-            {applyError && (
-              <div className="bg-red-900/30 border border-red-700 rounded-lg p-4 text-red-400 mb-4">
-                {applyError}
-              </div>
-            )}
-
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Cover Letter (Optional)
-              </label>
-              <textarea
-                value={coverLetter}
-                onChange={(e) => setCoverLetter(e.target.value)}
-                rows={6}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Tell the employer why you're a great fit for this role..."
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowApplyModal(null);
-                  setCoverLetter('');
-                  setApplyError(null);
-                }}
-                className="flex-1 px-4 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleApply}
-                disabled={applyingTo === showApplyModal.id}
-                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {applyingTo === showApplyModal.id ? (
-                  <>
-                    <svg
-                      className="animate-spin w-5 h-5"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Submitting...
-                  </>
-                ) : (
-                  'Submit Application'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ApplicationForm
+          job={showApplyModal}
+          onClose={() => setShowApplyModal(null)}
+          onSuccess={handleApplicationSuccess}
+        />
       )}
     </>
   );
