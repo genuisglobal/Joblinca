@@ -35,6 +35,7 @@ export default async function TalentProfilePage() {
           lastName: profile?.last_name || '',
           phone: profile?.phone || '',
           avatarUrl: profile?.avatar_url || '',
+          resumeUrl: talentProfile?.resume_url || '',
           schoolName: talentProfile?.school_name || '',
           graduationYear: talentProfile?.graduation_year || null,
           fieldOfStudy: talentProfile?.field_of_study || '',

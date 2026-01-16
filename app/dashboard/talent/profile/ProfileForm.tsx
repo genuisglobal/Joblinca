@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface Skill {
@@ -13,6 +13,7 @@ interface ProfileData {
   lastName: string;
   phone: string;
   avatarUrl: string;
+  resumeUrl: string;
   schoolName: string;
   graduationYear: number | null;
   fieldOfStudy: string;
@@ -37,11 +38,85 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
   const [newSkill, setNewSkill] = useState('');
   const [newRating, setNewRating] = useState(3);
 
+  // File upload states
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingAvatar(true);
+    setError(null);
+
+    try {
+      const uploadData = new FormData();
+      uploadData.append('avatar', file);
+
+      const response = await fetch('/api/profile/avatar', {
+        method: 'POST',
+        body: uploadData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setFormData((prev) => ({ ...prev, avatarUrl: data.avatarUrl }));
+        router.refresh();
+      } else {
+        setError(data.error || 'Failed to upload avatar');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred while uploading avatar');
+    } finally {
+      setUploadingAvatar(false);
+      if (avatarInputRef.current) {
+        avatarInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingResume(true);
+    setError(null);
+
+    try {
+      const uploadData = new FormData();
+      uploadData.append('resume', file);
+
+      const response = await fetch('/api/profile/resume', {
+        method: 'POST',
+        body: uploadData,
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setFormData((prev) => ({ ...prev, resumeUrl: data.resumeUrl }));
+        router.refresh();
+      } else {
+        setError(data.error || 'Failed to upload resume');
+      }
+    } catch (err) {
+      setError('An unexpected error occurred while uploading resume');
+    } finally {
+      setUploadingResume(false);
+      if (resumeInputRef.current) {
+        resumeInputRef.current.value = '';
+      }
+    }
   };
 
   const addSkill = () => {
@@ -108,6 +183,68 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
         </div>
       )}
 
+      {/* Avatar Section */}
+      <div className="bg-gray-800 rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-white mb-4">Profile Photo</h2>
+        <div className="flex items-center gap-6">
+          <div className="relative">
+            {formData.avatarUrl ? (
+              <img
+                src={formData.avatarUrl}
+                alt="Profile"
+                className="w-24 h-24 rounded-full object-cover border-2 border-gray-600"
+              />
+            ) : (
+              <div className="w-24 h-24 rounded-full bg-purple-600 flex items-center justify-center text-white text-3xl font-bold">
+                {formData.firstName?.charAt(0)?.toUpperCase() || '?'}
+              </div>
+            )}
+            {uploadingAvatar && (
+              <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center">
+                <svg
+                  className="animate-spin w-8 h-8 text-white"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+              </div>
+            )}
+          </div>
+          <div>
+            <input
+              type="file"
+              ref={avatarInputRef}
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              onChange={handleAvatarUpload}
+              className="hidden"
+              id="avatar-upload"
+            />
+            <label
+              htmlFor="avatar-upload"
+              className="inline-block px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors cursor-pointer"
+            >
+              {uploadingAvatar ? 'Uploading...' : 'Change Photo'}
+            </label>
+            <p className="text-xs text-gray-500 mt-2">
+              JPEG, PNG, WebP or GIF. Max 2MB.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Personal Information */}
       <div className="bg-gray-800 rounded-xl p-6">
         <h2 className="text-lg font-semibold text-white mb-4">
@@ -123,7 +260,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
               name="firstName"
               value={formData.firstName}
               onChange={handleChange}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               placeholder="John"
             />
           </div>
@@ -136,7 +273,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
               name="lastName"
               value={formData.lastName}
               onChange={handleChange}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               placeholder="Doe"
             />
           </div>
@@ -149,7 +286,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
               name="phone"
               value={formData.phone}
               onChange={handleChange}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               placeholder="+237 6XX XXX XXX"
             />
           </div>
@@ -169,7 +306,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
               name="schoolName"
               value={formData.schoolName}
               onChange={handleChange}
-              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
               placeholder="University of Yaoundé"
             />
           </div>
@@ -183,7 +320,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
                 name="fieldOfStudy"
                 value={formData.fieldOfStudy}
                 onChange={handleChange}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="Computer Science"
               />
             </div>
@@ -196,7 +333,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
                 name="graduationYear"
                 value={formData.graduationYear}
                 onChange={handleChange}
-                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="2024"
                 min="1990"
                 max="2030"
@@ -218,9 +355,96 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
             name="portfolio"
             value={formData.portfolio}
             onChange={handleChange}
-            className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
             placeholder="https://yourportfolio.com"
           />
+        </div>
+      </div>
+
+      {/* Resume */}
+      <div className="bg-gray-800 rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-white mb-4">Resume</h2>
+        <div className="space-y-4">
+          {formData.resumeUrl ? (
+            <div className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg">
+              <div className="flex items-center gap-3">
+                <svg
+                  className="w-8 h-8 text-purple-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                <div>
+                  <p className="text-white font-medium">Resume uploaded</p>
+                  <a
+                    href={formData.resumeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-purple-400 hover:text-purple-300 text-sm"
+                  >
+                    View current resume
+                  </a>
+                </div>
+              </div>
+              <input
+                type="file"
+                ref={resumeInputRef}
+                accept=".pdf,.doc,.docx"
+                onChange={handleResumeUpload}
+                className="hidden"
+                id="resume-upload"
+              />
+              <label
+                htmlFor="resume-upload"
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors cursor-pointer text-sm"
+              >
+                {uploadingResume ? 'Uploading...' : 'Replace'}
+              </label>
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center">
+              <svg
+                className="w-12 h-12 mx-auto text-gray-500 mb-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                />
+              </svg>
+              <p className="text-gray-400 mb-4">
+                Upload your resume to showcase your experience
+              </p>
+              <input
+                type="file"
+                ref={resumeInputRef}
+                accept=".pdf,.doc,.docx"
+                onChange={handleResumeUpload}
+                className="hidden"
+                id="resume-upload-empty"
+              />
+              <label
+                htmlFor="resume-upload-empty"
+                className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors cursor-pointer"
+              >
+                {uploadingResume ? 'Uploading...' : 'Upload Resume'}
+              </label>
+              <p className="text-xs text-gray-500 mt-2">
+                PDF or Word document. Max 5MB.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -283,7 +507,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
             type="text"
             value={newSkill}
             onChange={(e) => setNewSkill(e.target.value)}
-            className="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
             placeholder="Add a skill..."
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
@@ -315,7 +539,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
           <button
             type="button"
             onClick={addSkill}
-            className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
           >
             Add
           </button>
@@ -325,7 +549,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
       <button
         type="submit"
         disabled={isSubmitting}
-        className="w-full py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        className="w-full py-3 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
       >
         {isSubmitting ? (
           <>
