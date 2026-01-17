@@ -51,7 +51,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const role = profile.role as Role;
+    // Get the original role from user metadata (set during registration)
+    // This is needed because job_seeker and talent are mapped to 'candidate' in profiles
+    const metadataRole = user.user_metadata?.role as Role | undefined;
+    const role: Role = metadataRole || (profile.role === 'candidate' ? 'job_seeker' : profile.role as Role);
 
     // Build profile updates
     const profileUpdates: Record<string, unknown> = {
@@ -88,7 +91,8 @@ export async function POST(request: Request) {
     }
 
     // Update role-specific tables
-    if (role === 'job_seeker') {
+    // Note: job_seeker and talent are both stored as 'candidate' in profiles.role
+    if (role === 'job_seeker' || (profile.role === 'candidate' && role !== 'talent')) {
       const jobSeekerUpdates: Record<string, unknown> = {
         updated_at: new Date().toISOString(),
       };
