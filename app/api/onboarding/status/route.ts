@@ -37,13 +37,16 @@ export async function GET() {
       );
     }
 
-    const role = profile.role as Role;
+    // Get the original role from user metadata (set during registration)
+    // This is needed because job_seeker and talent are mapped to 'candidate' in profiles
+    const metadataRole = user.user_metadata?.role as Role | undefined;
+    const role: Role = metadataRole || (profile.role === 'candidate' ? 'job_seeker' : profile.role as Role);
     const steps = getStepsForRole(role);
 
     // Get role-specific data
     let roleData: Record<string, unknown> = {};
 
-    if (role === 'job_seeker') {
+    if (role === 'job_seeker' || profile.role === 'candidate') {
       const { data } = await supabase
         .from('job_seeker_profiles')
         .select('*')
