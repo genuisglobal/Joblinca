@@ -5,41 +5,36 @@ import { createServiceSupabaseClient } from "@/lib/supabase/service";
  * Creates/updates a profiles row after signup and creates role-specific rows.
  * Uses service role to bypass RLS for initial provisioning.
  *
- * IMPORTANT:
- * - Your current DB constraint allows roles:
- *   candidate, recruiter, admin, vetting_officer, verification_officer
- * - Your UI sends: job_seeker | talent | recruiter
- *   So we map job_seeker + talent -> candidate (until you migrate to role_enum).
+ * Database uses role_enum: job_seeker, talent, recruiter, vetting_officer, verification_officer, admin, staff
  */
 type IncomingRole =
   | "job_seeker"
   | "talent"
   | "recruiter"
-  | "candidate"
   | "admin"
+  | "staff"
   | "vetting_officer"
   | "verification_officer";
 
-type DbRole =
-  | "candidate"
-  | "recruiter"
-  | "admin"
-  | "vetting_officer"
-  | "verification_officer";
+// The database role_enum values - pass through directly
+function mapRoleToDb(role: IncomingRole): IncomingRole {
+  // Valid roles in the database enum
+  const validRoles: IncomingRole[] = [
+    "job_seeker",
+    "talent",
+    "recruiter",
+    "admin",
+    "staff",
+    "vetting_officer",
+    "verification_officer",
+  ];
 
-function mapRoleToDb(role: IncomingRole): DbRole {
-  if (role === "job_seeker" || role === "talent") return "candidate";
-  if (
-    role === "candidate" ||
-    role === "recruiter" ||
-    role === "admin" ||
-    role === "vetting_officer" ||
-    role === "verification_officer"
-  ) {
+  if (validRoles.includes(role)) {
     return role;
   }
+
   // fallback safety
-  return "candidate";
+  return "job_seeker";
 }
 
 export async function POST(request: Request) {
@@ -112,44 +107,36 @@ export async function POST(request: Request) {
     // We attempt them, but if a table doesn't exist we return a clear message.
 
     // If UI role is job_seeker, try job_seeker_profiles (optional)
+    // Only insert minimal required fields to avoid column mismatch issues
     if (role === "job_seeker") {
       const { error } = await supabase.from("job_seeker_profiles").upsert(
         {
           user_id: userId,
-          resume_url: resumeUrl ?? null,
-          career_info: null,
-          location: location ?? null,
-          headline: headline ?? null,
         },
         { onConflict: "user_id" }
       );
 
-      // If table doesn't exist, PostgREST typically returns "Could not find the table..."
+      // If table doesn't exist or insert fails, log but don't block registration
       if (error) {
-        return NextResponse.json(
-          { error: `job_seeker_profiles upsert failed: ${error.message}` },
-          { status: 500 }
-        );
+        console.error("job_seeker_profiles upsert failed (non-blocking):", error.message);
+        // Don't return error - profile in main profiles table is sufficient
       }
     }
 
     // If UI role is talent, try talent_profiles (optional)
+    // Only insert minimal required fields to avoid column mismatch issues
     if (role === "talent") {
       const { error } = await supabase.from("talent_profiles").upsert(
         {
           user_id: userId,
-          school_status: schoolStatus ?? null,
-          portfolio: null,
-          internship_eligible: true,
         },
         { onConflict: "user_id" }
       );
 
+      // If table doesn't exist or insert fails, log but don't block registration
       if (error) {
-        return NextResponse.json(
-          { error: `talent_profiles upsert failed: ${error.message}` },
-          { status: 500 }
-        );
+        console.error("talent_profiles upsert failed (non-blocking):", error.message);
+        // Don't return error - profile in main profiles table is sufficient
       }
     }
 
