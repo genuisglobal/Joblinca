@@ -1,116 +1,168 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function LoginPage() {
+  const router = useRouter();
   const supabase = createClient();
-  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [redirectTo, setRedirectTo] = useState('/dashboard');
-
-  useEffect(() => {
-    // Get redirect URL from query params
-    const redirect = searchParams.get('redirect');
-    if (redirect) {
-      setRedirectTo(redirect);
-    }
-  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setIsLoading(true);
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
+
       if (error) {
         setError(error.message);
-        setIsLoading(false);
       } else {
-        window.location.href = redirectTo;
+        // Redirect to dashboard - role-based redirect handled there
+        router.push('/dashboard');
       }
-    } catch (err) {
-      setError('Unexpected error. Please try again.');
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
       setIsLoading(false);
     }
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
-      <form
-        onSubmit={handleSubmit}
-        /*
-         * Use a slightly lighter card background and brighter text colors to
-         * improve contrast on dark pages. Inputs also use a lighter
-         * background and border for better readability.  This helps
-         * users see the form fields clearly when the overall theme is dark.
-         */
-        className="bg-gray-700 shadow-md rounded-lg px-8 pt-6 pb-8 mb-4 max-w-sm w-full text-gray-100"
-      >
-        <h2 className="text-2xl font-semibold mb-4">Sign in to JobLinca</h2>
-        {error && <p className="text-red-500 mb-4">{error}</p>}
-        <label className="block text-sm font-medium mb-2 text-gray-300">
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="you@example.com"
-            required
-          />
-        </label>
-        <label className="block text-sm font-medium mb-4 text-gray-300">
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="••••••••"
-            required
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={isLoading}
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          {isLoading ? (
-            <>
-              <svg
-                className="animate-spin w-5 h-5"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
+    <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-neutral-950">
+      {/* Background elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-600/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-accent-500/5 rounded-full blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-md">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">Welcome back</h1>
+          <p className="text-neutral-400">
+            Sign in to your Joblinca account
+          </p>
+        </div>
+
+        {/* Form Card */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Error Message */}
+            {error && (
+              <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-400">{error}</p>
+              </div>
+            )}
+
+            {/* Email Field */}
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-neutral-300 mb-2">
+                Email address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
+                  placeholder="you@example.com"
+                  required
                 />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="password" className="block text-sm font-medium text-neutral-300">
+                  Password
+                </label>
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-sm text-primary-400 hover:text-primary-300 transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
+                  placeholder="Enter your password"
+                  required
                 />
-              </svg>
-              Signing in...
-            </>
-          ) : (
-            'Log in'
-          )}
-        </button>
-      </form>
+              </div>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 disabled:bg-primary-600/50 text-white py-3 px-4 rounded-lg font-semibold transition-all hover:shadow-lg hover:shadow-primary-600/20 disabled:cursor-not-allowed"
+            >
+              {isLoading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  Sign In
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Divider */}
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-neutral-800" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-neutral-900 text-neutral-500">or</span>
+            </div>
+          </div>
+
+          {/* Sign Up Link */}
+          <p className="text-center text-neutral-400">
+            Don't have an account?{' '}
+            <Link
+              href="/auth/register?role=candidate"
+              className="text-primary-400 hover:text-primary-300 font-medium transition-colors"
+            >
+              Create one free
+            </Link>
+          </p>
+        </div>
+
+        {/* Footer */}
+        <p className="text-center text-sm text-neutral-500 mt-8">
+          By signing in, you agree to our{' '}
+          <Link href="/terms" className="text-neutral-400 hover:text-white transition-colors">
+            Terms
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy" className="text-neutral-400 hover:text-white transition-colors">
+            Privacy Policy
+          </Link>
+        </p>
+      </div>
     </main>
   );
 }

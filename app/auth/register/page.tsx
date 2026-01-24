@@ -1,358 +1,354 @@
-"use client";
+'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { Mail, Lock, Phone, ArrowRight, AlertCircle, Briefcase, GraduationCap, Building2, CheckCircle } from 'lucide-react';
 
-/**
- * Registration page supporting multiple user roles.  New users can sign up
- * either as a job seeker, recruiter or talent.  Each role shows a tailored
- * form collecting the necessary information.  Internal staff accounts are
- * provisioned separately via the admin dashboard and are not exposed here.
- */
-export default function RegisterPage() {
+type UserRole = 'job_seeker' | 'talent' | 'recruiter';
+
+const roleConfig = {
+  job_seeker: {
+    label: 'Job Seeker',
+    description: 'Ready for the job market',
+    icon: Briefcase,
+    color: 'primary',
+    benefits: [
+      'Apply to unlimited jobs for free',
+      'Build your professional CV',
+      'Get job alerts via WhatsApp',
+      'AI-powered job matching',
+    ],
+  },
+  talent: {
+    label: 'Talent',
+    description: 'Student / Seeking internships',
+    icon: GraduationCap,
+    color: 'green',
+    benefits: [
+      'Find internship opportunities',
+      'Upload and showcase projects',
+      'Build your portfolio',
+      'Connect with mentors',
+    ],
+  },
+  recruiter: {
+    label: 'Recruiter',
+    description: 'Hiring for your company',
+    icon: Building2,
+    color: 'accent',
+    benefits: [
+      'Post jobs and reach top talent',
+      'AI-powered candidate filtering',
+      'Streamlined hiring workflow',
+      'Access analytics dashboard',
+    ],
+  },
+};
+
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialRole = (searchParams.get('role') as UserRole) || 'job_seeker';
+
   const supabase = createClient();
-  // Track the selected role.  When null, show the role selection interface.
-  const [selectedRole, setSelectedRole] = useState<'job_seeker' | 'recruiter' | 'talent' | null>(null);
-  // Common form fields
-  const [name, setName] = useState('');
+  const [role, setRole] = useState<UserRole>(
+    ['job_seeker', 'talent', 'recruiter'].includes(initialRole) ? initialRole : 'job_seeker'
+  );
   const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  // Recruiter specific
-  const [companyName, setCompanyName] = useState('');
-  // Talent specific
-  const [institution, setInstitution] = useState('');
-  const [graduationYear, setGraduationYear] = useState('');
-  // Error message
+  const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
-  // Loading state
   const [isLoading, setIsLoading] = useState(false);
-  // Success state (for email confirmation required)
-  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
 
-  /**
-   * Reset all form fields and return to the role selection screen.
-   */
-  function resetForm() {
-    setSelectedRole(null);
-    setName('');
-    setEmail('');
-    setPhone('');
-    setPassword('');
-    setCompanyName('');
-    setInstitution('');
-    setGraduationYear('');
-    setError(null);
-  }
+  const currentRole = roleConfig[role];
 
-  /**
-   * Handles the registration form submission.  It calls Supabase Auth signUp
-   * with the provided credentials and role metadata.  On success, users
-   * are redirected to the dashboard.  Errors are displayed to the user.
-   */
   async function handleRegister(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    if (!selectedRole) return;
     setIsLoading(true);
+
     try {
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         phone,
         options: {
-          data: {
-            role: selectedRole,
-            name,
-            companyName: selectedRole === 'recruiter' ? companyName : undefined,
-            institution: selectedRole === 'talent' ? institution : undefined,
-            graduationYear: selectedRole === 'talent' ? graduationYear : undefined,
-          },
-          emailRedirectTo: `${window.location.origin}/onboarding`,
+          data: { role },
         },
       });
-      if (signUpError) {
-        setError(signUpError.message);
-        setIsLoading(false);
+
+      if (error) {
+        setError(error.message);
         return;
       }
-      const user = signUpData?.user;
-      const session = signUpData?.session;
 
-      if (user && selectedRole) {
-        // Call API to create profile and role‑specific row
-        try {
-          await fetch('/api/profile/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              userId: user.id,
-              role: selectedRole,
-              fullName: name,
-              phone,
-              companyName,
-              institution,
-              graduationYear,
-            }),
-          });
-        } catch {
-          // silently ignore; backend will log error
+      // Create the profile in the database
+      if (data.user) {
+        const profileResponse = await fetch('/api/profile/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: data.user.id,
+            role,
+            phone,
+          }),
+        });
+
+        const profileResult = await profileResponse.json();
+
+        if (!profileResponse.ok) {
+          setError(profileResult.error || 'Failed to create profile');
+          return;
         }
       }
 
-      // Check if we have a session (email confirmation not required)
-      if (session) {
-        // User is logged in, redirect to onboarding
-        window.location.href = '/onboarding';
-      } else if (user) {
-        // Email confirmation is required - show success message
-        setIsLoading(false);
-        setShowEmailConfirmation(true);
+      // Redirect based on role
+      if (role === 'recruiter') {
+        router.push('/dashboard/recruiter');
+      } else if (role === 'talent') {
+        router.push('/dashboard/talent');
+      } else {
+        router.push('/dashboard');
       }
-    } catch (err) {
-      setError('Unexpected error. Please try again.');
+    } catch {
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
       setIsLoading(false);
     }
   }
 
-  /**
-   * Renders the role selection cards.  Users pick the type of account they
-   * wish to create.  Once a role is selected, the registration form appears.
-   */
-  function renderRoleSelection() {
-    return (
-      <div className="max-w-xl w-full bg-gray-700 shadow rounded-lg p-8 text-center space-y-6 text-gray-100">
-        <h2 className="text-2xl font-semibold mb-4">Create Your Account</h2>
-        <p className="mb-6 text-gray-300">Select the type of account you want to create:</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <button
-            type="button"
-            onClick={() => setSelectedRole('job_seeker')}
-            className="p-4 border border-gray-600 rounded hover:bg-gray-600 focus:outline-none"
-          >
-            <h3 className="font-medium text-lg">Job Seeker</h3>
-            <p className="text-sm text-gray-400 mt-2">Find jobs, apply for free and get matched faster.</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedRole('recruiter')}
-            className="p-4 border border-gray-600 rounded hover:bg-gray-600 focus:outline-none"
-          >
-            <h3 className="font-medium text-lg">Recruiter</h3>
-            <p className="text-sm text-gray-400 mt-2">Post jobs, receive AI‑filtered candidates and hire faster.</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedRole('talent')}
-            className="p-4 border border-gray-600 rounded hover:bg-gray-600 focus:outline-none"
-          >
-            <h3 className="font-medium text-lg">Talent</h3>
-            <p className="text-sm text-gray-400 mt-2">Showcase your projects while you study and prepare for the job market.</p>
-          </button>
-        </div>
-        <p className="text-sm text-gray-400 mt-6">
-          Are you a JobLinca staff member? Please contact an administrator to set up your account.
-        </p>
-      </div>
-    );
-  }
+  const getColorClasses = (r: UserRole, isSelected: boolean) => {
+    if (!isSelected) return 'border-neutral-700 hover:border-neutral-600';
 
-  /**
-   * Renders the registration form based on the selected role.
-   */
-  function renderRegistrationForm() {
-    if (!selectedRole) return null;
-    return (
-      <form
-        onSubmit={handleRegister}
-        /*
-         * Use a slightly lighter card background and more legible text and
-         * input colours for better contrast on dark pages.  Inputs use
-         * a mid‑tone background and border to distinguish them from the
-         * card.
-         */
-        className="bg-gray-700 shadow-md rounded-lg px-8 pt-6 pb-8 mb-4 max-w-md w-full text-gray-100"
-      >
-        <h2 className="text-2xl font-semibold mb-4">
-          {selectedRole === 'job_seeker' && 'Join as a Job Seeker'}
-          {selectedRole === 'recruiter' && 'Create a Recruiter Account'}
-          {selectedRole === 'talent' && 'Register as a Talent'}
-        </h2>
-        {error && <p className="text-red-500 mb-4">{error}</p>}
-        <label className="block text-sm font-medium mb-2 text-gray-300">
-          Full Name
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="Your full name"
-            required
-          />
-        </label>
-        {/* Recruiter specific field */}
-        {selectedRole === 'recruiter' && (
-          <label className="block text-sm font-medium mb-2 text-gray-300">
-            Company Name
-            <input
-              type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
-              className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-              placeholder="Company name"
-              required
-            />
-          </label>
-        )}
-        {/* Talent specific fields */}
-        {selectedRole === 'talent' && (
-          <>
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Institution / University
-              <input
-                type="text"
-                value={institution}
-                onChange={(e) => setInstitution(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="Institution / University"
-                required
-              />
-            </label>
-            <label className="block text-sm font-medium mb-2 text-gray-300">
-              Expected Graduation Year
-              <input
-                type="number"
-                value={graduationYear}
-                onChange={(e) => setGraduationYear(e.target.value)}
-                className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-                placeholder="2026"
-                required
-              />
-            </label>
-          </>
-        )}
-        <label className="block text-sm font-medium mb-2 text-gray-300">
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="you@example.com"
-            required
-          />
-        </label>
-        <label className="block text-sm font-medium mb-2 text-gray-300">
-          Phone Number
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="(+237) 6xx xxx xxx"
-            required
-          />
-        </label>
-        <label className="block text-sm font-medium mb-4 text-gray-300">
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 block w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="Create a strong password"
-            required
-          />
-        </label>
-        <div className="flex justify-between items-center">
-          <button
-            type="button"
-            onClick={resetForm}
-            disabled={isLoading}
-            className="text-sm text-gray-400 hover:underline disabled:opacity-50"
-          >
-            Change role
-          </button>
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-          >
-            {isLoading ? (
-              <>
-                <svg
-                  className="animate-spin w-5 h-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Creating account...
-              </>
-            ) : (
-              'Sign up'
-            )}
-          </button>
-        </div>
-      </form>
-    );
-  }
+    switch (r) {
+      case 'job_seeker':
+        return 'border-primary-500 bg-primary-500/10';
+      case 'talent':
+        return 'border-green-500 bg-green-500/10';
+      case 'recruiter':
+        return 'border-accent-500 bg-accent-500/10';
+    }
+  };
 
-  // Show email confirmation success message
-  if (showEmailConfirmation) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-gray-700 shadow rounded-lg p-8 text-center space-y-6 text-gray-100">
-          <div className="w-16 h-16 mx-auto bg-green-500/20 rounded-full flex items-center justify-center">
-            <svg
-              className="w-8 h-8 text-green-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-              />
-            </svg>
-          </div>
-          <h2 className="text-2xl font-semibold">Check Your Email</h2>
-          <p className="text-gray-300">
-            We have sent a confirmation link to <strong>{email}</strong>. Please check your email and click the link to activate your account.
-          </p>
-          <p className="text-sm text-gray-400">
-            Did not receive the email? Check your spam folder or try registering again.
-          </p>
-          <button
-            onClick={() => router.push('/auth/login')}
-            className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-          >
-            Go to Login
-          </button>
-        </div>
-      </main>
-    );
-  }
+  const getIconColor = (r: UserRole, isSelected: boolean) => {
+    if (!isSelected) return 'text-neutral-400';
+
+    switch (r) {
+      case 'job_seeker':
+        return 'text-primary-400';
+      case 'talent':
+        return 'text-green-400';
+      case 'recruiter':
+        return 'text-accent-400';
+    }
+  };
+
+  const getButtonClasses = () => {
+    switch (role) {
+      case 'job_seeker':
+        return 'bg-primary-600 hover:bg-primary-700 disabled:bg-primary-600/50 hover:shadow-primary-600/20';
+      case 'talent':
+        return 'bg-green-600 hover:bg-green-700 disabled:bg-green-600/50 hover:shadow-green-600/20';
+      case 'recruiter':
+        return 'bg-accent-500 hover:bg-accent-600 disabled:bg-accent-500/50 text-neutral-900 hover:shadow-accent-500/20';
+    }
+  };
 
   return (
-    <main className="min-h-screen flex items-center justify-center p-4">
-      {selectedRole ? renderRegistrationForm() : renderRoleSelection()}
+    <main className="min-h-screen flex items-center justify-center px-4 py-12 bg-neutral-950">
+      {/* Background elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary-600/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-accent-500/5 rounded-full blur-3xl" />
+      </div>
+
+      <div className="relative w-full max-w-lg">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold mb-2">Create your account</h1>
+          <p className="text-neutral-400">
+            Join Joblinca and start your journey
+          </p>
+        </div>
+
+        {/* Form Card */}
+        <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8">
+          {/* Role Selector - 3 options */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            {(Object.keys(roleConfig) as UserRole[]).map((r) => {
+              const config = roleConfig[r];
+              const Icon = config.icon;
+              const isSelected = role === r;
+
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRole(r)}
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${getColorClasses(r, isSelected)}`}
+                >
+                  <Icon className={`w-6 h-6 ${getIconColor(r, isSelected)}`} />
+                  <span className={`text-sm font-medium text-center ${isSelected ? 'text-white' : 'text-neutral-400'}`}>
+                    {config.label}
+                  </span>
+                  <span className="text-xs text-neutral-500 text-center hidden sm:block">
+                    {config.description}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <form onSubmit={handleRegister} className="space-y-5">
+            {/* Error Message */}
+            {error && (
+              <div className="flex items-start gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-red-400">{error}</p>
+              </div>
+            )}
+
+            {/* Email Field */}
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-neutral-300 mb-2">
+                Email address
+              </label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
+                  placeholder="you@example.com"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Phone Field */}
+            <div>
+              <label htmlFor="phone" className="block text-sm font-medium text-neutral-300 mb-2">
+                Phone number (for WhatsApp alerts)
+              </label>
+              <div className="relative">
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+                <input
+                  id="phone"
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
+                  placeholder="+237 6XX XXX XXX"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-neutral-300 mb-2">
+                Password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
+                  placeholder="Create a strong password"
+                  required
+                  minLength={8}
+                />
+              </div>
+              <p className="text-xs text-neutral-500 mt-2">
+                Must be at least 8 characters
+              </p>
+            </div>
+
+            {/* Benefits based on role */}
+            <div className="p-4 bg-neutral-800/50 rounded-lg border border-neutral-700/50">
+              <p className="text-sm font-medium text-neutral-300 mb-3">
+                {currentRole.label} benefits:
+              </p>
+              <ul className="space-y-2">
+                {currentRole.benefits.map((benefit, index) => (
+                  <li key={index} className="flex items-center gap-2 text-sm text-neutral-400">
+                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
+                    {benefit}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isLoading}
+              className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-lg font-semibold transition-all disabled:cursor-not-allowed text-white hover:shadow-lg ${getButtonClasses()}`}
+            >
+              {isLoading ? (
+                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  Create {currentRole.label} Account
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Divider */}
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-neutral-800" />
+            </div>
+            <div className="relative flex justify-center text-sm">
+              <span className="px-4 bg-neutral-900 text-neutral-500">or</span>
+            </div>
+          </div>
+
+          {/* Sign In Link */}
+          <p className="text-center text-neutral-400">
+            Already have an account?{' '}
+            <Link
+              href="/auth/login"
+              className="text-primary-400 hover:text-primary-300 font-medium transition-colors"
+            >
+              Sign in
+            </Link>
+          </p>
+        </div>
+
+        {/* Footer */}
+        <p className="text-center text-sm text-neutral-500 mt-8">
+          By creating an account, you agree to our{' '}
+          <Link href="/terms" className="text-neutral-400 hover:text-white transition-colors">
+            Terms
+          </Link>{' '}
+          and{' '}
+          <Link href="/privacy" className="text-neutral-400 hover:text-white transition-colors">
+            Privacy Policy
+          </Link>
+        </p>
+      </div>
     </main>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen flex items-center justify-center bg-neutral-950">
+        <div className="w-8 h-8 border-2 border-primary-600/30 border-t-primary-600 rounded-full animate-spin" />
+      </main>
+    }>
+      <RegisterForm />
+    </Suspense>
   );
 }
