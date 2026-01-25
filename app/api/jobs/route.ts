@@ -40,6 +40,12 @@ export async function POST(request: NextRequest) {
     jobType,
     visibility,
     customQuestions,
+    applyMethod,
+    externalApplyUrl,
+    applyEmail,
+    applyPhone,
+    applyWhatsapp,
+    closesAt,
   } = body;
   if (!title || !description) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -64,6 +70,12 @@ export async function POST(request: NextRequest) {
       job_type: jobType || 'job',
       visibility: visibility || 'public',
       custom_questions: customQuestions || null,
+      apply_method: applyMethod || 'joblinca',
+      external_apply_url: externalApplyUrl || null,
+      apply_email: applyEmail || null,
+      apply_phone: applyPhone || null,
+      apply_whatsapp: applyWhatsapp || null,
+      closes_at: closesAt ? new Date(closesAt).toISOString() : null,
     })
     .select('*')
     .single();
