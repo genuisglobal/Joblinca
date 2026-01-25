@@ -31,7 +31,10 @@ export default async function DashboardPage() {
   }
 
   // Redirect to role-specific dashboard
-  if (profile.role === 'recruiter') {
+  // Admins should always go to /admin, never to /dashboard/*
+  if (profile.role === 'admin') {
+    redirect('/admin');
+  } else if (profile.role === 'recruiter') {
     redirect('/dashboard/recruiter');
   } else if (profile.role === 'talent') {
     redirect('/dashboard/talent');

@@ -24,7 +24,15 @@ export default async function DashboardLayout({
     .eq('id', user.id)
     .single();
 
-  const role = (profile?.role as 'recruiter' | 'job_seeker' | 'talent') || 'job_seeker';
+  const rawRole = profile?.role || 'job_seeker';
+
+  // Admins should never access /dashboard/* - redirect them to /admin
+  if (rawRole === 'admin') {
+    redirect('/admin');
+  }
+
+  // For non-admin users, cast to the expected role type
+  const role = rawRole as 'recruiter' | 'job_seeker' | 'talent';
 
   return (
     <div className="min-h-screen bg-gray-900 flex">
