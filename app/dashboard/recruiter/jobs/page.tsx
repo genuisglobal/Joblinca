@@ -140,8 +140,13 @@ export default async function RecruiterJobsPage() {
                   </td>
                   <td className="p-4 text-center">
                     <StatusBadge
-                      status={job.published ? 'published' : 'pending'}
+                      status={job.approval_status || (job.published ? 'published' : 'pending')}
                     />
+                    {job.approval_status === 'rejected' && job.rejection_reason && (
+                      <p className="text-xs text-red-400 mt-1 max-w-32 truncate" title={job.rejection_reason}>
+                        {job.rejection_reason}
+                      </p>
+                    )}
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-2">

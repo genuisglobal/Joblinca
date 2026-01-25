@@ -4,10 +4,12 @@ import { NextResponse, type NextRequest } from 'next/server';
 // Handle GET /api/jobs and POST /api/jobs
 export async function GET() {
   const supabase = createServerSupabaseClient();
+  // Only return jobs that are both published AND approved
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('*')
     .eq('published', true)
+    .eq('approval_status', 'approved')
     .order('created_at', { ascending: false });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -42,7 +44,8 @@ export async function POST(request: NextRequest) {
   if (!title || !description) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
-  // Insert job with published=false by default; admin will approve later
+  // Insert job with published=false and approval_status=pending by default
+  // Admin will approve later before it becomes visible
   const { data: insertedJob, error } = await supabase
     .from('jobs')
     .insert({
@@ -52,6 +55,9 @@ export async function POST(request: NextRequest) {
       salary: salary ? Number(salary) : null,
       recruiter_id: user.id,
       published: false,
+      approval_status: 'pending',
+      posted_by: user.id,
+      posted_by_role: 'recruiter',
       company_name: companyName || null,
       company_logo_url: companyLogoUrl || null,
       work_type: workType || 'onsite',

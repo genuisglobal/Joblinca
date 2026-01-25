@@ -79,7 +79,7 @@ export default async function RecruiterJobDetailPage({
           )}
         </div>
         <div className="flex items-center gap-3">
-          <StatusBadge status={job.published ? 'published' : 'pending'} />
+          <StatusBadge status={job.approval_status || (job.published ? 'published' : 'pending')} />
           <Link
             href={`/jobs/${job.id}`}
             className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
@@ -89,6 +89,41 @@ export default async function RecruiterJobDetailPage({
           </Link>
         </div>
       </div>
+
+      {/* Rejection Notice */}
+      {job.approval_status === 'rejected' && job.rejection_reason && (
+        <div className="bg-red-900/20 border border-red-700/50 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-red-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-red-400">Job Rejected</h3>
+              <p className="text-gray-300 mt-1">{job.rejection_reason}</p>
+              <p className="text-sm text-gray-400 mt-2">
+                Please update your job posting and contact support if you have questions.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pending Approval Notice */}
+      {job.approval_status === 'pending' && (
+        <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-yellow-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-yellow-400">Pending Approval</h3>
+              <p className="text-gray-300 mt-1">
+                Your job posting is being reviewed by our team. It will be visible to candidates once approved.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Job Info */}
       <div className="bg-gray-800 rounded-xl p-6">

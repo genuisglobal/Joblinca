@@ -21,10 +21,12 @@ export const metadata = {
 
 export default async function JobsPage() {
   const supabase = createServerSupabaseClient();
+  // Only show jobs that are both published AND approved by admin
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('*')
     .eq('published', true)
+    .eq('approval_status', 'approved')
     .order('created_at', { ascending: false });
 
   const formatDate = (dateString: string) => {
