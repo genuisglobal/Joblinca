@@ -61,6 +61,11 @@ export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
       text: 'text-yellow-400',
       label: 'Pending Review',
     },
+    approved: {
+      bg: 'bg-green-900/50 border-green-700',
+      text: 'text-green-400',
+      label: 'Approved',
+    },
     draft: {
       bg: 'bg-gray-700/50 border-gray-600',
       text: 'text-gray-400',
@@ -71,6 +76,16 @@ export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
       bg: 'bg-green-900/50 border-green-700',
       text: 'text-green-400',
       label: 'Approved',
+    },
+    verified: {
+      bg: 'bg-green-900/50 border-green-700',
+      text: 'text-green-400',
+      label: 'Verified',
+    },
+    unverified: {
+      bg: 'bg-gray-700/50 border-gray-600',
+      text: 'text-gray-400',
+      label: 'Unverified',
     },
     // Generic
     active: {
