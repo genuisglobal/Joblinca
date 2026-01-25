@@ -7,6 +7,8 @@ import { CustomQuestion } from '@/lib/questions';
 import QuestionBuilder from './QuestionBuilder';
 import AIQuestionGenerator from './AIQuestionGenerator';
 
+type ApplyMethod = 'joblinca' | 'external_url' | 'email' | 'phone' | 'whatsapp' | 'multiple';
+
 export default function NewJobPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -23,6 +25,14 @@ export default function NewJobPage() {
   const [jobType, setJobType] = useState('job');
   const [visibility, setVisibility] = useState('public');
   const [uploading, setUploading] = useState(false);
+
+  // Apply method fields
+  const [applyMethod, setApplyMethod] = useState<ApplyMethod>('joblinca');
+  const [externalApplyUrl, setExternalApplyUrl] = useState('');
+  const [applyEmail, setApplyEmail] = useState('');
+  const [applyPhone, setApplyPhone] = useState('');
+  const [applyWhatsapp, setApplyWhatsapp] = useState('');
+  const [closesAt, setClosesAt] = useState('');
 
   // Custom screening questions
   const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
@@ -106,6 +116,25 @@ export default function NewJobPage() {
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    // Validate apply method fields
+    if (applyMethod === 'external_url' && !externalApplyUrl) {
+      setError('Please provide an external application URL');
+      return;
+    }
+    if (applyMethod === 'email' && !applyEmail) {
+      setError('Please provide an email address for applications');
+      return;
+    }
+    if (applyMethod === 'phone' && !applyPhone) {
+      setError('Please provide a phone number for applications');
+      return;
+    }
+    if (applyMethod === 'whatsapp' && !applyWhatsapp) {
+      setError('Please provide a WhatsApp number for applications');
+      return;
+    }
+
     try {
       const res = await fetch('/api/jobs', {
         method: 'POST',
@@ -123,6 +152,12 @@ export default function NewJobPage() {
           jobType,
           visibility,
           customQuestions: customQuestions.length > 0 ? customQuestions : undefined,
+          applyMethod,
+          externalApplyUrl: externalApplyUrl || undefined,
+          applyEmail: applyEmail || undefined,
+          applyPhone: applyPhone || undefined,
+          applyWhatsapp: applyWhatsapp || undefined,
+          closesAt: closesAt || undefined,
         }),
       });
       if (res.ok) {
@@ -353,6 +388,124 @@ export default function NewJobPage() {
             rows={5}
             required
           />
+        </div>
+
+        {/* Application Method Section */}
+        <div className="border-t border-gray-600 pt-4 mt-4">
+          <h3 className="text-lg font-medium text-gray-200 mb-4">Application Method</h3>
+          <p className="text-sm text-gray-400 mb-4">
+            Choose how candidates will apply for this position
+          </p>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-300">Apply Method</label>
+            <select
+              value={applyMethod}
+              onChange={(e) => setApplyMethod(e.target.value as ApplyMethod)}
+              className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
+            >
+              <option value="joblinca">JobLinca Apply (Recommended)</option>
+              <option value="external_url">External Company Website</option>
+              <option value="email">Email Application</option>
+              <option value="phone">Phone Application</option>
+              <option value="whatsapp">WhatsApp Application</option>
+              <option value="multiple">Multiple Methods</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {applyMethod === 'joblinca' && 'Candidates apply directly through JobLinca with their profile and resume'}
+              {applyMethod === 'external_url' && 'Redirect candidates to your company\'s application page'}
+              {applyMethod === 'email' && 'Candidates will email their applications to the provided address'}
+              {applyMethod === 'phone' && 'Candidates will call the provided number to apply'}
+              {applyMethod === 'whatsapp' && 'Candidates will contact you via WhatsApp to apply'}
+              {applyMethod === 'multiple' && 'Offer multiple ways for candidates to apply'}
+            </p>
+          </div>
+
+          {/* Conditional Fields Based on Apply Method */}
+          {(applyMethod === 'external_url' || applyMethod === 'multiple') && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300">
+                External Application URL {applyMethod === 'external_url' && <span className="text-red-400">*</span>}
+              </label>
+              <input
+                type="url"
+                value={externalApplyUrl}
+                onChange={(e) => setExternalApplyUrl(e.target.value)}
+                className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+                placeholder="https://yourcompany.com/careers/apply"
+                required={applyMethod === 'external_url'}
+              />
+            </div>
+          )}
+
+          {(applyMethod === 'email' || applyMethod === 'multiple') && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300">
+                Application Email {applyMethod === 'email' && <span className="text-red-400">*</span>}
+              </label>
+              <input
+                type="email"
+                value={applyEmail}
+                onChange={(e) => setApplyEmail(e.target.value)}
+                className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+                placeholder="careers@yourcompany.com"
+                required={applyMethod === 'email'}
+              />
+            </div>
+          )}
+
+          {(applyMethod === 'phone' || applyMethod === 'multiple') && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300">
+                Application Phone Number {applyMethod === 'phone' && <span className="text-red-400">*</span>}
+              </label>
+              <input
+                type="tel"
+                value={applyPhone}
+                onChange={(e) => setApplyPhone(e.target.value)}
+                className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+                placeholder="+237 6XX XXX XXX"
+                required={applyMethod === 'phone'}
+              />
+            </div>
+          )}
+
+          {(applyMethod === 'whatsapp' || applyMethod === 'multiple') && (
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300">
+                WhatsApp Number {applyMethod === 'whatsapp' && <span className="text-red-400">*</span>}
+              </label>
+              <input
+                type="tel"
+                value={applyWhatsapp}
+                onChange={(e) => setApplyWhatsapp(e.target.value)}
+                className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+                placeholder="+237 6XX XXX XXX (with country code)"
+                required={applyMethod === 'whatsapp'}
+              />
+              <p className="text-xs text-gray-500 mt-1">Include country code (e.g., +237 for Cameroon)</p>
+            </div>
+          )}
+
+          {applyMethod === 'multiple' && (
+            <div className="mt-4 p-3 bg-blue-900/30 border border-blue-700 rounded-lg">
+              <p className="text-sm text-blue-300">
+                Fill in the application methods you want to offer. Candidates will be able to choose from the provided options.
+              </p>
+            </div>
+          )}
+
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-300">Application Deadline (Optional)</label>
+            <input
+              type="date"
+              value={closesAt}
+              onChange={(e) => setClosesAt(e.target.value)}
+              className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
+              min={new Date().toISOString().split('T')[0]}
+            />
+            <p className="text-xs text-gray-500 mt-1">Leave empty for no deadline</p>
+          </div>
         </div>
 
         {/* Custom Screening Questions */}
