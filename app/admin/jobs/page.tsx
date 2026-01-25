@@ -14,7 +14,8 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
   // Build query based on status filter
   let query = supabase
     .from('jobs')
-    .select(`
+    .select(
+      `
       id,
       title,
       company_name,
@@ -32,14 +33,22 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
         last_name,
         email
       )
-    `)
+    `
+    )
     .order('created_at', { ascending: false });
 
   if (status !== 'all') {
     query = query.eq('approval_status', status);
   }
 
-  const { data: jobs, error } = await query;
+  const { data: rawJobs, error } = await query;
+
+  // ✅ Normalize "profiles" to be a single object (not an array)
+  const jobs =
+    (rawJobs ?? []).map((job: any) => ({
+      ...job,
+      profiles: Array.isArray(job.profiles) ? job.profiles[0] ?? null : job.profiles ?? null,
+    })) ?? [];
 
   // Get counts for tabs
   const [pendingCount, approvedCount, rejectedCount, allCount] = await Promise.all([
@@ -77,9 +86,27 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
       {/* Status Tabs */}
       <div className="flex gap-2 mb-6">
         <StatusTab href="/admin/jobs" label="All" count={counts.all} active={status === 'all'} />
-        <StatusTab href="/admin/jobs?status=pending" label="Pending" count={counts.pending} active={status === 'pending'} color="yellow" />
-        <StatusTab href="/admin/jobs?status=approved" label="Approved" count={counts.approved} active={status === 'approved'} color="green" />
-        <StatusTab href="/admin/jobs?status=rejected" label="Rejected" count={counts.rejected} active={status === 'rejected'} color="red" />
+        <StatusTab
+          href="/admin/jobs?status=pending"
+          label="Pending"
+          count={counts.pending}
+          active={status === 'pending'}
+          color="yellow"
+        />
+        <StatusTab
+          href="/admin/jobs?status=approved"
+          label="Approved"
+          count={counts.approved}
+          active={status === 'approved'}
+          color="green"
+        />
+        <StatusTab
+          href="/admin/jobs?status=rejected"
+          label="Rejected"
+          count={counts.rejected}
+          active={status === 'rejected'}
+          color="red"
+        />
       </div>
 
       {error && (
@@ -88,8 +115,8 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
         </div>
       )}
 
-      {/* Jobs Table */}
-      <JobsTable jobs={jobs || []} />
+      {/* ✅ Jobs Table */}
+      <JobsTable jobs={jobs} />
     </div>
   );
 }
@@ -121,7 +148,11 @@ function StatusTab({
   return (
     <Link href={href} className={`${baseClasses} ${activeClasses}`}>
       {label}
-      <span className={`px-2 py-0.5 text-xs rounded-full ${color ? countColors[color] : 'bg-gray-600 text-gray-300'}`}>
+      <span
+        className={`px-2 py-0.5 text-xs rounded-full ${
+          color ? countColors[color] : 'bg-gray-600 text-gray-300'
+        }`}
+      >
         {count}
       </span>
     </Link>

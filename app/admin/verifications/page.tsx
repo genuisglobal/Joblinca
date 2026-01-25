@@ -11,7 +11,7 @@ export default async function AdminVerificationsPage({ searchParams }: PageProps
   const activeTab = params.tab || 'recruiters';
 
   // Fetch recruiters with their profiles
-  const { data: recruiters } = await supabase
+  const { data: rawRecruiters } = await supabase
     .from('recruiter_profiles')
     .select(`
       user_id,
@@ -32,8 +32,15 @@ export default async function AdminVerificationsPage({ searchParams }: PageProps
     `)
     .order('created_at', { ascending: false });
 
+  // ✅ Normalize profile to a single object (not an array)
+  const recruiters =
+    (rawRecruiters ?? []).map((r: any) => ({
+      ...r,
+      profile: Array.isArray(r.profile) ? r.profile[0] ?? null : r.profile ?? null,
+    })) ?? [];
+
   // Fetch job seekers with their profiles
-  const { data: jobSeekers } = await supabase
+  const { data: rawJobSeekers } = await supabase
     .from('job_seeker_profiles')
     .select(`
       user_id,
@@ -53,27 +60,34 @@ export default async function AdminVerificationsPage({ searchParams }: PageProps
     `)
     .order('created_at', { ascending: false });
 
+  // ✅ Normalize profile to a single object (not an array)
+  const jobSeekers =
+    (rawJobSeekers ?? []).map((j: any) => ({
+      ...j,
+      profile: Array.isArray(j.profile) ? j.profile[0] ?? null : j.profile ?? null,
+    })) ?? [];
+
   // Fetch verification documents
   const { data: verificationDocs } = await supabase
     .from('verifications')
     .select('*')
     .order('created_at', { ascending: false });
 
-  // Get counts
+  // Get counts (use normalized arrays)
   const recruiterCounts = {
-    pending: recruiters?.filter(r => r.verification_status === 'pending').length || 0,
-    verified: recruiters?.filter(r => r.verification_status === 'verified').length || 0,
-    rejected: recruiters?.filter(r => r.verification_status === 'rejected').length || 0,
-    unverified: recruiters?.filter(r => r.verification_status === 'unverified').length || 0,
-    total: recruiters?.length || 0,
+    pending: recruiters.filter(r => r.verification_status === 'pending').length,
+    verified: recruiters.filter(r => r.verification_status === 'verified').length,
+    rejected: recruiters.filter(r => r.verification_status === 'rejected').length,
+    unverified: recruiters.filter(r => r.verification_status === 'unverified').length,
+    total: recruiters.length,
   };
 
   const jobSeekerCounts = {
-    pending: jobSeekers?.filter(j => j.verification_status === 'pending').length || 0,
-    verified: jobSeekers?.filter(j => j.verification_status === 'verified').length || 0,
-    rejected: jobSeekers?.filter(j => j.verification_status === 'rejected').length || 0,
-    unverified: jobSeekers?.filter(j => j.verification_status === 'unverified').length || 0,
-    total: jobSeekers?.length || 0,
+    pending: jobSeekers.filter(j => j.verification_status === 'pending').length,
+    verified: jobSeekers.filter(j => j.verification_status === 'verified').length,
+    rejected: jobSeekers.filter(j => j.verification_status === 'rejected').length,
+    unverified: jobSeekers.filter(j => j.verification_status === 'unverified').length,
+    total: jobSeekers.length,
   };
 
   return (
@@ -85,8 +99,8 @@ export default async function AdminVerificationsPage({ searchParams }: PageProps
 
       <VerificationsClient
         activeTab={activeTab}
-        recruiters={recruiters || []}
-        jobSeekers={jobSeekers || []}
+        recruiters={recruiters}
+        jobSeekers={jobSeekers}
         verificationDocs={verificationDocs || []}
         recruiterCounts={recruiterCounts}
         jobSeekerCounts={jobSeekerCounts}
