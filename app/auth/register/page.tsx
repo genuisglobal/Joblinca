@@ -4,53 +4,16 @@ import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { useTranslation } from '@/lib/i18n';
 import { Mail, Lock, Phone, ArrowRight, AlertCircle, Briefcase, GraduationCap, Building2, CheckCircle } from 'lucide-react';
 
 type UserRole = 'job_seeker' | 'talent' | 'recruiter';
-
-const roleConfig = {
-  job_seeker: {
-    label: 'Job Seeker',
-    description: 'Ready for the job market',
-    icon: Briefcase,
-    color: 'primary',
-    benefits: [
-      'Apply to unlimited jobs for free',
-      'Build your professional CV',
-      'Get job alerts via WhatsApp',
-      'AI-powered job matching',
-    ],
-  },
-  talent: {
-    label: 'Talent',
-    description: 'Student / Seeking internships',
-    icon: GraduationCap,
-    color: 'green',
-    benefits: [
-      'Find internship opportunities',
-      'Upload and showcase projects',
-      'Build your portfolio',
-      'Connect with mentors',
-    ],
-  },
-  recruiter: {
-    label: 'Recruiter',
-    description: 'Hiring for your company',
-    icon: Building2,
-    color: 'accent',
-    benefits: [
-      'Post jobs and reach top talent',
-      'AI-powered candidate filtering',
-      'Streamlined hiring workflow',
-      'Access analytics dashboard',
-    ],
-  },
-};
 
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialRole = (searchParams.get('role') as UserRole) || 'job_seeker';
+  const { t } = useTranslation();
 
   const supabase = createClient();
   const [role, setRole] = useState<UserRole>(
@@ -61,6 +24,45 @@ function RegisterForm() {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const roleConfig = {
+    job_seeker: {
+      label: t("auth.register.roleJobSeeker"),
+      description: t("auth.register.roleJobSeekerDesc"),
+      icon: Briefcase,
+      color: 'primary' as const,
+      benefits: [
+        t("auth.register.benefit.job_seeker.1"),
+        t("auth.register.benefit.job_seeker.2"),
+        t("auth.register.benefit.job_seeker.3"),
+        t("auth.register.benefit.job_seeker.4"),
+      ],
+    },
+    talent: {
+      label: t("auth.register.roleTalent"),
+      description: t("auth.register.roleTalentDesc"),
+      icon: GraduationCap,
+      color: 'green' as const,
+      benefits: [
+        t("auth.register.benefit.talent.1"),
+        t("auth.register.benefit.talent.2"),
+        t("auth.register.benefit.talent.3"),
+        t("auth.register.benefit.talent.4"),
+      ],
+    },
+    recruiter: {
+      label: t("auth.register.roleRecruiter"),
+      description: t("auth.register.roleRecruiterDesc"),
+      icon: Building2,
+      color: 'accent' as const,
+      benefits: [
+        t("auth.register.benefit.recruiter.1"),
+        t("auth.register.benefit.recruiter.2"),
+        t("auth.register.benefit.recruiter.3"),
+        t("auth.register.benefit.recruiter.4"),
+      ],
+    },
+  };
 
   const currentRole = roleConfig[role];
 
@@ -84,10 +86,10 @@ function RegisterForm() {
         return;
       }
 
-      // Create the profile in the database
       if (data.user) {
         const profileResponse = await fetch('/api/profile/create', {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             userId: data.user.id,
@@ -99,12 +101,11 @@ function RegisterForm() {
         const profileResult = await profileResponse.json();
 
         if (!profileResponse.ok) {
-          setError(profileResult.error || 'Failed to create profile');
+          setError(profileResult.error || t("auth.register.profileFailed"));
           return;
         }
       }
 
-      // Redirect based on role
       if (role === 'recruiter') {
         router.push('/dashboard/recruiter');
       } else if (role === 'talent') {
@@ -113,7 +114,7 @@ function RegisterForm() {
         router.push('/dashboard');
       }
     } catch {
-      setError('An unexpected error occurred. Please try again.');
+      setError(t("auth.register.unexpectedError"));
     } finally {
       setIsLoading(false);
     }
@@ -167,15 +168,15 @@ function RegisterForm() {
       <div className="relative w-full max-w-lg">
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">Create your account</h1>
+          <h1 className="text-3xl font-bold mb-2">{t("auth.register.title")}</h1>
           <p className="text-neutral-400">
-            Join Joblinca and start your journey
+            {t("auth.register.subtitle")}
           </p>
         </div>
 
         {/* Form Card */}
         <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-8">
-          {/* Role Selector - 3 options */}
+          {/* Role Selector */}
           <div className="grid grid-cols-3 gap-3 mb-6">
             {(Object.keys(roleConfig) as UserRole[]).map((r) => {
               const config = roleConfig[r];
@@ -213,7 +214,7 @@ function RegisterForm() {
             {/* Email Field */}
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-neutral-300 mb-2">
-                Email address
+                {t("auth.register.email")}
               </label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
@@ -223,7 +224,7 @@ function RegisterForm() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
-                  placeholder="you@example.com"
+                  placeholder={t("auth.register.emailPlaceholder")}
                   required
                 />
               </div>
@@ -232,7 +233,7 @@ function RegisterForm() {
             {/* Phone Field */}
             <div>
               <label htmlFor="phone" className="block text-sm font-medium text-neutral-300 mb-2">
-                Phone number (for WhatsApp alerts)
+                {t("auth.register.phone")}
               </label>
               <div className="relative">
                 <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
@@ -242,7 +243,7 @@ function RegisterForm() {
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
                   className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
-                  placeholder="+237 6XX XXX XXX"
+                  placeholder={t("auth.register.phonePlaceholder")}
                   required
                 />
               </div>
@@ -251,7 +252,7 @@ function RegisterForm() {
             {/* Password Field */}
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-neutral-300 mb-2">
-                Password
+                {t("auth.register.password")}
               </label>
               <div className="relative">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
@@ -261,20 +262,20 @@ function RegisterForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
-                  placeholder="Create a strong password"
+                  placeholder={t("auth.register.passwordPlaceholder")}
                   required
                   minLength={8}
                 />
               </div>
               <p className="text-xs text-neutral-500 mt-2">
-                Must be at least 8 characters
+                {t("auth.register.passwordHint")}
               </p>
             </div>
 
             {/* Benefits based on role */}
             <div className="p-4 bg-neutral-800/50 rounded-lg border border-neutral-700/50">
               <p className="text-sm font-medium text-neutral-300 mb-3">
-                {currentRole.label} benefits:
+                {t("auth.register.benefits", { role: currentRole.label })}
               </p>
               <ul className="space-y-2">
                 {currentRole.benefits.map((benefit, index) => (
@@ -296,7 +297,7 @@ function RegisterForm() {
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  Create {currentRole.label} Account
+                  {t("auth.register.createAccount", { role: currentRole.label })}
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
@@ -309,31 +310,31 @@ function RegisterForm() {
               <div className="w-full border-t border-neutral-800" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-4 bg-neutral-900 text-neutral-500">or</span>
+              <span className="px-4 bg-neutral-900 text-neutral-500">{t("auth.register.or")}</span>
             </div>
           </div>
 
           {/* Sign In Link */}
           <p className="text-center text-neutral-400">
-            Already have an account?{' '}
+            {t("auth.register.haveAccount")}{' '}
             <Link
               href="/auth/login"
               className="text-primary-400 hover:text-primary-300 font-medium transition-colors"
             >
-              Sign in
+              {t("auth.register.signIn")}
             </Link>
           </p>
         </div>
 
         {/* Footer */}
         <p className="text-center text-sm text-neutral-500 mt-8">
-          By creating an account, you agree to our{' '}
+          {t("auth.register.agreeTerms")}{' '}
           <Link href="/terms" className="text-neutral-400 hover:text-white transition-colors">
-            Terms
+            {t("auth.register.terms")}
           </Link>{' '}
-          and{' '}
+          {t("auth.register.and")}{' '}
           <Link href="/privacy" className="text-neutral-400 hover:text-white transition-colors">
-            Privacy Policy
+            {t("auth.register.privacy")}
           </Link>
         </p>
       </div>

@@ -5,6 +5,19 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
+type CustomQuestion = {
+  id: string;
+  type: 'text' | 'textarea' | 'select' | 'multiselect' | 'yesno';
+  question: string;
+  required: boolean;
+  options?: string[];
+};
+
+type QuestionAnswer = {
+  questionId: string;
+  answer: string | string[] | boolean;
+};
+
 type Job = {
   id: string;
   title: string;
@@ -16,6 +29,7 @@ type Job = {
   salary_currency: string | null;
   description: string | null;
   requirements: string | null;
+  custom_questions: CustomQuestion[] | null;
 };
 
 type ContactInfo = {
@@ -29,31 +43,47 @@ type ApplyFormProps = {
   job: Job;
   initialContactInfo: ContactInfo;
   existingResumeUrl: string | null;
+  initialCoverLetter: string;
   draftApplicationId: string | null;
+  initialAnswers: QuestionAnswer[];
 };
 
-type Step = 'contact' | 'resume' | 'review';
+type Step = 'contact' | 'resume' | 'questions' | 'review';
 
-const STEPS: { key: Step; label: string }[] = [
-  { key: 'contact', label: 'Contact Info' },
-  { key: 'resume', label: 'Resume' },
-  { key: 'review', label: 'Review & Submit' },
-];
+// ✅ Correct bucket id (matches your Supabase bucket + policies)
+const CV_BUCKET = 'application-cvs';
+
 
 export default function ApplyForm({
   job,
   initialContactInfo,
   existingResumeUrl,
+  initialCoverLetter,
   draftApplicationId,
+  initialAnswers,
 }: ApplyFormProps) {
   const router = useRouter();
   const supabase = createClient();
+
+  const hasQuestions = Array.isArray(job.custom_questions) && job.custom_questions.length > 0;
+
+  const STEPS: { key: Step; label: string }[] = [
+    { key: 'contact', label: 'Contact Info' },
+    { key: 'resume', label: 'Resume' },
+    ...(hasQuestions ? [{ key: 'questions' as Step, label: 'Questions' }] : []),
+    { key: 'review', label: 'Review & Submit' },
+  ];
 
   const [currentStep, setCurrentStep] = useState<Step>('contact');
   const [contactInfo, setContactInfo] = useState<ContactInfo>(initialContactInfo);
   const [resumeUrl, setResumeUrl] = useState<string | null>(existingResumeUrl);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [coverLetter, setCoverLetter] = useState('');
+
+  // Track resume_path so it can be saved in drafts/submission
+  const [resumePath, setResumePath] = useState<string | null>(null);
+
+  const [coverLetter, setCoverLetter] = useState(initialCoverLetter);
+  const [answers, setAnswers] = useState<QuestionAnswer[]>(initialAnswers);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,21 +92,46 @@ export default function ApplyForm({
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
 
+  const getAnswer = (questionId: string): string | string[] | boolean => {
+    const found = answers.find((a) => a.questionId === questionId);
+    return found?.answer ?? '';
+  };
+
+  const setAnswer = (questionId: string, value: string | string[] | boolean) => {
+    setAnswers((prev) => {
+      const existing = prev.findIndex((a) => a.questionId === questionId);
+      if (existing >= 0) {
+        const updated = [...prev];
+        updated[existing] = { questionId, answer: value };
+        return updated;
+      }
+      return [...prev, { questionId, answer: value }];
+    });
+  };
+
   // Autosave draft
   const saveDraft = useCallback(async () => {
     try {
+      // Get user for applicant_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const applicationData = {
         job_id: job.id,
+        applicant_id: user.id,
         contact_info: contactInfo,
         resume_url: resumeUrl,
         cover_letter: coverLetter || null,
-        is_draft: true,
+        answers: answers.length > 0 ? answers : null,
+        status: 'draft',
       };
 
       if (draftId) {
+        // Don't update applicant_id on existing draft
+        const { applicant_id, ...updateData } = applicationData;
         await supabase
           .from('applications')
-          .update(applicationData)
+          .update(updateData)
           .eq('id', draftId);
       } else {
         const { data } = await supabase
@@ -92,7 +147,7 @@ export default function ApplyForm({
     } catch (err) {
       console.error('Failed to save draft:', err);
     }
-  }, [job.id, contactInfo, resumeUrl, coverLetter, draftId, supabase]);
+  }, [job.id, contactInfo, resumeUrl, coverLetter, answers, draftId, supabase]);
 
   // Autosave every 30 seconds if there are changes
   useEffect(() => {
@@ -109,30 +164,62 @@ export default function ApplyForm({
     setContactInfo((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Resume upload handler
   const handleResumeUpload = async (file: File) => {
     setIsUploading(true);
     setError(null);
 
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-      const filePath = `resumes/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('applications')
-        .upload(filePath, file);
-
-      if (uploadError) {
-        throw new Error('Failed to upload resume');
+      // 1) Verify the user is authenticated
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        throw new Error('Please log in to upload your resume');
       }
 
-      const { data: urlData } = supabase.storage
-        .from('applications')
-        .getPublicUrl(filePath);
+      // 2) Build path: <user_id>/<filename>
+      const fileExt = file.name.split('.').pop();
+      const safeExt = fileExt ? fileExt.toLowerCase() : 'pdf';
+      const filePath = `${user.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${safeExt}`;
 
-      setResumeUrl(urlData.publicUrl);
+      // 3) Upload to storage bucket
+      const { error: uploadError } = await supabase.storage
+        .from(CV_BUCKET)
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type,
+        });
+
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+
+        if (uploadError.message.includes('bucket') || uploadError.message.includes('not found')) {
+          throw new Error('Resume upload is temporarily unavailable. You can continue without a resume, or try again later.');
+        } else if (uploadError.message.includes('permission') || uploadError.message.includes('policy')) {
+          throw new Error('Upload permission denied. You can continue without a resume, or try logging in again.');
+        } else {
+          throw new Error(`Upload failed: ${uploadError.message}. You can continue without a resume.`);
+        }
+      }
+
+      // 4) Save resume_path in state
+      setResumePath(filePath);
+
+      // 5) Get URL for UI preview - try signed URL first, fallback to public
+      const { data: signed, error: signedErr } = await supabase.storage
+        .from(CV_BUCKET)
+        .createSignedUrl(filePath, 60 * 60); // 1 hour
+
+      if (!signedErr && signed?.signedUrl) {
+        setResumeUrl(signed.signedUrl);
+      } else {
+        const { data: urlData } = supabase.storage.from(CV_BUCKET).getPublicUrl(filePath);
+        setResumeUrl(urlData.publicUrl || null);
+      }
+
       setResumeFile(file);
     } catch (err) {
+      console.error('Resume upload error:', err);
       setError(err instanceof Error ? err.message : 'Failed to upload resume');
     } finally {
       setIsUploading(false);
@@ -170,7 +257,17 @@ export default function ApplyForm({
           contactInfo.phone.trim()
         );
       case 'resume':
-        return !!resumeUrl;
+        return true;
+      case 'questions':
+        if (!hasQuestions) return true;
+        for (const q of job.custom_questions!) {
+          if (q.required) {
+            const ans = getAnswer(q.id);
+            if (ans === '' || ans === undefined || ans === null) return false;
+            if (Array.isArray(ans) && ans.length === 0) return false;
+          }
+        }
+        return true;
       default:
         return true;
     }
@@ -203,37 +300,61 @@ export default function ApplyForm({
     setError(null);
 
     try {
-      const applicationData = {
+      // Get user for applicant_id
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('Please log in to submit your application');
+      }
+
+      // Core application data
+      const applicationData: Record<string, unknown> = {
         job_id: job.id,
+        applicant_id: user.id,
         contact_info: contactInfo,
         resume_url: resumeUrl,
         cover_letter: coverLetter || null,
-        is_draft: false,
+        answers: answers.length > 0 ? answers : null,
         status: 'submitted',
-        application_source: 'joblinca',
       };
 
       if (draftId) {
+        // Don't update applicant_id or job_id on existing application
+        const { applicant_id, job_id, ...updateData } = applicationData;
         const { error: updateError } = await supabase
           .from('applications')
-          .update(applicationData)
+          .update(updateData)
           .eq('id', draftId);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('Update error details:', updateError);
+          throw updateError;
+        }
       } else {
         const { error: insertError } = await supabase
           .from('applications')
           .insert(applicationData);
 
-        if (insertError) throw insertError;
+        if (insertError) {
+          console.error('Insert error details:', insertError);
+          throw insertError;
+        }
       }
 
       router.push(`/jobs/${job.id}/apply/success`);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Submit error:', err);
-      setError('Failed to submit application. Please try again.');
+      const errorMessage = err instanceof Error ? err.message :
+        (typeof err === 'object' && err !== null && 'message' in err) ? String((err as {message: string}).message) :
+        'Failed to submit application';
+      setError(errorMessage);
       setIsSubmitting(false);
     }
+  };
+
+  const handleViewDescription = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    await saveDraft();
+    router.push(`/jobs/${job.id}`);
   };
 
   const formatSalary = () => {
@@ -392,9 +513,12 @@ export default function ApplyForm({
             {/* Resume Step */}
             {currentStep === 'resume' && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-white mb-4">Resume</h2>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-semibold text-white">Resume</h2>
+                  <span className="text-sm text-gray-500">(Optional)</span>
+                </div>
                 <p className="text-gray-400 text-sm mb-6">
-                  Upload your resume to apply for this position
+                  Upload your resume to strengthen your application, or continue without one
                 </p>
 
                 <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center">
@@ -425,23 +549,36 @@ export default function ApplyForm({
                             : 'Using existing resume'}
                         </p>
                       </div>
-                      <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg cursor-pointer transition-colors">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                      <div className="flex items-center justify-center gap-3">
+                        <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg cursor-pointer transition-colors">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                            />
+                          </svg>
+                          Replace
+                          <input
+                            type="file"
+                            accept=".pdf,.doc,.docx"
+                            onChange={handleFileChange}
+                            className="hidden"
                           />
-                        </svg>
-                        Replace Resume
-                        <input
-                          type="file"
-                          accept=".pdf,.doc,.docx"
-                          onChange={handleFileChange}
-                          className="hidden"
-                        />
-                      </label>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setResumeUrl(null);
+                            setResumeFile(null);
+                            setResumePath(null); // ✅ clear resume_path too
+                          }}
+                          className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -510,6 +647,9 @@ export default function ApplyForm({
                           disabled={isUploading}
                         />
                       </label>
+                      <p className="text-gray-500 text-xs mt-2">
+                        You can also continue without a resume
+                      </p>
                     </div>
                   )}
                 </div>
@@ -527,6 +667,115 @@ export default function ApplyForm({
                     placeholder="Tell the employer why you're a great fit for this role..."
                   />
                 </div>
+              </div>
+            )}
+
+            {/* Questions Step */}
+            {currentStep === 'questions' && hasQuestions && (
+              <div className="space-y-6">
+                <h2 className="text-xl font-semibold text-white mb-4">Screening Questions</h2>
+                <p className="text-gray-400 text-sm mb-6">
+                  Please answer the following questions from the employer
+                </p>
+
+                {job.custom_questions!.map((q) => (
+                  <div key={q.id}>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      {q.question}
+                      {q.required && <span className="text-red-400 ml-1">*</span>}
+                    </label>
+
+                    {q.type === 'text' && (
+                      <input
+                        type="text"
+                        value={(getAnswer(q.id) as string) || ''}
+                        onChange={(e) => setAnswer(q.id, e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="Your answer"
+                      />
+                    )}
+
+                    {q.type === 'textarea' && (
+                      <textarea
+                        value={(getAnswer(q.id) as string) || ''}
+                        onChange={(e) => setAnswer(q.id, e.target.value)}
+                        rows={4}
+                        className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                        placeholder="Your answer"
+                      />
+                    )}
+
+                    {q.type === 'yesno' && (
+                      <div className="flex gap-4">
+                        <button
+                          type="button"
+                          onClick={() => setAnswer(q.id, true)}
+                          className={`px-6 py-2.5 rounded-lg font-medium transition-colors ${
+                            getAnswer(q.id) === true
+                              ? 'bg-green-600 text-white'
+                              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          }`}
+                        >
+                          Yes
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAnswer(q.id, false)}
+                          className={`px-6 py-2.5 rounded-lg font-medium transition-colors ${
+                            getAnswer(q.id) === false
+                              ? 'bg-red-600 text-white'
+                              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                          }`}
+                        >
+                          No
+                        </button>
+                      </div>
+                    )}
+
+                    {q.type === 'select' && q.options && (
+                      <select
+                        value={(getAnswer(q.id) as string) || ''}
+                        onChange={(e) => setAnswer(q.id, e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      >
+                        <option value="">Select an option</option>
+                        {q.options.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {q.type === 'multiselect' && q.options && (
+                      <div className="space-y-2">
+                        {q.options.map((opt) => {
+                          const currentVal = (getAnswer(q.id) as string[]) || [];
+                          const isChecked = currentVal.includes(opt);
+                          return (
+                            <label
+                              key={opt}
+                              className="flex items-center gap-3 px-4 py-2.5 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600 transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  const updated = isChecked
+                                    ? currentVal.filter((v) => v !== opt)
+                                    : [...currentVal, opt];
+                                  setAnswer(q.id, updated);
+                                }}
+                                className="w-4 h-4 text-blue-600 bg-gray-600 border-gray-500 rounded focus:ring-blue-500"
+                              />
+                              <span className="text-white text-sm">{opt}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
 
@@ -583,25 +832,47 @@ export default function ApplyForm({
                         Edit
                       </button>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <svg
-                        className="w-8 h-8 text-blue-400"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                      <div>
-                        <p className="text-white">{resumeFile?.name || 'Resume'}</p>
-                        <p className="text-gray-400 text-sm">Uploaded and ready</p>
+                    {resumeUrl ? (
+                      <div className="flex items-center gap-3">
+                        <svg
+                          className="w-8 h-8 text-blue-400"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                        <div>
+                          <p className="text-white">{resumeFile?.name || 'Resume'}</p>
+                          <p className="text-gray-400 text-sm">Uploaded and ready</p>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-3">
+                        <svg
+                          className="w-8 h-8 text-gray-500"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                          />
+                        </svg>
+                        <div>
+                          <p className="text-gray-400">No resume attached</p>
+                          <p className="text-gray-500 text-sm">You can add one before submitting</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Cover Letter Summary */}
@@ -619,6 +890,37 @@ export default function ApplyForm({
                       <p className="text-gray-300 text-sm whitespace-pre-wrap line-clamp-4">
                         {coverLetter}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Screening Questions Summary */}
+                  {hasQuestions && answers.length > 0 && (
+                    <div className="bg-gray-700/50 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-white font-medium">Screening Questions</h3>
+                        <button
+                          onClick={() => setCurrentStep('questions')}
+                          className="text-blue-400 hover:text-blue-300 text-sm"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                      <div className="space-y-3">
+                        {job.custom_questions!.map((q) => {
+                          const ans = getAnswer(q.id);
+                          const displayAnswer =
+                            ans === true ? 'Yes' :
+                            ans === false ? 'No' :
+                            Array.isArray(ans) ? ans.join(', ') :
+                            (ans as string) || '—';
+                          return (
+                            <div key={q.id} className="text-sm">
+                              <span className="text-gray-400">{q.question}</span>
+                              <p className="text-white mt-0.5">{displayAnswer}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -758,6 +1060,7 @@ export default function ApplyForm({
             <div className="mt-6 pt-4 border-t border-gray-700">
               <Link
                 href={`/jobs/${job.id}`}
+                onClick={handleViewDescription}
                 className="text-blue-400 hover:text-blue-300 text-sm"
               >
                 View full job description

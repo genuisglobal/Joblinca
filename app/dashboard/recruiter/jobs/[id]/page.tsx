@@ -1,53 +1,144 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { redirect, notFound } from 'next/navigation';
+'use client';
+
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import StatusBadge from '../../../components/StatusBadge';
 import ApplicationsTable from './ApplicationsTable';
 
-export default async function RecruiterJobDetailPage({
+interface Job {
+  id: string;
+  title: string;
+  company_name: string | null;
+  location: string | null;
+  work_type: string | null;
+  job_type: string | null;
+  salary: number | null;
+  visibility: string | null;
+  published: boolean;
+  approval_status: string | null;
+  rejection_reason: string | null;
+  description: string | null;
+  custom_questions: unknown[] | null;
+  created_at: string;
+}
+
+interface Profile {
+  id: string;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  avatar_url: string | null;
+}
+
+interface Application {
+  id: string;
+  job_id: string;
+  applicant_id: string;
+  cover_letter: string | null;
+  answers: unknown[] | null;
+  status: string;
+  created_at: string;
+  profiles: Profile;
+}
+
+export default function RecruiterJobDetailPage({
   params,
 }: {
   params: { id: string };
 }) {
-  const supabase = createServerSupabaseClient();
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [job, setJob] = useState<Job | null>(null);
+  const [applications, setApplications] = useState<Application[]>([]);
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  useEffect(() => {
+    let mounted = true;
 
-  if (!user) {
-    redirect('/auth/login');
+    async function loadJobData() {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (!mounted) return;
+
+        if (authError || !user) {
+          router.replace('/auth/login');
+          return;
+        }
+
+        // Fetch job details
+        const { data: jobData, error: jobError } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('id', params.id)
+          .eq('recruiter_id', user.id)
+          .single();
+
+        if (!mounted) return;
+
+        if (jobError || !jobData) {
+          router.replace('/dashboard/recruiter/jobs');
+          return;
+        }
+
+        setJob(jobData);
+
+        // Fetch applications for this job
+        const { data: appsData } = await supabase
+          .from('applications')
+          .select(
+            `
+            *,
+            profiles:applicant_id (
+              id,
+              full_name,
+              first_name,
+              last_name,
+              avatar_url
+            )
+          `
+          )
+          .eq('job_id', params.id)
+          .order('created_at', { ascending: false });
+
+        if (!mounted) return;
+
+        setApplications(appsData || []);
+        setLoading(false);
+      } catch (err) {
+        console.error('Job detail load error:', err);
+        if (mounted) {
+          router.replace('/dashboard/recruiter/jobs');
+        }
+      }
+    }
+
+    loadJobData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase, router, params.id]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <p className="text-gray-400">Loading job details...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Fetch job details
-  const { data: job, error } = await supabase
-    .from('jobs')
-    .select('*')
-    .eq('id', params.id)
-    .eq('recruiter_id', user.id)
-    .single();
-
-  if (error || !job) {
-    notFound();
+  if (!job) {
+    return null;
   }
-
-  // Fetch applications for this job
-  const { data: applications } = await supabase
-    .from('applications')
-    .select(
-      `
-      *,
-      profiles:applicant_id (
-        id,
-        full_name,
-        first_name,
-        last_name,
-        avatar_url
-      )
-    `
-    )
-    .eq('job_id', params.id)
-    .order('created_at', { ascending: false });
 
   return (
     <div className="space-y-6">
@@ -172,13 +263,13 @@ export default async function RecruiterJobDetailPage({
       <div className="bg-gray-800 rounded-xl p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-white">
-            Applications ({applications?.length || 0})
+            Applications ({applications.length})
           </h2>
         </div>
         <ApplicationsTable
-          applications={applications || []}
+          applications={applications as Parameters<typeof ApplicationsTable>[0]['applications']}
           jobId={params.id}
-          customQuestions={job.custom_questions}
+          customQuestions={job.custom_questions as Parameters<typeof ApplicationsTable>[0]['customQuestions']}
         />
       </div>
     </div>

@@ -15,6 +15,10 @@ export default async function AdminPage() {
     pendingJobSeekerVerificationsResult,
     approvedJobsResult,
     rejectedJobsResult,
+    totalTransactionsResult,
+    completedTransactionsResult,
+    activeSubscriptionsResult,
+    revenueResult,
   ] = await Promise.all([
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
     supabase.from('jobs').select('id', { count: 'exact', head: true }),
@@ -25,7 +29,16 @@ export default async function AdminPage() {
     supabase.from('job_seeker_profiles').select('user_id', { count: 'exact', head: true }).eq('verification_status', 'pending'),
     supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('approval_status', 'approved'),
     supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('approval_status', 'rejected'),
+    supabase.from('transactions').select('id', { count: 'exact', head: true }),
+    supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
+    supabase.from('subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+    supabase.from('transactions').select('amount').eq('status', 'completed'),
   ]);
+
+  const totalRevenue = (revenueResult.data || []).reduce(
+    (sum: number, t: { amount: number }) => sum + (t.amount || 0),
+    0
+  );
 
   const stats = {
     users: usersResult.count ?? 0,
@@ -37,6 +50,10 @@ export default async function AdminPage() {
     pendingJobSeekerVerifications: pendingJobSeekerVerificationsResult.count ?? 0,
     approvedJobs: approvedJobsResult.count ?? 0,
     rejectedJobs: rejectedJobsResult.count ?? 0,
+    totalTransactions: totalTransactionsResult.count ?? 0,
+    completedTransactions: completedTransactionsResult.count ?? 0,
+    activeSubscriptions: activeSubscriptionsResult.count ?? 0,
+    totalRevenue,
   };
 
   // Fetch recent pending jobs for quick review
@@ -111,6 +128,33 @@ export default async function AdminPage() {
           <StatusCard title="Pending Approval" value={stats.pendingJobs} color="yellow" />
           <StatusCard title="Approved" value={stats.approvedJobs} color="green" />
           <StatusCard title="Rejected" value={stats.rejectedJobs} color="red" />
+        </div>
+      </div>
+
+      {/* Finance Overview */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-white mb-4">Finance</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <AdminStatCard
+            title="Total Revenue"
+            value={`${stats.totalRevenue.toLocaleString()} CFA`}
+            icon={<CreditCardIcon />}
+          />
+          <AdminStatCard
+            title="Transactions"
+            value={stats.totalTransactions.toString()}
+            icon={<DocumentIcon />}
+          />
+          <AdminStatCard
+            title="Completed"
+            value={stats.completedTransactions.toString()}
+            icon={<CheckIcon />}
+          />
+          <AdminStatCard
+            title="Active Subscriptions"
+            value={stats.activeSubscriptions.toString()}
+            icon={<UsersIcon />}
+          />
         </div>
       </div>
 
@@ -279,6 +323,22 @@ function BuildingIcon() {
   return (
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-6 h-6">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+    </svg>
+  );
+}
+
+function CreditCardIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-6 h-6">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-6 h-6">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
 }

@@ -1,17 +1,14 @@
 /**
  * External job aggregation helpers.
  *
- * This module provides functions to fetch job listings from third‑party
- * providers and normalise them into a common shape.  Results from these
+ * This module provides functions to fetch job listings from third-party
+ * providers and normalise them into a common shape. Results from these
  * functions can be stored in the `external_jobs` table via the API route
  * `/api/refresh-external-jobs`.
  */
 
 import { fetchRemoteJobs } from '@/lib/remoteJobs';
 
-// A normalised representation of an external job.  These fields map
-// directly onto the columns of the `external_jobs` table defined in the
-// migration.  Additional properties returned by providers are discarded.
 export interface ExternalJob {
   external_id: string;
   source: string;
@@ -27,11 +24,50 @@ export interface ExternalJob {
   fetched_at?: string;
 }
 
-/**
- * Fetch jobs from the Remotive API and normalise them into ExternalJob
- * structures.  Remotive primarily provides remote jobs across a wide
- * variety of categories.  Only selected fields are kept.
- */
+// ───────────────────────────────────────────────
+// Smart category derivation from text signals
+// ───────────────────────────────────────────────
+
+const CATEGORY_RULES: Array<{ keywords: string[]; category: string }> = [
+  { keywords: ['software', 'developer', 'engineer', 'frontend', 'backend', 'fullstack', 'full-stack', 'devops', 'sre', 'cloud', 'data engineer', 'machine learning', 'ml ', 'ai ', 'python', 'javascript', 'typescript', 'react', 'node', 'java', 'golang', 'rust', 'kubernetes', 'aws', 'azure'], category: 'Engineering' },
+  { keywords: ['product manager', 'product owner', 'scrum', 'agile', 'program manager'], category: 'Product' },
+  { keywords: ['design', 'ux', 'ui ', 'figma', 'graphic', 'creative', 'illustrator', 'visual'], category: 'Design' },
+  { keywords: ['marketing', 'seo', 'content', 'social media', 'growth', 'digital marketing', 'copywriter', 'brand'], category: 'Marketing' },
+  { keywords: ['sales', 'account executive', 'business development', 'bdr', 'sdr', 'revenue'], category: 'Sales' },
+  { keywords: ['customer support', 'customer success', 'customer service', 'helpdesk', 'help desk', 'support specialist', 'support engineer'], category: 'Customer Support' },
+  { keywords: ['teacher', 'teaching', 'tutor', 'educator', 'instructor', 'esl', 'education'], category: 'Teaching' },
+  { keywords: ['finance', 'accounting', 'accountant', 'bookkeeper', 'controller', 'audit', 'tax'], category: 'Finance' },
+  { keywords: ['human resources', 'hr ', 'recruiter', 'recruiting', 'talent acquisition', 'people ops'], category: 'HR & Recruiting' },
+  { keywords: ['data analyst', 'data scientist', 'analytics', 'business intelligence', 'tableau', 'power bi', 'sql analyst'], category: 'Data & Analytics' },
+  { keywords: ['project manager', 'operations', 'coordinator', 'logistics', 'admin', 'office manager'], category: 'Operations' },
+  { keywords: ['writer', 'editor', 'journalist', 'technical writer', 'documentation', 'content writer'], category: 'Writing' },
+  { keywords: ['qa', 'quality assurance', 'tester', 'test engineer', 'automation test'], category: 'QA & Testing' },
+  { keywords: ['security', 'cybersecurity', 'infosec', 'penetration', 'compliance'], category: 'Security' },
+  { keywords: ['visa', 'sponsorship', 'sponsor'], category: 'Visa Sponsorship' },
+  { keywords: ['intern', 'internship', 'trainee', 'apprentice', 'junior', 'entry level', 'entry-level', 'graduate'], category: 'Internships & Entry Level' },
+];
+
+export function deriveCategory(title: string, industry?: string, description?: string): string {
+  const text = `${title} ${industry || ''} ${description || ''}`.toLowerCase();
+
+  for (const rule of CATEGORY_RULES) {
+    for (const kw of rule.keywords) {
+      if (text.includes(kw)) {
+        return rule.category;
+      }
+    }
+  }
+
+  // Fallback to industry if provided
+  if (industry) return industry;
+
+  return 'Other';
+}
+
+// ───────────────────────────────────────────────
+// Provider: Remotive
+// ───────────────────────────────────────────────
+
 export async function fetchRemotiveExternalJobs(): Promise<ExternalJob[]> {
   try {
     const { jobs } = await fetchRemoteJobs();
@@ -44,7 +80,7 @@ export async function fetchRemotiveExternalJobs(): Promise<ExternalJob[]> {
       location: job.candidate_required_location,
       salary: job.salary || null,
       job_type: job.job_type,
-      category: job.category,
+      category: job.category || deriveCategory(job.title),
       description: undefined,
       url: job.url,
       fetched_at: new Date().toISOString(),
@@ -54,53 +90,28 @@ export async function fetchRemotiveExternalJobs(): Promise<ExternalJob[]> {
   }
 }
 
-/**
- * Placeholder for fetching jobs from Jobicy (remote jobs feed).  Jobicy
- * provides a JSON feed of remote jobs without authentication.  Once
- * integrated, this function should fetch the feed, normalise each job
- * and return an array of ExternalJob objects.  For now this returns an
- * empty array to avoid build errors.
- */
-/**
- * Fetch jobs from the Jobicy remote jobs API.  Jobicy offers a public
- * JSON feed of remote vacancies across many industries.  The feed
- * supports optional query parameters such as `count`, `geo` and
- * `industry`; we request a reasonable number of listings (50) to
- * minimise network load.  Jobs are normalised into the ExternalJob
- * structure defined above.  If a job's title or industry suggests a
- * teaching role or visa sponsorship, the category field is set
- * accordingly.  Otherwise the job's industry is used as the category.
- *
- * See Jobicy API docs for response fields【335617390489077†L72-L125】.
- */
+// ───────────────────────────────────────────────
+// Provider: Jobicy
+// ───────────────────────────────────────────────
+
 export async function fetchJobicyExternalJobs(): Promise<ExternalJob[]> {
   try {
     const endpoint = 'https://jobicy.com/api/v2/remote-jobs?count=50';
     const res = await fetch(endpoint, { next: { revalidate: 3600 } });
-    if (!res.ok) {
-      return [];
-    }
+    if (!res.ok) return [];
+
     const data = await res.json();
-    const jobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
+    const jobs = data && Array.isArray(data.jobs) ? data.jobs : [];
+
     return jobs.map((job: any) => {
-      // derive category based on keywords in the title/industry/description
-      const text = `${job.jobTitle || ''} ${job.jobIndustry || ''} ${job.jobDescription || ''}`.toLowerCase();
-      let category: string | null = null;
-      if (text.includes('teacher') || text.includes('teaching') || text.includes('tutor') || text.includes('educator') || text.includes('instructor')) {
-        category = 'Teaching';
-      } else if (text.includes('visa') && text.includes('sponsor')) {
-        category = 'Visa Sponsorship';
-      } else if (text.includes('sponsorship')) {
-        category = 'Visa Sponsorship';
-      } else {
-        category = job.jobIndustry || null;
-      }
-      // build salary range string if present
+      const category = deriveCategory(job.jobTitle || '', job.jobIndustry || '', job.jobDescription || '');
+
       let salary: string | null = null;
       if (job.annualSalaryMin && job.annualSalaryMax) {
         const currency = job.salaryCurrency || '';
-        salary = `${job.annualSalaryMin}–${job.annualSalaryMax} ${currency}`;
+        salary = `${job.annualSalaryMin}\u2013${job.annualSalaryMax} ${currency}`.trim();
       }
+
       return {
         external_id: String(job.id),
         source: 'jobicy',
@@ -121,46 +132,56 @@ export async function fetchJobicyExternalJobs(): Promise<ExternalJob[]> {
   }
 }
 
-/**
- * Placeholder for fetching jobs from Findwork.  Findwork requires an API
- * key and returns a JSON payload of jobs.  Integrate when API keys are
- * available.  For now this returns an empty array.
- */
-export async function fetchFindworkExternalJobs(): Promise<ExternalJob[]> {
-  // TODO: implement fetch from Findwork API
-  return [];
-}
+// ───────────────────────────────────────────────
+// Provider: Findwork
+// ───────────────────────────────────────────────
 
-/**
- * Placeholder for fetching jobs from Upwork.  Upwork’s public API
- * requires OAuth credentials (client ID and client secret) and is
- * intended for use by approved partners.  When integrating, you
- * should obtain API credentials from Upwork, implement the OAuth
- * flow to acquire a bearer token and then call the appropriate
- * endpoints to fetch job listings.  See Upwork’s API docs for
- * details: https://developers.upwork.com/
- *
- * To avoid breaking the build when no credentials are provided, this
- * function simply returns an empty array.  It should only be
- * enabled when the environment variables `UPWORK_CLIENT_ID` and
- * `UPWORK_CLIENT_SECRET` are present and valid.  You can add
- * additional logic here to detect those variables and perform the
- * authentication and data fetching steps.
- */
-export async function fetchUpworkExternalJobs(): Promise<ExternalJob[]> {
-  // Upwork integration is optional and disabled by default.  Return
-  // an empty array when credentials are missing.  Implement API
-  // calls here once the project has been approved for Upwork access.
-  const clientId = process.env.UPWORK_CLIENT_ID;
-  const clientSecret = process.env.UPWORK_CLIENT_SECRET;
-  if (!clientId || !clientSecret) {
+export async function fetchFindworkExternalJobs(): Promise<ExternalJob[]> {
+  const apiKey = process.env.FINDWORK_API_KEY;
+  if (!apiKey) return [];
+
+  try {
+    const res = await fetch('https://findwork.dev/api/jobs/?search=remote&sort_by=relevance', {
+      headers: { Authorization: `Token ${apiKey}` },
+      next: { revalidate: 3600 },
+    });
+
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    const jobs = Array.isArray(data.results) ? data.results : [];
+
+    return jobs.map((job: any) => ({
+      external_id: String(job.id),
+      source: 'findwork',
+      title: job.role || job.title || 'Untitled',
+      company_name: job.company_name || null,
+      company_logo: job.company_logo || undefined,
+      location: job.location || 'Remote',
+      salary: null,
+      job_type: job.employment_type || null,
+      category: deriveCategory(job.role || job.title || '', '', job.text || ''),
+      description: undefined,
+      url: job.url,
+      fetched_at: new Date().toISOString(),
+    }));
+  } catch (err) {
+    console.error('Failed to fetch Findwork jobs', err);
     return [];
   }
+}
+
+// ───────────────────────────────────────────────
+// Provider: Upwork (placeholder - requires OAuth)
+// ───────────────────────────────────────────────
+
+export async function fetchUpworkExternalJobs(): Promise<ExternalJob[]> {
+  const clientId = process.env.UPWORK_CLIENT_ID;
+  const clientSecret = process.env.UPWORK_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
+
   try {
-    // TODO: Implement OAuth client credentials flow and fetch job
-    // listings from Upwork.  Upwork requires generating an access
-    // token using the client ID/secret, then calling the job
-    // listings endpoint.  See Upwork API docs for details.
+    // TODO: Implement OAuth flow when approved for Upwork access
     return [];
   } catch (err) {
     console.error('Failed to fetch Upwork jobs', err);
@@ -168,13 +189,10 @@ export async function fetchUpworkExternalJobs(): Promise<ExternalJob[]> {
   }
 }
 
-/**
- * Fetch jobs from all configured external providers.  If additional
- * providers are added in the future (e.g. Techmap, Upwork), they should
- * be invoked here.  Duplicates (based on external_id + source) are not
- * filtered at this stage; deduplication happens in the database via
- * upsert on the `external_jobs` table.
- */
+// ───────────────────────────────────────────────
+// Aggregate all providers
+// ───────────────────────────────────────────────
+
 export async function fetchAllExternalJobs(): Promise<ExternalJob[]> {
   const results: ExternalJob[] = [];
   const providers = [
@@ -182,8 +200,8 @@ export async function fetchAllExternalJobs(): Promise<ExternalJob[]> {
     fetchJobicyExternalJobs,
     fetchFindworkExternalJobs,
     fetchUpworkExternalJobs,
-    // Add new providers here
   ];
+
   for (const provider of providers) {
     try {
       const jobs = await provider();
@@ -192,5 +210,6 @@ export async function fetchAllExternalJobs(): Promise<ExternalJob[]> {
       console.error('Failed to fetch external jobs from provider', provider.name, err);
     }
   }
+
   return results;
 }

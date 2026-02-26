@@ -103,11 +103,14 @@ export async function PUT(
     );
   }
 
+  const oldStatus = application.status;
+
   const { data: updated, error } = await supabase
     .from('applications')
     .update({
       status,
       updated_at: new Date().toISOString(),
+      reviewed_at: status !== 'submitted' && !application.reviewed_at ? new Date().toISOString() : undefined,
     })
     .eq('id', params.id)
     .select('*')
@@ -118,6 +121,17 @@ export async function PUT(
       { error: error?.message || 'Failed to update application' },
       { status: 500 }
     );
+  }
+
+  // Log activity
+  if (oldStatus !== status) {
+    await supabase.from('application_activity').insert({
+      application_id: params.id,
+      actor_id: user.id,
+      action: 'status_changed',
+      old_value: oldStatus,
+      new_value: status,
+    });
   }
 
   return NextResponse.json(updated);

@@ -1,49 +1,162 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
 import StatusBadge from '../components/StatusBadge';
 
-export default async function RecruiterDashboardPage() {
-  const supabase = createServerSupabaseClient();
+interface Job {
+  id: string;
+  title: string;
+  location: string;
+  published: boolean;
+  created_at: string;
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+interface Profile {
+  id: string;
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+}
 
-  if (!user) {
-    redirect('/auth/login');
+interface Application {
+  id: string;
+  status: string;
+  created_at: string;
+  job_id: string;
+  viewed_at: string | null;
+  profiles: Profile | null;
+  jobs: { title: string } | null;
+}
+
+interface Verification {
+  status: string;
+}
+
+export default function RecruiterDashboardPage() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [verification, setVerification] = useState<Verification | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDashboardData() {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (!mounted) return;
+
+        if (authError || !user) {
+          router.replace('/auth/login');
+          return;
+        }
+
+        // Fetch recruiter's jobs
+        const { data: jobsData } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('recruiter_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!mounted) return;
+
+        const fetchedJobs = jobsData || [];
+        setJobs(fetchedJobs);
+
+        // Fetch applications for recruiter's jobs
+        const jobIds = fetchedJobs.map((j) => j.id);
+        if (jobIds.length > 0) {
+          const { data: appsData } = await supabase
+            .from('applications')
+            .select(`
+              id,
+              status,
+              created_at,
+              job_id,
+              viewed_at,
+              profiles:applicant_id (
+                id,
+                full_name,
+                first_name,
+                last_name
+              ),
+              jobs:job_id (
+                title
+              )
+            `)
+            .in('job_id', jobIds)
+            .neq('status', 'draft')
+            .order('created_at', { ascending: false });
+
+          if (!mounted) return;
+          const normalizedApps = (appsData || []).map((app: any) => ({
+            ...app,
+            jobs: Array.isArray(app.jobs) ? app.jobs[0] || null : app.jobs || null,
+            profiles: Array.isArray(app.profiles) ? app.profiles[0] || null : app.profiles || null,
+          }));
+          setApplications(normalizedApps as Application[]);
+        }
+
+        // Fetch verification status
+        const { data: verificationData } = await supabase
+          .from('verifications')
+          .select('status')
+          .eq('user_id', user.id)
+          .single();
+
+        if (!mounted) return;
+        setVerification(verificationData);
+
+        setLoading(false);
+      } catch (err) {
+        console.error('Dashboard load error:', err);
+        if (mounted) {
+          router.replace('/auth/login');
+        }
+      }
+    }
+
+    loadDashboardData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <p className="text-gray-400">Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Fetch recruiter's jobs
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select('*')
-    .eq('recruiter_id', user.id)
-    .order('created_at', { ascending: false });
+  const totalJobs = jobs.length;
+  const publishedJobs = jobs.filter((j) => j.published).length;
+  const totalApplications = applications.length;
+  const newApplications = applications.filter((a) => a.status === 'submitted' && !a.viewed_at).length;
+  const shortlistedApplications = applications.filter((a) => a.status === 'shortlisted').length;
+  const hiredApplications = applications.filter((a) => a.status === 'hired').length;
+  const recentJobs = jobs.slice(0, 5);
+  const recentApplications = applications.slice(0, 5);
 
-  // Fetch applications for recruiter's jobs
-  const jobIds = jobs?.map((j) => j.id) || [];
-  const { data: applications } = await supabase
-    .from('applications')
-    .select('*, jobs!inner(recruiter_id)')
-    .in('job_id', jobIds.length > 0 ? jobIds : ['00000000-0000-0000-0000-000000000000']);
-
-  // Fetch verification status
-  const { data: verification } = await supabase
-    .from('verifications')
-    .select('status')
-    .eq('user_id', user.id)
-    .single();
-
-  const totalJobs = jobs?.length || 0;
-  const publishedJobs = jobs?.filter((j) => j.published).length || 0;
-  const totalApplications = applications?.length || 0;
-  const pendingApplications =
-    applications?.filter((a) => a.status === 'submitted').length || 0;
-
-  const recentJobs = jobs?.slice(0, 5) || [];
-  const recentApplications = applications?.slice(0, 5) || [];
+  function getApplicantName(profile: Profile | null): string {
+    if (!profile) return 'Unknown';
+    if (profile.first_name && profile.last_name) {
+      return `${profile.first_name} ${profile.last_name}`;
+    }
+    return profile.full_name || 'Anonymous';
+  }
 
   return (
     <div className="space-y-8">
@@ -109,26 +222,59 @@ export default async function RecruiterDashboardPage() {
             </svg>
           }
         />
-        <StatsCard
-          title="Pending Review"
-          value={pendingApplications}
-          color="yellow"
-          icon={
-            <svg
-              className="w-6 h-6 text-yellow-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-          }
-        />
+        <Link href="/dashboard/recruiter/applications?status=submitted">
+          <StatsCard
+            title="New Applications"
+            value={newApplications}
+            color="yellow"
+            icon={
+              <svg
+                className="w-6 h-6 text-yellow-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            }
+          />
+        </Link>
+      </div>
+
+      {/* Additional Stats Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Link href="/dashboard/recruiter/applications?status=shortlisted">
+          <StatsCard
+            title="Shortlisted"
+            value={shortlistedApplications}
+            color="yellow"
+          />
+        </Link>
+        <Link href="/dashboard/recruiter/applications?status=hired">
+          <StatsCard
+            title="Hired"
+            value={hiredApplications}
+            color="green"
+          />
+        </Link>
+        <Link href="/dashboard/recruiter/applications">
+          <div className="rounded-xl border p-6 bg-blue-600/20 text-blue-400 border-blue-600/30 hover:bg-blue-600/30 transition-colors">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-400 font-medium">View All Applications</p>
+                <p className="text-3xl font-bold text-white mt-2">{totalApplications}</p>
+              </div>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </div>
+        </Link>
       </div>
 
       {/* Quick Actions */}
@@ -230,26 +376,61 @@ export default async function RecruiterDashboardPage() {
           <h2 className="text-xl font-semibold text-white">
             Recent Applications
           </h2>
+          <Link
+            href="/dashboard/recruiter/applications"
+            className="text-blue-400 hover:text-blue-300 text-sm"
+          >
+            View All
+          </Link>
         </div>
         {recentApplications.length === 0 ? (
-          <p className="text-gray-400">No applications received yet.</p>
+          <div className="text-center py-8">
+            <svg
+              className="w-16 h-16 mx-auto text-gray-600 mb-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            <p className="text-gray-400">No applications received yet.</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Applications will appear here once candidates apply to your jobs.
+            </p>
+          </div>
         ) : (
           <div className="space-y-4">
             {recentApplications.map((app) => (
-              <div
+              <Link
                 key={app.id}
-                className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg"
+                href={`/dashboard/recruiter/applications/${app.id}`}
+                className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg hover:bg-gray-700 transition-colors"
               >
-                <div>
-                  <p className="font-medium text-white">
-                    Application #{app.id.slice(0, 8)}
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    {new Date(app.created_at).toLocaleDateString()}
-                  </p>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
+                    {getApplicantName(app.profiles).charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="font-medium text-white">
+                      {getApplicantName(app.profiles)}
+                      {!app.viewed_at && (
+                        <span className="ml-2 px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded">
+                          New
+                        </span>
+                      )}
+                    </p>
+                    <p className="text-sm text-gray-400">
+                      {app.jobs?.title || 'Job'} • {new Date(app.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
                 </div>
                 <StatusBadge status={app.status} />
-              </div>
+              </Link>
             ))}
           </div>
         )}

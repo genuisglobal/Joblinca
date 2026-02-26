@@ -42,52 +42,40 @@ export default async function ApplyPage({ params }: PageProps) {
     .eq('user_id', user.id)
     .single();
 
-  // Fetch job details
-  const { data: job } = await supabase
+  // Fetch job details (use * to avoid issues with missing columns)
+  const { data: job, error: jobError } = await supabase
     .from('jobs')
-    .select(`
-      id,
-      title,
-      company_name,
-      location,
-      employment_type,
-      salary_min,
-      salary_max,
-      salary_currency,
-      description,
-      requirements,
-      published,
-      approval_status,
-      apply_method,
-      closes_at,
-      recruiter_id
-    `)
+    .select('*')
     .eq('id', id)
     .single();
 
-  if (!job) {
+  if (jobError || !job) {
+    console.error('Job fetch error:', jobError);
     notFound();
   }
 
   // Check if job is accepting applications
-  const isAcceptingApplications =
-    job.published &&
-    job.approval_status === 'approved' &&
-    (!job.closes_at || new Date(job.closes_at) > new Date());
+  // Handle cases where approval_status might not exist (migration not applied)
+  const isApproved = job.approval_status === 'approved' || job.approval_status === undefined || job.approval_status === null;
+  const isPublished = job.published !== false; // Default to true if not set
+  const isNotClosed = !job.closes_at || new Date(job.closes_at) > new Date();
+
+  const isAcceptingApplications = isApproved && isPublished && isNotClosed;
 
   if (!isAcceptingApplications) {
     redirect(`/jobs/${id}?error=not_accepting`);
   }
 
-  // Check if job uses JobLinca apply method
-  if (job.apply_method !== 'joblinca' && job.apply_method !== 'multiple') {
+  // Check if job uses JobLinca apply method (default to joblinca if not set)
+  const applyMethod = job.apply_method || 'joblinca';
+  if (applyMethod !== 'joblinca' && applyMethod !== 'multiple') {
     redirect(`/jobs/${id}`);
   }
 
   // Check if user already applied
   const { data: existingApplication } = await supabase
     .from('applications')
-    .select('id, is_draft')
+    .select('id, is_draft, contact_info, resume_url, cover_letter, answers')
     .eq('job_id', id)
     .eq('applicant_id', user.id)
     .single();
@@ -98,20 +86,42 @@ export default async function ApplyPage({ params }: PageProps) {
   }
 
   // Prepare initial contact info
+  const draftContactInfo = existingApplication?.is_draft
+    ? (existingApplication.contact_info as { fullName?: string; email?: string; phone?: string; location?: string })
+    : null;
+
   const initialContactInfo = {
-    fullName: profile.full_name || `${profile.first_name || ''} ${profile.last_name || ''}`.trim(),
-    email: profile.email || user.email || '',
-    phone: jobSeekerProfile?.phone || '',
-    location: jobSeekerProfile?.location || '',
+    fullName:
+      draftContactInfo?.fullName ||
+      profile.full_name ||
+      `${profile.first_name || ''} ${profile.last_name || ''}`.trim(),
+    email: draftContactInfo?.email || profile.email || user.email || '',
+    phone: draftContactInfo?.phone || jobSeekerProfile?.phone || '',
+    location: draftContactInfo?.location || jobSeekerProfile?.location || '',
   };
+
+  const initialResumeUrl =
+    (existingApplication?.is_draft && existingApplication.resume_url) ||
+    jobSeekerProfile?.resume_url ||
+    null;
+
+  const initialCoverLetter =
+    existingApplication?.is_draft ? (existingApplication.cover_letter as string | null) || '' : '';
+
+  const initialAnswers =
+    existingApplication?.is_draft && Array.isArray(existingApplication.answers)
+      ? (existingApplication.answers as { questionId: string; answer: string | string[] | boolean }[])
+      : [];
 
   return (
     <div className="min-h-screen bg-gray-900">
       <ApplyForm
         job={job}
         initialContactInfo={initialContactInfo}
-        existingResumeUrl={jobSeekerProfile?.resume_url || null}
+        existingResumeUrl={initialResumeUrl}
+        initialCoverLetter={initialCoverLetter}
         draftApplicationId={existingApplication?.id || null}
+        initialAnswers={initialAnswers}
       />
     </div>
   );

@@ -1,45 +1,117 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
 
-export default async function TalentDashboardPage() {
-  const supabase = createServerSupabaseClient();
+interface Skill {
+  name: string;
+  rating: number;
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+interface TalentProfile {
+  skills: Skill[];
+}
 
-  if (!user) {
-    redirect('/auth/login');
+interface Project {
+  id: string;
+  title: string;
+  description: string;
+  public: boolean;
+  github_url: string | null;
+  youtube_url: string | null;
+  created_at: string;
+}
+
+interface Certification {
+  id: string;
+  name: string;
+}
+
+export default function TalentDashboardPage() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [certifications, setCertifications] = useState<Certification[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDashboardData() {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (!mounted) return;
+
+        if (authError || !user) {
+          router.replace('/auth/login');
+          return;
+        }
+
+        // Fetch talent profile for skills
+        const { data: talentProfile } = await supabase
+          .from('talent_profiles')
+          .select('skills')
+          .eq('user_id', user.id)
+          .single();
+
+        if (!mounted) return;
+        setSkills(talentProfile?.skills || []);
+
+        // Fetch projects
+        const { data: projectsData } = await supabase
+          .from('projects')
+          .select('*')
+          .eq('candidate_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!mounted) return;
+        setProjects(projectsData || []);
+
+        // Fetch certifications
+        const { data: certsData } = await supabase
+          .from('certifications')
+          .select('*')
+          .eq('candidate_id', user.id);
+
+        if (!mounted) return;
+        setCertifications(certsData || []);
+
+        setLoading(false);
+      } catch (err) {
+        console.error('Dashboard load error:', err);
+        if (mounted) {
+          router.replace('/auth/login');
+        }
+      }
+    }
+
+    loadDashboardData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <p className="text-gray-400">Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Fetch talent profile for skills
-  const { data: talentProfile } = await supabase
-    .from('talent_profiles')
-    .select('skills')
-    .eq('user_id', user.id)
-    .single();
-
-  // Fetch projects
-  const { data: projects } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('candidate_id', user.id)
-    .order('created_at', { ascending: false });
-
-  // Fetch certifications
-  const { data: certifications } = await supabase
-    .from('certifications')
-    .select('*')
-    .eq('candidate_id', user.id);
-
-  const totalProjects = projects?.length || 0;
-  const publicProjects = projects?.filter((p) => p.public).length || 0;
-  const skills = talentProfile?.skills || [];
-  const totalCertifications = certifications?.length || 0;
-
-  const recentProjects = projects?.slice(0, 3) || [];
+  const totalProjects = projects.length;
+  const publicProjects = projects.filter((p) => p.public).length;
+  const totalCertifications = certifications.length;
+  const recentProjects = projects.slice(0, 3);
 
   return (
     <div className="space-y-8">
@@ -254,7 +326,7 @@ export default async function TalentDashboardPage() {
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {skills.map((skill: { name: string; rating: number }, index: number) => (
+            {skills.map((skill, index) => (
               <div
                 key={index}
                 className="px-3 py-2 bg-gray-700/50 rounded-lg flex items-center gap-2"
