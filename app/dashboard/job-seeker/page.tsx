@@ -1,47 +1,97 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
 import StatusBadge from '../components/StatusBadge';
 
-export default async function JobSeekerDashboardPage() {
-  const supabase = createServerSupabaseClient();
+interface Job {
+  id: string;
+  title: string;
+  company_name: string;
+  location: string;
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+interface Application {
+  id: string;
+  status: string;
+  created_at: string;
+  jobs: Job | null;
+}
 
-  if (!user) {
-    redirect('/auth/login');
+export default function JobSeekerDashboardPage() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [applications, setApplications] = useState<Application[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadDashboardData() {
+      try {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+        if (!mounted) return;
+
+        if (authError || !user) {
+          router.replace('/auth/login');
+          return;
+        }
+
+        // Fetch user's applications
+        const { data: apps } = await supabase
+          .from('applications')
+          .select(`
+            *,
+            jobs:job_id (
+              id,
+              title,
+              company_name,
+              location
+            )
+          `)
+          .eq('applicant_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!mounted) return;
+
+        setApplications(apps || []);
+        setLoading(false);
+      } catch (err) {
+        console.error('Dashboard load error:', err);
+        if (mounted) {
+          router.replace('/auth/login');
+        }
+      }
+    }
+
+    loadDashboardData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <p className="text-gray-400">Loading dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
-  // Fetch user's applications
-  const { data: applications } = await supabase
-    .from('applications')
-    .select(
-      `
-      *,
-      jobs:job_id (
-        id,
-        title,
-        company_name,
-        location
-      )
-    `
-    )
-    .eq('applicant_id', user.id)
-    .order('created_at', { ascending: false });
-
   // Calculate stats
-  const totalApplications = applications?.length || 0;
-  const interviewsCount =
-    applications?.filter((a) => a.status === 'interviewed').length || 0;
-  const shortlistedCount =
-    applications?.filter((a) => a.status === 'shortlisted').length || 0;
-  const offersCount =
-    applications?.filter((a) => a.status === 'hired').length || 0;
-
-  const recentApplications = applications?.slice(0, 5) || [];
+  const totalApplications = applications.length;
+  const interviewsCount = applications.filter((a) => a.status === 'interviewed').length;
+  const shortlistedCount = applications.filter((a) => a.status === 'shortlisted').length;
+  const offersCount = applications.filter((a) => a.status === 'hired').length;
+  const recentApplications = applications.slice(0, 5);
 
   return (
     <div className="space-y-8">
@@ -224,6 +274,29 @@ export default async function JobSeekerDashboardPage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Skill Up Quick Action Card */}
+      <div className="bg-gradient-to-r from-blue-900/50 to-purple-900/50 rounded-xl p-6 border border-blue-700/30">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-blue-500/20 rounded-xl">
+              <svg className="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-white">Skill Up</h3>
+              <p className="text-sm text-gray-300">Learn new skills with micro-courses to boost your career</p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard/skillup"
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+          >
+            Start Learning
+          </Link>
+        </div>
       </div>
 
       {/* Tips Section */}

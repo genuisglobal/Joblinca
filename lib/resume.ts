@@ -1,56 +1,93 @@
-// Types and helper functions for resume building and optimisation.
+// Types and helper functions for resume building.
 // This module defines the shape of resume data used throughout
-// the application.  It intentionally contains no React code or
+// the application. It intentionally contains no React code or
 // imports to keep the lib folder pure logic only.
+
+export interface ExperienceEntry {
+  company: string;
+  role: string;
+  startDate: string;
+  endDate: string;
+  description: string;
+  current: boolean;
+}
+
+export interface EducationEntry {
+  institution: string;
+  degree: string;
+  field: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface LanguageEntry {
+  language: string;
+  proficiency: string;
+}
+
+export interface CertificationEntry {
+  name: string;
+  issuer: string;
+  date: string;
+}
 
 export interface ResumeData {
   fullName: string;
   email: string;
   phone: string;
+  location: string;
+  title: string;
   summary: string;
-  experience: string;
-  education: string;
-  skills: string;
+  experience: ExperienceEntry[];
+  education: EducationEntry[];
+  skills: string[];
+  languages: LanguageEntry[];
+  certifications: CertificationEntry[];
+  template: 'professional' | 'modern';
 }
 
-/**
- * Returns an empty resume data object.  Use this to initialise
- * state in client components.
- */
 export function createEmptyResume(): ResumeData {
   return {
     fullName: '',
     email: '',
     phone: '',
+    location: '',
+    title: '',
     summary: '',
-    experience: '',
-    education: '',
-    skills: '',
+    experience: [],
+    education: [],
+    skills: [],
+    languages: [],
+    certifications: [],
+    template: 'professional',
   };
 }
 
-/**
- * Basic helper that attempts to derive a resume from a chunk of
- * text.  It splits the text on line breaks and assigns the first
- * non‑empty line as the full name, the second as summary and the
- * remainder to experience.  This is a naive approach intended
- * solely as a starting point when parsing uploaded resumes.
- *
- * @param text Raw plain text extracted from an uploaded resume
- */
-export function deriveResumeFromText(text: string): ResumeData {
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-  const [fullName = '', summary = '', ...rest] = lines;
+export function createEmptyExperience(): ExperienceEntry {
   return {
-    fullName,
-    email: '',
-    phone: '',
-    summary,
-    experience: rest.join('\n'),
-    education: '',
-    skills: '',
+    company: '',
+    role: '',
+    startDate: '',
+    endDate: '',
+    description: '',
+    current: false,
   };
+}
+
+export function createEmptyEducation(): EducationEntry {
+  return {
+    institution: '',
+    degree: '',
+    field: '',
+    startDate: '',
+    endDate: '',
+  };
+}
+
+export function createEmptyLanguage(): LanguageEntry {
+  return { language: '', proficiency: 'Intermediate' };
+}
+
+export function createEmptyCertification(): CertificationEntry {
+  return { name: '', issuer: '', date: '' };
 }

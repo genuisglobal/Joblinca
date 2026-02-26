@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { OnboardingStatus } from '@/lib/onboarding/types';
+import { OnboardingStatus, Role, RecruiterType, getStepsForRole } from '@/lib/onboarding/types';
 import OnboardingWizard from './components/OnboardingWizard';
 
 export default function OnboardingPage() {
@@ -18,78 +18,152 @@ export default function OnboardingPage() {
   useEffect(() => {
     let mounted = true;
 
-    async function resolveUserIdWithRetry(): Promise<string | null> {
-      // Quick local check
-      const { data: sessionData } = await supabase.auth.getSession();
-      const sessionUserId = sessionData?.session?.user?.id ?? null;
-      if (sessionUserId) return sessionUserId;
-
-      // Authoritative check
-      const { data: userData } = await supabase.auth.getUser();
-      if (userData?.user?.id) return userData.user.id;
-
-      // Retry after delay
-      await new Promise((r) => setTimeout(r, 350));
-      const { data: sessionData2 } = await supabase.auth.getSession();
-      const sessionUserId2 = sessionData2?.session?.user?.id ?? null;
-      if (sessionUserId2) return sessionUserId2;
-
-      const { data: userData2 } = await supabase.auth.getUser();
-      if (userData2?.user?.id) return userData2.user.id;
-
-      return null;
-    }
-
     async function loadOnboardingStatus() {
       setLoading(true);
       setError(null);
 
-      const userId = await resolveUserIdWithRetry();
-      if (!mounted) return;
-
-      if (!userId) {
-        setLoading(false);
-        setError('Session not found. Please log in again.');
-        router.replace('/auth/login');
-        return;
-      }
-
       try {
-        // Fetch onboarding status from API
-        const response = await fetch('/api/onboarding/status');
+        // Get user directly from client-side Supabase
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-        if (!response.ok) {
-          if (response.status === 401) {
+        if (!mounted) return;
+
+        if (authError || !user) {
+          // Wait a bit and retry once
+          await new Promise(r => setTimeout(r, 500));
+          const { data: { user: retryUser }, error: retryError } = await supabase.auth.getUser();
+
+          if (!mounted) return;
+
+          if (retryError || !retryUser) {
+            setLoading(false);
+            setError('Session not found. Please log in again.');
             router.replace('/auth/login');
             return;
           }
-          throw new Error('Failed to load onboarding status');
+
+          // Use retry user
+          await fetchProfileAndSetStatus(retryUser.id, retryUser.user_metadata?.role);
+        } else {
+          await fetchProfileAndSetStatus(user.id, user.user_metadata?.role);
         }
-
-        const data: OnboardingStatus = await response.json();
-
-        if (!mounted) return;
-
-        // If onboarding is already completed or skipped, redirect to dashboard
-        if ((data.isCompleted || data.isSkipped) && !redirectedRef.current) {
-          redirectedRef.current = true;
-          router.replace('/dashboard');
-          return;
-        }
-
-        setStatus(data);
-        setLoading(false);
       } catch (err) {
         if (!mounted) return;
+        console.error('Onboarding load error:', err);
         setError(err instanceof Error ? err.message : 'Failed to load profile');
         setLoading(false);
       }
+    }
+
+    async function fetchProfileAndSetStatus(userId: string, metadataRole?: string) {
+      if (!mounted) return;
+
+      // Fetch profile directly using client-side Supabase
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (!mounted) return;
+
+      if (profileError || !profile) {
+        setError('Profile not found. Please contact support.');
+        setLoading(false);
+        return;
+      }
+
+      // Determine role
+      const role: Role = (metadataRole as Role) || (profile.role === 'candidate' ? 'job_seeker' : profile.role as Role);
+      const steps = getStepsForRole(role);
+
+      // Check if already completed or skipped
+      if ((profile.onboarding_completed || profile.onboarding_skipped) && !redirectedRef.current) {
+        redirectedRef.current = true;
+        router.replace('/dashboard');
+        return;
+      }
+
+      // Build saved data from profile
+      const savedData = {
+        firstName: profile.first_name || '',
+        lastName: profile.last_name || '',
+        phone: profile.phone || '',
+        avatarUrl: profile.avatar_url || profile.profile_image_url || null,
+        gender: profile.sex || null,
+        residenceLocation: profile.residence_location || null,
+        resumeUrl: null as string | null,
+        locationInterests: [] as string[],
+        schoolName: '',
+        graduationYear: null as number | null,
+        fieldOfStudy: '',
+        skills: [] as { name: string; rating: number }[],
+        recruiterType: null as RecruiterType | null,
+        companyName: '',
+        companyLogoUrl: null as string | null,
+        contactEmail: '',
+      };
+
+      // Fetch role-specific data
+      if (role === 'job_seeker' || profile.role === 'candidate') {
+        const { data: jsProfile } = await supabase
+          .from('job_seeker_profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (jsProfile) {
+          savedData.resumeUrl = jsProfile.resume_url || null;
+          savedData.locationInterests = jsProfile.location_interests || [];
+        }
+      } else if (role === 'talent') {
+        const { data: talentProfile } = await supabase
+          .from('talent_profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (talentProfile) {
+          savedData.resumeUrl = talentProfile.resume_url || null;
+          savedData.locationInterests = talentProfile.location_interests || [];
+          savedData.schoolName = talentProfile.school_name || '';
+          savedData.graduationYear = talentProfile.graduation_year || null;
+          savedData.fieldOfStudy = talentProfile.field_of_study || '';
+          savedData.skills = talentProfile.skills || [];
+        }
+      } else if (role === 'recruiter') {
+        const { data: recruiterProfile } = await supabase
+          .from('recruiter_profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .single();
+
+        if (recruiterProfile) {
+          savedData.recruiterType = recruiterProfile.recruiter_type || null;
+          savedData.companyName = recruiterProfile.company_name || '';
+          savedData.companyLogoUrl = recruiterProfile.company_logo_url || null;
+          savedData.contactEmail = recruiterProfile.contact_email || '';
+        }
+      }
+
+      if (!mounted) return;
+
+      setStatus({
+        role,
+        currentStep: profile.onboarding_step || 0,
+        totalSteps: steps.length,
+        isCompleted: profile.onboarding_completed || false,
+        isSkipped: profile.onboarding_skipped || false,
+        savedData,
+      });
+      setLoading(false);
     }
 
     loadOnboardingStatus();
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
       if (!mounted) return;
+      // Only redirect on explicit sign out, not on other events
       if (event === 'SIGNED_OUT') {
         router.replace('/auth/login');
       }

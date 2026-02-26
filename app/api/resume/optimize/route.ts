@@ -1,105 +1,82 @@
-import { NextRequest, NextResponse } from "next/server";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import OpenAI from "openai";
+import { NextRequest, NextResponse } from 'next/server';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import OpenAI from 'openai';
 
-// (Optional) Force Node runtime (recommended for OpenAI + Supabase server usage)
-export const runtime = "nodejs";
+export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
-
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  let resumeData: any;
+  let body: { field: string; value: string; context?: string };
   try {
-    resumeData = await request.json();
+    body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
   }
 
-  const { data: subscription } = await supabase
-    .from("subscriptions")
-    .select("*")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
+  const { field, value, context } = body;
 
-  const isPremium = !!subscription;
-
-  const today = new Date().toISOString().slice(0, 10);
-
-  const { data: usageRow } = await supabase
-    .from("resume_usage")
-    .select("*")
-    .eq("user_id", user.id)
-    .eq("date", today)
-    .maybeSingle();
-
-  const used = usageRow?.used ?? 0;
-
-  if (!isPremium) {
-    return NextResponse.json(
-      { error: "Upgrade to premium to optimise resumes" },
-      { status: 402 }
-    );
+  if (!field || !value) {
+    return NextResponse.json({ error: 'Field and value are required' }, { status: 400 });
   }
 
-  if (used >= 1) {
-    return NextResponse.json(
-      { error: "Daily resume optimisation limit reached" },
-      { status: 429 }
-    );
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 });
   }
 
-  let improved = resumeData;
+  try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-      const prompt = `You are an expert resume writer.
-Rewrite the resume summary and bullet points to improve clarity and impact while keeping the same information.
-Return either JSON with updated fields OR plain text if JSON isn't possible.
-
-Resume data: ${JSON.stringify(resumeData)}`;
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: "You are a helpful assistant that improves resumes." },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 600,
-      });
-
-      const aiResponse = completion.choices?.[0]?.message?.content?.trim();
-
-      if (aiResponse) {
-        try {
-          const parsed = JSON.parse(aiResponse);
-          improved = { ...resumeData, ...parsed };
-        } catch {
-          improved = { ...resumeData, summary: aiResponse };
-        }
-      }
-    } catch (err) {
-      console.error("OpenAI optimisation failed", err);
-      improved = resumeData;
+    let prompt = '';
+    if (field === 'summary') {
+      prompt = `Improve this professional summary to be more impactful, clear, and concise. Keep the same information but enhance the wording. Return only the improved text, no explanations.\n\nSummary: ${value}`;
+    } else if (field === 'experience') {
+      prompt = `Improve this job description to be more impactful with strong action verbs and quantified achievements where possible. Return only the improved text, no explanations.\n\nDescription: ${value}`;
+    } else if (field === 'skills') {
+      prompt = `Based on this job title and context, suggest 8-12 relevant professional skills. Return a JSON array of strings only.\n\nJob Title: ${value}\nContext: ${context || 'general professional'}`;
+    } else {
+      return NextResponse.json({ error: 'Unsupported field' }, { status: 400 });
     }
-  }
 
-  // Increment usage
-  if (usageRow) {
-    await supabase.from("resume_usage").update({ used: used + 1 }).eq("id", usageRow.id);
-  } else {
-    await supabase.from("resume_usage").insert({ user_id: user.id, date: today, used: 1 });
-  }
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert resume writer. Provide concise, professional improvements.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: 800,
+      ...(field === 'skills' ? { response_format: { type: 'json_object' } } : {}),
+    });
 
-  return NextResponse.json(improved);
+    const aiResponse = completion.choices?.[0]?.message?.content?.trim();
+
+    if (!aiResponse) {
+      return NextResponse.json({ error: 'No AI response' }, { status: 500 });
+    }
+
+    if (field === 'skills') {
+      try {
+        const parsed = JSON.parse(aiResponse);
+        const skills = Array.isArray(parsed) ? parsed : parsed.skills || [];
+        return NextResponse.json({ improved: skills });
+      } catch {
+        return NextResponse.json({ improved: [] });
+      }
+    }
+
+    return NextResponse.json({ improved: aiResponse });
+  } catch (err) {
+    console.error('OpenAI optimization failed', err);
+    return NextResponse.json({ error: 'AI optimization failed' }, { status: 500 });
+  }
 }

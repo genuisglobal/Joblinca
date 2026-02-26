@@ -1,6 +1,7 @@
 import "@/app/globals.css";
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
+import ClientLayout from "@/components/ClientLayout";
 
 // Client-only NavBar (uses Supabase browser client)
 const NavBar = dynamic(() => import("../components/NavBar"), { ssr: false });
@@ -14,11 +15,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className="bg-gray-900 text-gray-100 relative">
-        <header className="w-full z-50">
-          <NavBar />
-        </header>
+        <ClientLayout>
+          <header className="w-full z-50">
+            <NavBar />
+          </header>
 
-        {children}
+          {children}
+        </ClientLayout>
       </body>
     </html>
   );

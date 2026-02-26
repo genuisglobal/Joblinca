@@ -91,7 +91,16 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
         upsert: true,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error(`Storage upload error for ${bucket}:`, error);
+        // Show user-friendly error message
+        if (error.message.includes('bucket') || error.message.includes('not found')) {
+          setErrors(prev => ({ ...prev, upload: 'Storage not configured. Please contact support.' }));
+        } else if (error.message.includes('permission') || error.message.includes('policy')) {
+          setErrors(prev => ({ ...prev, upload: 'Permission denied. Please try logging in again.' }));
+        }
+        return null;
+      }
 
       const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(data.path);
       return urlData.publicUrl;
@@ -173,19 +182,71 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
         data.contactEmail = contactEmail;
       }
 
-      // Save to API - only if we have data to save
+      // Save directly using client-side Supabase to avoid server auth issues
       if (Object.keys(data).length > 0) {
-        const response = await fetch('/api/onboarding/save-step', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ step: currentStep, data }),
-        });
+        // Build profile updates
+        const profileUpdates: Record<string, unknown> = {
+          onboarding_step: currentStep + 1,
+          updated_at: new Date().toISOString(),
+        };
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error('API error:', errorData);
-          // Don't throw - just return false and let goNext decide what to do
+        // Map form data to profile columns
+        if (data.firstName !== undefined) profileUpdates.first_name = data.firstName;
+        if (data.lastName !== undefined) profileUpdates.last_name = data.lastName;
+        if (data.phone !== undefined) profileUpdates.phone = data.phone;
+        if (data.avatarUrl !== undefined) profileUpdates.avatar_url = data.avatarUrl;
+        if (data.gender !== undefined) profileUpdates.sex = data.gender;
+        if (data.residenceLocation !== undefined) profileUpdates.residence_location = data.residenceLocation;
+
+        // Update full_name if name fields changed
+        if (data.firstName !== undefined || data.lastName !== undefined) {
+          const fn = (data.firstName as string) || firstName || '';
+          const ln = (data.lastName as string) || lastName || '';
+          profileUpdates.full_name = `${fn} ${ln}`.trim();
+        }
+
+        // Update profiles table
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update(profileUpdates)
+          .eq('id', user.id);
+
+        if (profileError) {
+          console.error('Profile update error:', profileError);
+          setErrors(prev => ({ ...prev, save: 'Failed to save. Please try again.' }));
           return false;
+        }
+
+        // Update role-specific tables if needed
+        if (role === 'job_seeker' || role === 'talent') {
+          const roleUpdates: Record<string, unknown> = {
+            updated_at: new Date().toISOString(),
+          };
+
+          if (data.resumeUrl !== undefined) roleUpdates.resume_url = data.resumeUrl;
+          if (data.locationInterests !== undefined) roleUpdates.location_interests = data.locationInterests;
+          if (data.schoolName !== undefined) roleUpdates.school_name = data.schoolName;
+          if (data.graduationYear !== undefined) roleUpdates.graduation_year = data.graduationYear;
+          if (data.fieldOfStudy !== undefined) roleUpdates.field_of_study = data.fieldOfStudy;
+          if (data.skills !== undefined) roleUpdates.skills = data.skills;
+
+          if (Object.keys(roleUpdates).length > 1) {
+            const tableName = role === 'talent' ? 'talent_profiles' : 'job_seeker_profiles';
+            await supabase.from(tableName).update(roleUpdates).eq('user_id', user.id);
+          }
+        } else if (role === 'recruiter') {
+          const recruiterUpdates: Record<string, unknown> = {
+            updated_at: new Date().toISOString(),
+          };
+
+          if (data.recruiterType !== undefined) recruiterUpdates.recruiter_type = data.recruiterType;
+          if (data.companyName !== undefined) recruiterUpdates.company_name = data.companyName;
+          if (data.companyLogoUrl !== undefined) recruiterUpdates.company_logo_url = data.companyLogoUrl;
+          if (data.contactEmail !== undefined) recruiterUpdates.contact_email = data.contactEmail;
+
+          if (Object.keys(recruiterUpdates).length > 1) {
+            await supabase.from('recruiter_profiles').update(recruiterUpdates).eq('user_id', user.id);
+          }
         }
       }
 
@@ -221,6 +282,7 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
     contactEmail,
     supabase,
     uploadFile,
+    role,
   ]);
 
   // Validate current step
@@ -276,47 +338,80 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
     }
   }, [currentStep]);
 
-  // Skip onboarding
+  // Skip onboarding - use client-side Supabase directly to avoid server auth issues
   const skipOnboarding = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/onboarding/skip', {
-        method: 'POST',
-      });
+      // Get user directly from browser client
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-      if (response.ok) {
-        // Use replace to prevent back button returning to onboarding
-        window.location.href = '/dashboard';
-      } else {
-        console.error('Skip failed:', await response.text());
-        setIsLoading(false);
+      if (authError || !user) {
+        console.error('Auth error on skip:', authError);
+        window.location.href = '/auth/login?redirect=/onboarding';
+        return;
       }
+
+      // Update profile directly using client
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          onboarding_skipped: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Skip update error:', updateError);
+        setErrors(prev => ({ ...prev, skip: 'Failed to skip onboarding. Please try again.' }));
+        setIsLoading(false);
+        return;
+      }
+
+      // Redirect to dashboard
+      window.location.href = '/dashboard';
     } catch (err) {
       console.error('Skip error:', err);
       setIsLoading(false);
     }
-  }, []);
+  }, [supabase]);
 
-  // Complete onboarding
+  // Complete onboarding - use client-side Supabase directly to avoid server auth issues
   const completeOnboarding = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await fetch('/api/onboarding/complete', {
-        method: 'POST',
-      });
+      // Get user directly from browser client
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-      if (response.ok) {
-        // Use replace to prevent back button returning to onboarding
-        window.location.href = '/dashboard';
-      } else {
-        console.error('Complete failed:', await response.text());
-        setIsLoading(false);
+      if (authError || !user) {
+        console.error('Auth error on complete:', authError);
+        window.location.href = '/auth/login?redirect=/onboarding';
+        return;
       }
+
+      // Update profile directly using client
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          onboarding_completed: true,
+          onboarding_skipped: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('Complete update error:', updateError);
+        setErrors(prev => ({ ...prev, complete: 'Failed to complete onboarding. Please try again.' }));
+        setIsLoading(false);
+        return;
+      }
+
+      // Redirect to dashboard
+      window.location.href = '/dashboard';
     } catch (err) {
       console.error('Complete error:', err);
       setIsLoading(false);
     }
-  }, []);
+  }, [supabase]);
 
   // Render current step component
   const renderStep = () => {

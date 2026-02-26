@@ -22,7 +22,7 @@ type Job = {
 type ExistingApplication = {
   id: string;
   status: string;
-  is_draft: boolean;
+  is_draft?: boolean;
   created_at: string;
 } | null;
 

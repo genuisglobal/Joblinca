@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(echo:*)",
+      "Bash(cd:*)",
+      "Bash(npx next build)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(node -e:*)",
+      "Bash(set NEXT_PUBLIC_SUPABASE_URL=https://aymglgugrfhxjsgiehad.supabase.co:*)",
+      "Bash(set SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5bWdsZ3VncmZoeGpzZ2llaGFkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTExMTg1NywiZXhwIjoyMDgwNjg3ODU3fQ.V-Jw6ykYfFkF_pmgzVvw0s-U2yh-7KTYV0kNZmwz4dA)",
+      "Bash(node scripts/refresh-jobs.mjs:*)",
+      "Bash($env:NEXT_PUBLIC_SUPABASE_URL='https://aymglgugrfhxjsgiehad.supabase.co')",
+      "Bash($env:SUPABASE_SERVICE_ROLE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5bWdsZ3VncmZoeGpzZ2llaGFkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTExMTg1NywiZXhwIjoyMDgwNjg3ODU3fQ.V-Jw6ykYfFkF_pmgzVvw0s-U2yh-7KTYV0kNZmwz4dA')",
+      "Bash(NEXT_PUBLIC_SUPABASE_URL='https://aymglgugrfhxjsgiehad.supabase.co' SUPABASE_SERVICE_ROLE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5bWdsZ3VncmZoeGpzZ2llaGFkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NTExMTg1NywiZXhwIjoyMDgwNjg3ODU3fQ.V-Jw6ykYfFkF_pmgzVvw0s-U2yh-7KTYV0kNZmwz4dA' node:*)"
+    ]
+  }
+}

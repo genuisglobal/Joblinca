@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { CustomQuestion } from '@/lib/questions';
-import ApplicationForm from './ApplicationForm';
 
 interface Job {
   id: string;
@@ -15,7 +13,6 @@ interface Job {
   work_type: string | null;
   job_type: string | null;
   created_at: string;
-  custom_questions: CustomQuestion[] | null;
 }
 
 interface JobsListProps {
@@ -26,8 +23,7 @@ interface JobsListProps {
 export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
   const [search, setSearch] = useState('');
   const [workTypeFilter, setWorkTypeFilter] = useState('all');
-  const [appliedJobs, setAppliedJobs] = useState<Set<string>>(appliedJobIds);
-  const [showApplyModal, setShowApplyModal] = useState<Job | null>(null);
+  const [appliedJobs] = useState<Set<string>>(appliedJobIds);
 
   const filteredJobs = jobs.filter((job) => {
     const matchesSearch =
@@ -40,13 +36,6 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
 
     return matchesSearch && matchesWorkType;
   });
-
-  const handleApplicationSuccess = () => {
-    if (showApplyModal) {
-      setAppliedJobs((prev) => new Set([...prev, showApplyModal.id]));
-      setShowApplyModal(null);
-    }
-  };
 
   return (
     <>
@@ -187,27 +176,18 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
                       Applied
                     </span>
                   ) : (
-                    <button
-                      onClick={() => setShowApplyModal(job)}
+                    <Link
+                      href={`/jobs/${job.id}/apply`}
                       className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
                       Apply
-                    </button>
+                    </Link>
                   )}
                 </div>
               </div>
             </div>
           ))}
         </div>
-      )}
-
-      {/* Apply Modal */}
-      {showApplyModal && (
-        <ApplicationForm
-          job={showApplyModal}
-          onClose={() => setShowApplyModal(null)}
-          onSuccess={handleApplicationSuccess}
-        />
       )}
     </>
   );

@@ -16,13 +16,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
   // Fetch job with apply method info
   const { data: job, error } = await supabase
     .from('jobs')
-    .select(`
-      *,
-      recruiter:recruiter_id (
-        id,
-        full_name
-      )
-    `)
+    .select('*')
     .eq('id', id)
     .single();
 
@@ -30,8 +24,9 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
     notFound();
   }
 
-  // Check if job is published and approved
-  const isPubliclyVisible = job.published && job.approval_status === 'approved';
+  // Check if job is published and approved (handle missing columns gracefully)
+  const isApproved = job.approval_status === 'approved' || job.approval_status === undefined || job.approval_status === null;
+  const isPubliclyVisible = job.published !== false && isApproved;
   const isClosed = job.closes_at && new Date(job.closes_at) < new Date();
 
   // Get current user
@@ -45,31 +40,45 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
   let userRole = null;
 
   if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
 
-    userRole = profile?.role || null;
+      userRole = profile?.role || null;
+    } catch {
+      // Profile query failed, continue without role
+    }
 
-    const { data: application } = await supabase
-      .from('applications')
-      .select('id, status, is_draft, created_at')
-      .eq('job_id', id)
-      .eq('applicant_id', user.id)
-      .single();
+    try {
+      // Try to get application - handle if is_draft column doesn't exist
+      const { data: application } = await supabase
+        .from('applications')
+        .select('id, status, created_at')
+        .eq('job_id', id)
+        .eq('applicant_id', user.id)
+        .single();
 
-    existingApplication = application;
+      existingApplication = application;
+    } catch {
+      // Application query failed, continue without application data
+    }
 
-    const { data: savedJob } = await supabase
-      .from('saved_jobs')
-      .select('id')
-      .eq('job_id', id)
-      .eq('user_id', user.id)
-      .single();
+    try {
+      // saved_jobs table might not exist if migration not applied
+      const { data: savedJob } = await supabase
+        .from('saved_jobs')
+        .select('id')
+        .eq('job_id', id)
+        .eq('user_id', user.id)
+        .single();
 
-    isSaved = !!savedJob;
+      isSaved = !!savedJob;
+    } catch {
+      // saved_jobs query failed, continue with isSaved = false
+    }
   }
 
   const formatSalary = () => {

@@ -38,6 +38,9 @@ export default function NewJobPage() {
   const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
   const [showAIGenerator, setShowAIGenerator] = useState(false);
 
+  // AI description generation
+  const [generatingDescription, setGeneratingDescription] = useState(false);
+
   // Gate access based on role.  We only allow recruiters to post jobs.
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
@@ -110,6 +113,39 @@ export default function NewJobPage() {
       // ignore parse errors
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleGenerateDescription() {
+    if (!title) {
+      setError('Please enter a job title first');
+      return;
+    }
+    setGeneratingDescription(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/jobs/generate-description', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobTitle: title,
+          companyName: companyName || undefined,
+          seedDescription: description || undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.description) {
+          setDescription(data.description);
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setError(data?.error || 'Failed to generate description');
+      }
+    } catch {
+      setError('Failed to generate description. Please try again.');
+    } finally {
+      setGeneratingDescription(false);
     }
   }
 
@@ -379,15 +415,43 @@ export default function NewJobPage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300">Description</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-300">Description</label>
+            <button
+              type="button"
+              onClick={handleGenerateDescription}
+              disabled={generatingDescription}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white rounded-md transition-colors"
+            >
+              {generatingDescription ? (
+                <>
+                  <svg className="animate-spin w-3.5 h-3.5" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Generate with AI
+                </>
+              )}
+            </button>
+          </div>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="Describe the role, responsibilities and requirements"
-            rows={5}
+            placeholder="Describe the role, or type a brief sentence and click 'Generate with AI' to create a full description"
+            rows={8}
             required
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Tip: Enter the job title above, then click &quot;Generate with AI&quot; to auto-create a description. You can also type a brief sentence first and AI will expand it.
+          </p>
         </div>
 
         {/* Application Method Section */}

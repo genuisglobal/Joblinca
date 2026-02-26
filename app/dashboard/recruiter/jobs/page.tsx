@@ -1,36 +1,102 @@
-import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useEffect, useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import StatusBadge from '../../components/StatusBadge';
 
-export default async function RecruiterJobsPage() {
-  const supabase = createServerSupabaseClient();
+interface Job {
+  id: string;
+  title: string;
+  company_name: string | null;
+  location: string | null;
+  published: boolean;
+  approval_status: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+}
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export default function RecruiterJobsPage() {
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [applicationCounts, setApplicationCounts] = useState<Record<string, number>>({});
 
-  if (!user) {
-    redirect('/auth/login');
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadData() {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (!mounted) return;
+
+        if (authError || !user) {
+          router.replace('/auth/login');
+          return;
+        }
+
+        // Fetch jobs
+        const { data: jobsData } = await supabase
+          .from('jobs')
+          .select('*')
+          .eq('recruiter_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (!mounted) return;
+
+        const fetchedJobs = jobsData || [];
+        setJobs(fetchedJobs);
+
+        // Get application counts for each job
+        const jobIds = fetchedJobs.map((j) => j.id);
+        if (jobIds.length > 0) {
+          const { data: apps } = await supabase
+            .from('applications')
+            .select('job_id')
+            .in('job_id', jobIds)
+            .neq('status', 'draft');
+
+          if (!mounted) return;
+
+          const counts: Record<string, number> = {};
+          apps?.forEach((app) => {
+            counts[app.job_id] = (counts[app.job_id] || 0) + 1;
+          });
+          setApplicationCounts(counts);
+        }
+
+        setLoading(false);
+      } catch (err) {
+        console.error('Jobs load error:', err);
+        if (mounted) {
+          router.replace('/auth/login');
+        }
+      }
+    }
+
+    loadData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase, router]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <p className="text-gray-400">Loading jobs...</p>
+        </div>
+      </div>
+    );
   }
-
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select('*')
-    .eq('recruiter_id', user.id)
-    .order('created_at', { ascending: false });
-
-  // Get application counts for each job
-  const jobIds = jobs?.map((j) => j.id) || [];
-  const { data: applicationCounts } = await supabase
-    .from('applications')
-    .select('job_id')
-    .in('job_id', jobIds.length > 0 ? jobIds : ['00000000-0000-0000-0000-000000000000']);
-
-  const countByJob: Record<string, number> = {};
-  applicationCounts?.forEach((app) => {
-    countByJob[app.job_id] = (countByJob[app.job_id] || 0) + 1;
-  });
 
   return (
     <div className="space-y-6">
@@ -57,7 +123,7 @@ export default async function RecruiterJobsPage() {
         </Link>
       </div>
 
-      {!jobs || jobs.length === 0 ? (
+      {jobs.length === 0 ? (
         <div className="bg-gray-800 rounded-xl p-12 text-center">
           <svg
             className="w-16 h-16 mx-auto text-gray-600 mb-4"
@@ -134,9 +200,12 @@ export default async function RecruiterJobsPage() {
                     {new Date(job.created_at).toLocaleDateString()}
                   </td>
                   <td className="p-4 text-center">
-                    <span className="inline-flex items-center justify-center w-8 h-8 bg-blue-600/20 text-blue-400 rounded-full font-medium">
-                      {countByJob[job.id] || 0}
-                    </span>
+                    <Link
+                      href={`/dashboard/recruiter/applications?job=${job.id}`}
+                      className="inline-flex items-center justify-center w-8 h-8 bg-blue-600/20 text-blue-400 rounded-full font-medium hover:bg-blue-600/30 transition-colors"
+                    >
+                      {applicationCounts[job.id] || 0}
+                    </Link>
                   </td>
                   <td className="p-4 text-center">
                     <StatusBadge
