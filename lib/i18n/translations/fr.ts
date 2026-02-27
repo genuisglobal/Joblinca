@@ -22,38 +22,59 @@ const fr: Record<string, string> = {
   // ---------------------------------------------------------------------------
   // Homepage
   // ---------------------------------------------------------------------------
-  "home.trustBadge": "Approuv\u00e9 par plus de 1\u202f000 professionnels au Cameroun",
+  "home.trustBadge": "La plateforme n\u00b01 au Cameroun \u2014 Emplois locaux & mondiaux",
 
   // Hero
-  "home.hero.title": "Trouvez l'emploi de vos r\u00eaves au",
+  "home.hero.title": "Le Talent Camerounais pour les",
+  "home.hero.titleHighlight": "Emplois Locaux & Mondiaux",
   "home.hero.cameroon": "Cameroun",
   "home.hero.subtitle":
-    "Soyez mis en relation plus rapidement gr\u00e2ce \u00e0 l'IA. Postulez \u00e0 des postes locaux ou travaillez \u00e0 distance pour des entreprises internationales.",
+    "D\u00e9couvrez des opportunit\u00e9s. Soyez recrut\u00e9 plus vite. Connectez-vous aux meilleurs talents.",
   "home.hero.searchPlaceholder": "Titre, comp\u00e9tences ou entreprise",
-  "home.hero.locationPlaceholder": "Ville ou \u00ab\u00a0T\u00e9l\u00e9travail\u00a0\u00bb",
+  "home.hero.locationPlaceholder": "Ville, ex. Douala ou T\u00e9l\u00e9travail",
   "home.hero.searchButton": "Rechercher des emplois",
   "home.hero.popular": "Populaire\u00a0:",
   "home.hero.browseAll": "Parcourir tous les emplois",
   "home.hero.imHiring": "Je recrute",
-  "home.hero.freeForSeekers": "100\u00a0% gratuit pour les chercheurs d'emploi",
-  "home.hero.getMatched": "Mis en relation en quelques minutes",
+  "home.hero.freeForSeekers": "100\u00a0% gratuit pour les candidats",
+  "home.hero.getMatched": "Alertes emploi WhatsApp",
   "home.hero.localRemote": "Emplois locaux et \u00e0 distance",
+
+  // Stats strip
+  "home.stats.jobs": "Offres actives",
+  "home.stats.cities": "Villes couvertes",
+  "home.stats.companies": "Entreprises recrutent",
+  "home.stats.payment": "Mobile Money accept\u00e9",
+
+  // City quick links
+  "home.cities.title": "Trouvez un emploi dans votre ville",
+
+  // WhatsApp section
+  "home.whatsapp.badge": "Tr\u00e8s populaire au Cameroun",
+  "home.whatsapp.title": "Recevez les alertes emploi sur WhatsApp",
+  "home.whatsapp.subtitle":
+    "Soyez le premier inform\u00e9 d\u00e8s qu'une offre pertinente est publi\u00e9e. Recevez des alertes instantan\u00e9es sur WhatsApp \u2014 comme vous communiquez d\u00e9j\u00e0.",
+  "home.whatsapp.feature1": "Alertes instantan\u00e9es d\u00e8s la publication d'une offre correspondante",
+  "home.whatsapp.feature2": "Postulez en un clic directement depuis votre t\u00e9l\u00e9phone",
+  "home.whatsapp.feature3": "Fonctionne sur tout Android ou iPhone, sans application",
+  "home.whatsapp.cta": "Activer les alertes WhatsApp",
+  "home.whatsapp.note": "Rejoignez 2\u202f000+ professionnels qui l'utilisent d\u00e9j\u00e0",
 
   // Trust
   "home.trust.title": "Approuv\u00e9 par des employeurs de premier plan \u00e0 travers l'Afrique",
 
   // Testimonials
-  "home.testimonials.title": "Ce que disent les utilisateurs",
+  "home.testimonials.title": "Des professionnels camerounais nous font confiance",
   "home.testimonials.1.quote":
-    "J'ai t\u00e9l\u00e9charg\u00e9 mon CV un lundi et j'ai re\u00e7u deux invitations \u00e0 des entretiens mercredi. Le matching fonctionne vraiment.",
+    "Je me suis inscrite un mardi et j'avais deux invitations d'entretiens le jeudi. L'IA a compris ce que je cherchais vraiment, pas juste les mots-cl\u00e9s. J'ai trouv\u00e9 un poste \u00e0 Douala en 3 semaines.",
   "home.testimonials.1.name": "Aline T.",
-  "home.testimonials.1.role": "Sp\u00e9cialiste marketing, Douala",
+  "home.testimonials.1.role": "Responsable Marketing, Douala",
   "home.testimonials.2.quote":
-    "Nous avons pourvu un poste de d\u00e9veloppeur senior en moins de trois semaines. Les candidats pr\u00e9-s\u00e9lectionn\u00e9s nous ont fait gagner des heures.",
+    "Nous avons publi\u00e9 un poste de d\u00e9veloppeur senior et re\u00e7u une pr\u00e9s\u00e9lection en 48 heures. La pr\u00e9-s\u00e9lection a \u00e9conomis\u00e9 \u00e0 mon \u00e9quipe des jours d\u2019analyse de CV. Nous utilisons Joblinca pour chaque recrutement.",
   "home.testimonials.2.name": "Emmanuel K.",
-  "home.testimonials.2.role": "Responsable RH, TechHub Africa",
+  "home.testimonials.2.role": "Directeur RH, TechHub Africa \u2014 Yaound\u00e9",
   "home.testimonials.3.quote":
-    "En tant que jeune dipl\u00f4m\u00e9, j'avais du mal \u00e0 trouver des offres. Joblinca m'a montr\u00e9 des postes que je n'aurais jamais trouv\u00e9s seul.",
+    "Fraichement dipl\u00f4m\u00e9e de l'ESSEC, j'\u00e9tais perdue. Joblinca m'a mis en relation avec des postes en finance que je n'aurais jamais trouv\u00e9s, et les alertes WhatsApp m'ont permis de postuler en premier.",
   "home.testimonials.3.name": "Ngozi M.",
   "home.testimonials.3.role": "Comptable junior, Yaound\u00e9",
 
@@ -122,11 +143,11 @@ const fr: Record<string, string> = {
   "home.recruiters.cta": "Publier une offre",
 
   // Final CTA
-  "home.finalCta.title": "Pr\u00eat \u00e0 passer \u00e0 l'\u00e9tape suivante\u00a0?",
+  "home.finalCta.title": "Le talent camerounais, pr\u00eat \u00e0 travailler",
   "home.finalCta.subtitle":
-    "Rejoignez des milliers de professionnels qui construisent leur carri\u00e8re avec Joblinca.",
-  "home.finalCta.findJobs": "Trouver un emploi",
-  "home.finalCta.hireTalent": "Recruter des talents",
+    "Rejoignez des milliers de professionnels et d'entreprises qui construisent l'avenir du Cameroun \u2014 ensemble.",
+  "home.finalCta.findJobs": "Trouver mon prochain emploi",
+  "home.finalCta.hireTalent": "Recruter les meilleurs talents",
 
   // ---------------------------------------------------------------------------
   // Footer
@@ -282,13 +303,30 @@ const fr: Record<string, string> = {
     "Parcourez des offres d'emploi \u00e0 distance v\u00e9rifi\u00e9es d'employeurs internationaux. Travaillez depuis le Cameroun ou n'importe o\u00f9 dans le monde.",
   "remote.opportunities": "{count} opportunit\u00e9s",
   "remote.curatedFrom": "S\u00e9lectionn\u00e9es de Remotive",
+  "remote.searchPlaceholder": "Rechercher des emplois \u00e0 distance par titre...",
+  "remote.filters": "Filtres",
+  "remote.allSources": "Toutes les sources",
+  "remote.clearAll": "Tout effacer",
+  "remote.loading": "Chargement des opportunit\u00e9s \u00e0 distance...",
   "remote.noJobs": "Aucun emploi \u00e0 distance disponible",
   "remote.noJobsDesc":
     "Nous r\u00e9cup\u00e9rons des opportunit\u00e9s \u00e0 distance. Veuillez revenir plus tard ou parcourir les emplois locaux.",
+  "remote.noMatchingJobs": "Aucun emploi correspondant",
+  "remote.noMatchingDesc": "Essayez d'ajuster votre recherche ou vos filtres pour voir plus de r\u00e9sultats.",
+  "remote.clearFilters": "Effacer les filtres",
+  "remote.showing": "Affichage de {visible} sur {total} emplois",
+  "remote.showingFiltered": "Affichage de {visible} sur {total} emplois (filtr\u00e9)",
+  "remote.showMore": "Voir plus",
   "remote.browseLocal": "Parcourir les emplois locaux",
   "remote.remote": "\u00c0 distance",
   "remote.worldwide": "Monde entier",
+  "remote.unknownCompany": "Entreprise inconnue",
   "remote.applyOn": "Postuler sur {source}",
+  "remote.howItWorks": "Comment \u00e7a marche\u00a0:",
+  "remote.disclaimer": "Les offres d'emploi \u00e0 distance proviennent de plateformes partenaires de confiance ({sources}). En postulant, vous serez redirig\u00e9 vers l'annonce originale. Joblinca v\u00e9rifie les sources mais ne peut pas garantir les r\u00e9sultats. V\u00e9rifiez toujours les employeurs ind\u00e9pendamment.",
+  "remote.alertsTitle": "Recevoir des alertes emploi \u00e0 distance",
+  "remote.alertsDesc": "Soyez le premier inform\u00e9 lorsque de nouvelles opportunit\u00e9s \u00e0 distance correspondent \u00e0 vos comp\u00e9tences. Inscrivez-vous pour recevoir des alertes quotidiennes par e-mail ou WhatsApp.",
+  "remote.alertsCta": "S'inscrire aux alertes",
   "remote.attribution": "Les offres d'emploi \u00e0 distance sont s\u00e9lectionn\u00e9es de",
   "remote.attributionSuffix":
     ". En postulant, vous serez redirig\u00e9 vers l'offre d'emploi externe.",
@@ -296,6 +334,23 @@ const fr: Record<string, string> = {
   "remote.ctaDesc":
     "Parcourez les emplois d'employeurs camerounais ou cr\u00e9ez votre profil pour \u00eatre mis en relation avec des opportunit\u00e9s.",
   "remote.createProfile": "Cr\u00e9er votre profil",
+
+  // Remote jobs category tabs
+  "remote.cat.engineering": "Ing\u00e9nierie",
+  "remote.cat.marketing": "Marketing",
+  "remote.cat.design": "Design",
+  "remote.cat.customerSupport": "Support client",
+  "remote.cat.sales": "Ventes",
+  "remote.cat.product": "Produit",
+  "remote.cat.dataAnalytics": "Donn\u00e9es & Analyse",
+  "remote.cat.finance": "Finance",
+  "remote.cat.hrRecruiting": "RH & Recrutement",
+  "remote.cat.writing": "R\u00e9daction",
+  "remote.cat.teaching": "Enseignement",
+  "remote.cat.qaTesting": "Assurance qualit\u00e9",
+  "remote.cat.security": "S\u00e9curit\u00e9",
+  "remote.cat.operations": "Op\u00e9rations",
+  "remote.cat.internships": "Stages & D\u00e9butants",
 
   // ---------------------------------------------------------------------------
   // Learn More \u2013 Job Seekers

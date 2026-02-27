@@ -22,38 +22,59 @@ const en: Record<string, string> = {
   // ---------------------------------------------------------------------------
   // Homepage
   // ---------------------------------------------------------------------------
-  "home.trustBadge": "Trusted by 1,000+ professionals in Cameroon",
+  "home.trustBadge": "Cameroon's #1 Job Platform — Local & Global Opportunities",
 
   // Hero
-  "home.hero.title": "Find Your Dream Job in",
+  "home.hero.title": "Cameroon Talent for",
+  "home.hero.titleHighlight": "Local & Global Jobs",
   "home.hero.cameroon": "Cameroon",
   "home.hero.subtitle":
-    "Get matched to jobs faster with AI. Apply to local roles or work remotely for global companies.",
+    "Discover opportunities. Get hired faster. Connect with verified talent.",
   "home.hero.searchPlaceholder": "Job title, skills, or company",
-  "home.hero.locationPlaceholder": "City or 'Remote'",
+  "home.hero.locationPlaceholder": "City, e.g. Douala or Remote",
   "home.hero.searchButton": "Search Jobs",
   "home.hero.popular": "Popular:",
   "home.hero.browseAll": "Browse All Jobs",
-  "home.hero.imHiring": "I'm hiring",
+  "home.hero.imHiring": "I'm Hiring",
   "home.hero.freeForSeekers": "100% Free for Job Seekers",
-  "home.hero.getMatched": "Get Matched in Minutes",
+  "home.hero.getMatched": "WhatsApp Job Alerts",
   "home.hero.localRemote": "Local & Remote Jobs",
+
+  // Stats strip
+  "home.stats.jobs": "Active Jobs",
+  "home.stats.cities": "Cities Covered",
+  "home.stats.companies": "Companies Hiring",
+  "home.stats.payment": "Mobile Money Accepted",
+
+  // City quick links
+  "home.cities.title": "Find Jobs in Your City",
+
+  // WhatsApp section
+  "home.whatsapp.badge": "Most Popular in Cameroon",
+  "home.whatsapp.title": "Get Job Alerts on WhatsApp",
+  "home.whatsapp.subtitle":
+    "Be the first to know when relevant jobs are posted. Get instant alerts directly on WhatsApp — the way you already communicate.",
+  "home.whatsapp.feature1": "Instant alerts the moment a matching job is posted",
+  "home.whatsapp.feature2": "One-tap apply directly from your phone",
+  "home.whatsapp.feature3": "Works on any Android or iPhone, no app needed",
+  "home.whatsapp.cta": "Enable WhatsApp Alerts",
+  "home.whatsapp.note": "Join 2,000+ professionals already using it",
 
   // Trust
   "home.trust.title": "Trusted by leading employers across Africa",
 
   // Testimonials
-  "home.testimonials.title": "What people are saying",
+  "home.testimonials.title": "Trusted by professionals across Cameroon",
   "home.testimonials.1.quote":
-    "I uploaded my CV on Monday and had two interview invitations by Wednesday. The matching actually works.",
+    "I registered on Tuesday and had two interview invitations by Thursday. The AI matching understood what I was looking for — not just keyword matching. I got a job in Douala within 3 weeks.",
   "home.testimonials.1.name": "Aline T.",
-  "home.testimonials.1.role": "Marketing Specialist, Douala",
+  "home.testimonials.1.role": "Marketing Manager, Douala",
   "home.testimonials.2.quote":
-    "We filled a senior developer role in under three weeks. The pre-screened candidates saved us hours of review.",
+    "We posted a senior developer role and received a shortlist within 48 hours. The pre-screening saved my team days of CV review. We now use Joblinca for every hire.",
   "home.testimonials.2.name": "Emmanuel K.",
-  "home.testimonials.2.role": "HR Manager, TechHub Africa",
+  "home.testimonials.2.role": "HR Director, TechHub Africa — Yaound\u00e9",
   "home.testimonials.3.quote":
-    "As a fresh graduate I struggled to find openings. Joblinca showed me roles I never would have found on my own.",
+    "As a fresh ESSEC graduate, I was overwhelmed. Joblinca matched me to finance roles I never would have found, and the WhatsApp alerts meant I was always first to apply.",
   "home.testimonials.3.name": "Ngozi M.",
   "home.testimonials.3.role": "Junior Accountant, Yaound\u00e9",
 
@@ -122,11 +143,11 @@ const en: Record<string, string> = {
   "home.recruiters.cta": "Post a Job",
 
   // Final CTA
-  "home.finalCta.title": "Ready to Take the Next Step?",
+  "home.finalCta.title": "Cameroon's Talent, Ready to Work",
   "home.finalCta.subtitle":
-    "Join thousands of professionals building their careers through Joblinca.",
-  "home.finalCta.findJobs": "Find Jobs",
-  "home.finalCta.hireTalent": "Hire Talent",
+    "Join thousands of professionals and companies building the future of Cameroon — together.",
+  "home.finalCta.findJobs": "Find My Next Job",
+  "home.finalCta.hireTalent": "Hire Top Talent",
 
   // ---------------------------------------------------------------------------
   // Footer
@@ -282,13 +303,30 @@ const en: Record<string, string> = {
     "Browse verified global remote job opportunities from international employers. Work from Cameroon or anywhere in the world.",
   "remote.opportunities": "{count} opportunities",
   "remote.curatedFrom": "Curated from Remotive",
+  "remote.searchPlaceholder": "Search remote jobs by title...",
+  "remote.filters": "Filters",
+  "remote.allSources": "All Sources",
+  "remote.clearAll": "Clear all",
+  "remote.loading": "Loading remote opportunities...",
   "remote.noJobs": "No remote jobs available",
   "remote.noJobsDesc":
     "We\u2019re fetching remote opportunities. Please check back later or browse local jobs.",
+  "remote.noMatchingJobs": "No matching jobs",
+  "remote.noMatchingDesc": "Try adjusting your search or filters to see more results.",
+  "remote.clearFilters": "Clear Filters",
+  "remote.showing": "Showing {visible} of {total} jobs",
+  "remote.showingFiltered": "Showing {visible} of {total} jobs (filtered)",
+  "remote.showMore": "Show More",
   "remote.browseLocal": "Browse Local Jobs",
   "remote.remote": "Remote",
   "remote.worldwide": "Worldwide",
+  "remote.unknownCompany": "Unknown company",
   "remote.applyOn": "Apply on {source}",
+  "remote.howItWorks": "How it works:",
+  "remote.disclaimer": "Remote jobs are sourced from trusted partner platforms ({sources}). When you apply, you will be redirected to the original listing. Joblinca vets sources but cannot guarantee hiring outcomes. Always verify employers independently.",
+  "remote.alertsTitle": "Get Remote Job Alerts",
+  "remote.alertsDesc": "Be the first to know when new remote opportunities match your skills. Sign up to receive daily alerts via email or WhatsApp.",
+  "remote.alertsCta": "Sign Up for Alerts",
   "remote.attribution": "Remote job listings are curated from",
   "remote.attributionSuffix":
     ". When applying, you will be redirected to the external job listing.",
@@ -296,6 +334,23 @@ const en: Record<string, string> = {
   "remote.ctaDesc":
     "Browse jobs from Cameroonian employers or create your profile to get matched with opportunities.",
   "remote.createProfile": "Create Your Profile",
+
+  // Remote jobs category tabs
+  "remote.cat.engineering": "Engineering",
+  "remote.cat.marketing": "Marketing",
+  "remote.cat.design": "Design",
+  "remote.cat.customerSupport": "Customer Support",
+  "remote.cat.sales": "Sales",
+  "remote.cat.product": "Product",
+  "remote.cat.dataAnalytics": "Data & Analytics",
+  "remote.cat.finance": "Finance",
+  "remote.cat.hrRecruiting": "HR & Recruiting",
+  "remote.cat.writing": "Writing",
+  "remote.cat.teaching": "Teaching",
+  "remote.cat.qaTesting": "QA & Testing",
+  "remote.cat.security": "Security",
+  "remote.cat.operations": "Operations",
+  "remote.cat.internships": "Internships & Entry Level",
 
   // ---------------------------------------------------------------------------
   // Learn More – Job Seekers

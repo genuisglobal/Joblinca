@@ -38,26 +38,25 @@ interface ExternalJob {
 }
 
 const CATEGORY_TABS = [
-  'All',
-  'Engineering',
-  'Marketing',
-  'Design',
-  'Customer Support',
-  'Sales',
-  'Product',
-  'Data & Analytics',
-  'Finance',
-  'HR & Recruiting',
-  'Writing',
-  'Teaching',
-  'QA & Testing',
-  'Security',
-  'Operations',
-  'Internships & Entry Level',
+  { key: 'All', value: 'All' },
+  { key: 'remote.cat.engineering', value: 'Engineering' },
+  { key: 'remote.cat.marketing', value: 'Marketing' },
+  { key: 'remote.cat.design', value: 'Design' },
+  { key: 'remote.cat.customerSupport', value: 'Customer Support' },
+  { key: 'remote.cat.sales', value: 'Sales' },
+  { key: 'remote.cat.product', value: 'Product' },
+  { key: 'remote.cat.dataAnalytics', value: 'Data & Analytics' },
+  { key: 'remote.cat.finance', value: 'Finance' },
+  { key: 'remote.cat.hrRecruiting', value: 'HR & Recruiting' },
+  { key: 'remote.cat.writing', value: 'Writing' },
+  { key: 'remote.cat.teaching', value: 'Teaching' },
+  { key: 'remote.cat.qaTesting', value: 'QA & Testing' },
+  { key: 'remote.cat.security', value: 'Security' },
+  { key: 'remote.cat.operations', value: 'Operations' },
+  { key: 'remote.cat.internships', value: 'Internships & Entry Level' },
 ];
 
-const SOURCE_OPTIONS = [
-  { value: '', label: 'All Sources' },
+const SOURCE_VALUES = [
   { value: 'remotive', label: 'Remotive' },
   { value: 'jobicy', label: 'Jobicy' },
   { value: 'findwork', label: 'Findwork' },
@@ -178,10 +177,8 @@ export default function RemoteJobsPage() {
           <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
           <div className="text-sm text-neutral-400">
             <p>
-              <span className="text-amber-300 font-medium">How it works:</span>{' '}
-              Remote jobs are sourced from trusted partner platforms (Remotive, Jobicy, Findwork, RemoteOK, Arbeitnow).
-              When you apply, you will be redirected to the original listing. Joblinca vets sources
-              but cannot guarantee hiring outcomes. Always verify employers independently.
+              <span className="text-amber-300 font-medium">{t("remote.howItWorks")}</span>{' '}
+              {t("remote.disclaimer", { sources: 'Remotive, Jobicy, Findwork, RemoteOK, Arbeitnow' })}
             </p>
           </div>
         </div>
@@ -198,7 +195,7 @@ export default function RemoteJobsPage() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search remote jobs by title..."
+                placeholder={t("remote.searchPlaceholder")}
                 className="w-full pl-12 pr-4 py-3 bg-neutral-900 border border-neutral-800 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500"
               />
             </div>
@@ -212,7 +209,7 @@ export default function RemoteJobsPage() {
               }`}
             >
               <Filter className="w-4 h-4" />
-              <span className="hidden sm:inline">Filters</span>
+              <span className="hidden sm:inline">{t("remote.filters")}</span>
             </button>
           </form>
 
@@ -224,7 +221,8 @@ export default function RemoteJobsPage() {
                 onChange={(e) => setSourceFilter(e.target.value)}
                 className="px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg text-sm text-neutral-300 focus:outline-none focus:border-primary-500"
               >
-                {SOURCE_OPTIONS.map((opt) => (
+                <option value="">{t("remote.allSources")}</option>
+                {SOURCE_VALUES.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
@@ -236,7 +234,7 @@ export default function RemoteJobsPage() {
                   className="flex items-center gap-1 px-3 py-2 text-sm text-red-400 hover:text-red-300 transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
-                  Clear all
+                  {t("remote.clearAll")}
                 </button>
               )}
             </div>
@@ -246,16 +244,16 @@ export default function RemoteJobsPage() {
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
             {CATEGORY_TABS.map((cat) => (
               <button
-                key={cat}
+                key={cat.value}
                 type="button"
-                onClick={() => setActiveCategory(cat)}
+                onClick={() => setActiveCategory(cat.value)}
                 className={`whitespace-nowrap px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors shrink-0 ${
-                  activeCategory === cat
+                  activeCategory === cat.value
                     ? 'bg-primary-600 text-white'
                     : 'bg-neutral-800/60 text-neutral-400 hover:text-white hover:bg-neutral-800'
                 }`}
               >
-                {cat}
+                {cat.key === 'All' ? t("jobs.allJobs") : t(cat.key)}
               </button>
             ))}
           </div>
@@ -267,7 +265,7 @@ export default function RemoteJobsPage() {
         {loading ? (
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-8 h-8 text-primary-400 animate-spin mb-4" />
-            <p className="text-neutral-500">Loading remote opportunities...</p>
+            <p className="text-neutral-500">{t("remote.loading")}</p>
           </div>
         ) : jobs.length === 0 ? (
           <div className="text-center py-20">
@@ -275,12 +273,10 @@ export default function RemoteJobsPage() {
               <Globe className="w-10 h-10 text-neutral-600" />
             </div>
             <h2 className="text-2xl font-bold mb-3">
-              {hasActiveFilters ? 'No matching jobs' : t("remote.noJobs")}
+              {hasActiveFilters ? t("remote.noMatchingJobs") : t("remote.noJobs")}
             </h2>
             <p className="text-neutral-400 mb-8 max-w-md mx-auto">
-              {hasActiveFilters
-                ? 'Try adjusting your search or filters to see more results.'
-                : t("remote.noJobsDesc")}
+              {hasActiveFilters ? t("remote.noMatchingDesc") : t("remote.noJobsDesc")}
             </p>
             {hasActiveFilters ? (
               <button
@@ -288,7 +284,7 @@ export default function RemoteJobsPage() {
                 onClick={clearFilters}
                 className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all"
               >
-                Clear Filters
+                {t("remote.clearFilters")}
               </button>
             ) : (
               <Link
@@ -304,8 +300,9 @@ export default function RemoteJobsPage() {
           <>
             {/* Results count */}
             <p className="text-sm text-neutral-500 mb-4">
-              Showing {visibleJobs.length} of {jobs.length} jobs
-              {hasActiveFilters && ' (filtered)'}
+              {hasActiveFilters
+                ? t("remote.showingFiltered", { visible: String(visibleJobs.length), total: String(jobs.length) })
+                : t("remote.showing", { visible: String(visibleJobs.length), total: String(jobs.length) })}
             </p>
 
             <div className="space-y-3">
@@ -337,7 +334,7 @@ export default function RemoteJobsPage() {
                       </div>
 
                       <p className="text-neutral-300 text-sm font-medium mb-2">
-                        {job.company_name || 'Unknown company'}
+                        {job.company_name || t("remote.unknownCompany")}
                       </p>
 
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-neutral-500 mb-3">
@@ -398,7 +395,7 @@ export default function RemoteJobsPage() {
                   onClick={() => setVisibleCount((v) => v + 30)}
                   className="inline-flex items-center gap-2 px-6 py-3 bg-neutral-800 hover:bg-neutral-700 text-white rounded-lg font-medium transition-colors"
                 >
-                  Show More
+                  {t("remote.showMore")}
                   <ChevronDown className="w-4 h-4" />
                 </button>
               </div>
@@ -431,17 +428,16 @@ export default function RemoteJobsPage() {
             <div className="w-14 h-14 rounded-xl bg-primary-600/20 flex items-center justify-center mx-auto mb-4">
               <Bell className="w-7 h-7 text-primary-400" />
             </div>
-            <h2 className="text-2xl font-bold mb-3">Get Remote Job Alerts</h2>
+            <h2 className="text-2xl font-bold mb-3">{t("remote.alertsTitle")}</h2>
             <p className="text-neutral-400 mb-6 max-w-md mx-auto">
-              Be the first to know when new remote opportunities match your skills.
-              Sign up to receive daily alerts via email or WhatsApp.
+              {t("remote.alertsDesc")}
             </p>
             <Link
               href="/auth/register?role=candidate"
               className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-3.5 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-primary-600/25"
             >
               <Bell className="w-5 h-5" />
-              Sign Up for Alerts
+              {t("remote.alertsCta")}
               <ArrowRight className="w-4 h-4" />
             </Link>
           </div>
@@ -462,7 +458,7 @@ export default function RemoteJobsPage() {
               href="/jobs"
               className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all"
             >
-              Browse Local Jobs
+              {t("remote.browseLocal")}
               <ArrowRight className="w-4 h-4" />
             </Link>
             <Link
