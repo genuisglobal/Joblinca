@@ -45,5 +45,5 @@ export const certificationEntrySchema = z.object({
 });
 
 export const templateSchema = z.object({
-  template: z.enum(['professional', 'modern']),
+  template: z.enum(['professional', 'modern', 'executive', 'creative', 'minimal', 'compact']),
 });

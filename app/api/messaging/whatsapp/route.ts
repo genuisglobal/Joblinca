@@ -1,13 +1,9 @@
-import { NextResponse, type NextRequest } from 'next/server';
-
 /**
- * WhatsApp webhook handler.  Meta will POST events here.  You must verify the
- * signature using your WhatsApp token and respond to the message as needed.
+ * Legacy webhook path kept for backwards-compatibility.
+ *
+ * The canonical webhook handler lives at /api/whatsapp/webhook.
+ * Update your Meta Webhook URL to point there.
+ * This file can be removed once Meta is pointed to the new path.
  */
-export async function POST(request: NextRequest) {
-  // TODO: verify X-Hub-Signature-256 header
-  const body = await request.json();
-  // For now, log the inbound message and return 200 OK
-  console.log('Received WhatsApp message', body);
-  return new NextResponse('OK', { status: 200 });
-}
+
+export { GET, POST } from '@/app/api/whatsapp/webhook/route';

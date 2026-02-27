@@ -43,7 +43,7 @@ export interface ResumeData {
   skills: string[];
   languages: LanguageEntry[];
   certifications: CertificationEntry[];
-  template: 'professional' | 'modern';
+  template: 'professional' | 'modern' | 'executive' | 'creative' | 'minimal' | 'compact';
 }
 
 export function createEmptyResume(): ResumeData {
