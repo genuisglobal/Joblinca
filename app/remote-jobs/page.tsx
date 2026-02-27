@@ -61,6 +61,8 @@ const SOURCE_OPTIONS = [
   { value: 'remotive', label: 'Remotive' },
   { value: 'jobicy', label: 'Jobicy' },
   { value: 'findwork', label: 'Findwork' },
+  { value: 'remoteok', label: 'RemoteOK' },
+  { value: 'arbeitnow', label: 'Arbeitnow' },
 ];
 
 function formatDate(dateString: string) {
@@ -164,7 +166,7 @@ export default function RemoteJobsPage() {
             </span>
             <span className="flex items-center gap-2">
               <Globe className="w-4 h-4" />
-              Remotive + Jobicy + Findwork
+              Remotive · Jobicy · Findwork · RemoteOK · Arbeitnow
             </span>
           </div>
         </div>
@@ -177,7 +179,7 @@ export default function RemoteJobsPage() {
           <div className="text-sm text-neutral-400">
             <p>
               <span className="text-amber-300 font-medium">How it works:</span>{' '}
-              Remote jobs are sourced from trusted partner platforms (Remotive, Jobicy, Findwork).
+              Remote jobs are sourced from trusted partner platforms (Remotive, Jobicy, Findwork, RemoteOK, Arbeitnow).
               When you apply, you will be redirected to the original listing. Joblinca vets sources
               but cannot guarantee hiring outcomes. Always verify employers independently.
             </p>
@@ -412,8 +414,10 @@ export default function RemoteJobsPage() {
             <p className="text-sm text-neutral-500">
               {t("remote.attribution")}{' '}
               <a href="https://remotive.com" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">Remotive</a>,{' '}
-              <a href="https://jobicy.com" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">Jobicy</a>, and{' '}
-              <a href="https://findwork.dev" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">Findwork</a>.{' '}
+              <a href="https://jobicy.com" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">Jobicy</a>,{' '}
+              <a href="https://findwork.dev" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">Findwork</a>,{' '}
+              <a href="https://remoteok.com" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">RemoteOK</a>, and{' '}
+              <a href="https://www.arbeitnow.com" target="_blank" rel="noopener noreferrer" className="text-primary-400 hover:text-primary-300">Arbeitnow</a>.{' '}
               {t("remote.attributionSuffix")}
             </p>
           </div>
