@@ -81,11 +81,32 @@ export interface PaymentStatusResponse {
   amount?: string;
 }
 
+function resolveMode(
+  apiKey: string,
+  configuredMode?: string
+): PayunitMode {
+  const normalized = (configuredMode || '').toLowerCase();
+
+  if (normalized === 'live' || normalized === 'test') {
+    return normalized;
+  }
+
+  if (apiKey.startsWith('live_')) {
+    return 'live';
+  }
+
+  if (apiKey.startsWith('test_')) {
+    return 'test';
+  }
+
+  return 'test';
+}
+
 function getConfig(): PayunitConfig {
   const apiUser = process.env.PAYUNIT_API_USER;
   const apiPassword = process.env.PAYUNIT_API_PASSWORD;
   const apiKey = process.env.PAYUNIT_API_KEY;
-  const mode = (process.env.PAYUNIT_MODE || 'test').toLowerCase() as PayunitMode;
+  const mode = resolveMode(apiKey || '', process.env.PAYUNIT_MODE);
   const baseUrl = process.env.PAYUNIT_BASE_URL || 'https://gateway.payunit.net';
 
   if (!apiUser || !apiPassword || !apiKey) {
