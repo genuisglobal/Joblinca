@@ -103,11 +103,22 @@ function headers(config: PayunitConfig): Record<string, string> {
   );
 
   return {
+    Accept: 'application/json',
     'Content-Type': 'application/json',
     Authorization: `Basic ${basic}`,
     'x-api-key': config.apiKey,
     mode: config.mode,
   };
+}
+
+function isHtmlPayload(text: string, contentType: string | null): boolean {
+  const trimmed = text.trimStart();
+  return (
+    Boolean(contentType && contentType.includes('text/html')) ||
+    trimmed.startsWith('<!DOCTYPE') ||
+    trimmed.startsWith('<html') ||
+    trimmed.startsWith('<HTML')
+  );
 }
 
 async function requestJson<T>(
@@ -116,9 +127,19 @@ async function requestJson<T>(
 ): Promise<T> {
   const res = await fetch(url, options);
   const text = await res.text();
+  const contentType = res.headers.get('content-type');
 
   if (!res.ok) {
-    throw new Error(`Payunit API error (${res.status}): ${text}`);
+    if (isHtmlPayload(text, contentType)) {
+      throw new Error(
+        `Payunit API error (${res.status}): Upstream gateway blocked the request before returning JSON.`
+      );
+    }
+
+    const compact = text.replace(/\s+/g, ' ').trim();
+    throw new Error(
+      `Payunit API error (${res.status}): ${compact || 'Unexpected empty response.'}`
+    );
   }
 
   try {
@@ -133,6 +154,17 @@ function assertSuccess<T>(payload: PayunitEnvelope<T>, context: string) {
     const message = payload.message || payload.status;
     throw new Error(`${context} failed: ${message}`);
   }
+}
+
+export function shouldUseHostedCheckoutFallback(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message.startsWith('Payunit API error (') ||
+    error.message === 'Payunit API returned invalid JSON.'
+  );
 }
 
 // ---------------------------------------------------------------------------
