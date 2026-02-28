@@ -142,6 +142,59 @@ function isHtmlPayload(text: string, contentType: string | null): boolean {
   );
 }
 
+function summarizeUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !value) {
+    return undefined;
+  }
+
+  try {
+    const parsed = new URL(value);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return value;
+  }
+}
+
+function summarizeRequestBody(
+  body: RequestInit['body']
+): Record<string, unknown> | undefined {
+  if (typeof body !== 'string') {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    const summary: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key === 'phone_number' && typeof value === 'string') {
+        summary.phone_number_suffix = value.slice(-4);
+        continue;
+      }
+
+      if ((key === 'return_url' || key === 'notify_url') && typeof value === 'string') {
+        summary[key] = summarizeUrl(value);
+        continue;
+      }
+
+      summary[key] = value;
+    }
+
+    return summary;
+  } catch {
+    return undefined;
+  }
+}
+
+function summarizeResponseText(text: string): string {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return '<empty>';
+  }
+
+  return compact.slice(0, 400);
+}
+
 async function requestJson<T>(
   url: string,
   options: RequestInit
@@ -149,29 +202,59 @@ async function requestJson<T>(
   const res = await fetch(url, options);
   const text = await res.text();
   const contentType = res.headers.get('content-type');
+  const requestBody = summarizeRequestBody(options.body);
 
   if (!res.ok) {
+    const htmlResponse = isHtmlPayload(text, contentType);
+    const responseSummary = htmlResponse
+      ? 'HTML response omitted'
+      : summarizeResponseText(text);
+
+    console.error('Payunit HTTP request failed', {
+      url,
+      method: options.method || 'GET',
+      status: res.status,
+      contentType,
+      requestBody,
+      response: responseSummary,
+    });
+
     if (isHtmlPayload(text, contentType)) {
       throw new Error(
         `Payunit API error (${res.status}): Upstream gateway blocked the request before returning JSON.`
       );
     }
 
-    const compact = text.replace(/\s+/g, ' ').trim();
     throw new Error(
-      `Payunit API error (${res.status}): ${compact || 'Unexpected empty response.'}`
+      `Payunit API error (${res.status}): ${responseSummary || 'Unexpected empty response.'}`
     );
   }
 
   try {
     return JSON.parse(text) as T;
   } catch {
+    console.error('Payunit API returned invalid JSON', {
+      url,
+      method: options.method || 'GET',
+      status: res.status,
+      contentType,
+      requestBody,
+      response: summarizeResponseText(text),
+    });
+
     throw new Error('Payunit API returned invalid JSON.');
   }
 }
 
 function assertSuccess<T>(payload: PayunitEnvelope<T>, context: string) {
   if (payload?.status && payload.status !== 'SUCCESS') {
+    console.error('Payunit API returned a failed JSON payload', {
+      context,
+      status: payload.status,
+      statusCode: payload.statusCode,
+      message: payload.message || payload.status,
+    });
+
     const message = payload.message || payload.status;
     throw new Error(`${context} failed: ${message}`);
   }

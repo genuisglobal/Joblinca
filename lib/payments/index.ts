@@ -62,6 +62,24 @@ export interface DiscountResult {
   finalAmount: number;
 }
 
+function logHostedCheckoutFallback(
+  flow: 'subscription' | 'job_tier',
+  internalTransactionId: string,
+  payunitTransactionId: string,
+  gateway: string,
+  checkoutUrl: string,
+  error: unknown
+) {
+  console.warn('Payunit makepayment failed; using hosted checkout fallback', {
+    flow,
+    internalTransactionId,
+    payunitTransactionId,
+    gateway,
+    checkoutUrl,
+    error: error instanceof Error ? error.message : 'Unknown error',
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Discount calculation
 // ---------------------------------------------------------------------------
@@ -269,6 +287,15 @@ export async function initiateSubscriptionPayment(
       .eq('id', transaction.id);
   } catch (error) {
     if (initResult.transaction_url && shouldUseHostedCheckoutFallback(error)) {
+      logHostedCheckoutFallback(
+        'subscription',
+        transaction.id,
+        payunitTransactionId,
+        gateway,
+        initResult.transaction_url,
+        error
+      );
+
       return {
         transactionId: transaction.id,
         reference: payunitTransactionId,
@@ -463,6 +490,15 @@ export async function initiateJobTierPayment(
       .eq('id', transaction.id);
   } catch (error) {
     if (initResult.transaction_url && shouldUseHostedCheckoutFallback(error)) {
+      logHostedCheckoutFallback(
+        'job_tier',
+        transaction.id,
+        payunitTransactionId,
+        gateway,
+        initResult.transaction_url,
+        error
+      );
+
       return {
         transactionId: transaction.id,
         reference: payunitTransactionId,
