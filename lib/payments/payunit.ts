@@ -23,6 +23,9 @@ interface PayunitConfig {
   apiKey: string;
   mode: PayunitMode;
   baseUrl: string;
+  proxyEnabled: boolean;
+  proxyUrl: string | null;
+  proxyAuthToken: string | null;
 }
 
 interface PayunitEnvelope<T> {
@@ -108,6 +111,10 @@ function getConfig(): PayunitConfig {
   const apiKey = process.env.PAYUNIT_API_KEY;
   const mode = resolveMode(apiKey || '', process.env.PAYUNIT_MODE);
   const baseUrl = process.env.PAYUNIT_BASE_URL || 'https://gateway.payunit.net';
+  const proxyEnabled =
+    (process.env.PAYUNIT_USE_SUPABASE_PROXY || '').trim() === 'true';
+  const proxyUrl = deriveProxyUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const proxyAuthToken = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
 
   if (!apiUser || !apiPassword || !apiKey) {
     throw new Error(
@@ -115,7 +122,16 @@ function getConfig(): PayunitConfig {
     );
   }
 
-  return { apiUser, apiPassword, apiKey, mode, baseUrl };
+  return {
+    apiUser,
+    apiPassword,
+    apiKey,
+    mode,
+    baseUrl,
+    proxyEnabled,
+    proxyUrl,
+    proxyAuthToken,
+  };
 }
 
 function headers(config: PayunitConfig): Record<string, string> {
@@ -195,11 +211,80 @@ function summarizeResponseText(text: string): string {
   return compact.slice(0, 400);
 }
 
+function deriveProxyUrl(supabaseUrl?: string): string | null {
+  if (!supabaseUrl) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(supabaseUrl);
+    return `${parsed.origin}/functions/v1/payunit-proxy`;
+  } catch {
+    return null;
+  }
+}
+
+function shouldUseProxy(config: PayunitConfig): boolean {
+  return Boolean(config.proxyEnabled && config.proxyUrl && config.proxyAuthToken);
+}
+
+function buildProxyPath(config: PayunitConfig, url: string): string {
+  if (url.startsWith(config.baseUrl)) {
+    return url.slice(config.baseUrl.length);
+  }
+
+  try {
+    const parsed = new URL(url);
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
+function buildProxyRequestInit(
+  config: PayunitConfig,
+  url: string,
+  options: RequestInit
+): RequestInit {
+  const payload: Record<string, unknown> = {
+    path: buildProxyPath(config, url),
+    method: options.method || 'GET',
+  };
+
+  if (typeof options.body === 'string') {
+    try {
+      payload.body = JSON.parse(options.body);
+    } catch {
+      payload.body = options.body;
+    }
+  }
+
+  return {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.proxyAuthToken}`,
+      apikey: config.proxyAuthToken || '',
+      'x-payunit-api-user': config.apiUser,
+      'x-payunit-api-password': config.apiPassword,
+      'x-payunit-api-key': config.apiKey,
+      'x-payunit-mode': config.mode,
+      'x-payunit-base-url': config.baseUrl,
+    },
+    body: JSON.stringify(payload),
+  };
+}
+
 async function requestJson<T>(
+  config: PayunitConfig,
   url: string,
   options: RequestInit
 ): Promise<T> {
-  const res = await fetch(url, options);
+  const proxied = shouldUseProxy(config);
+  const res = proxied
+    ? await fetch(config.proxyUrl as string, buildProxyRequestInit(config, url, options))
+    : await fetch(url, options);
   const text = await res.text();
   const contentType = res.headers.get('content-type');
   const requestBody = summarizeRequestBody(options.body);
@@ -212,6 +297,7 @@ async function requestJson<T>(
 
     console.error('Payunit HTTP request failed', {
       url,
+      proxied,
       method: options.method || 'GET',
       status: res.status,
       contentType,
@@ -235,6 +321,7 @@ async function requestJson<T>(
   } catch {
     console.error('Payunit API returned invalid JSON', {
       url,
+      proxied,
       method: options.method || 'GET',
       status: res.status,
       contentType,
@@ -293,6 +380,7 @@ export async function initializePayment(
   }
 
   const payload = await requestJson<PayunitEnvelope<InitializePaymentResponse>>(
+    config,
     `${config.baseUrl}/api/gateway/initialize`,
     {
       method: 'POST',
@@ -325,6 +413,7 @@ export async function makePayment(
   }
 
   const payload = await requestJson<PayunitEnvelope<MakePaymentResponse>>(
+    config,
     `${config.baseUrl}/api/gateway/makepayment`,
     {
       method: 'POST',
@@ -343,6 +432,7 @@ export async function getPaymentStatus(
   const config = getConfig();
 
   const payload = await requestJson<PayunitEnvelope<PaymentStatusResponse>>(
+    config,
     `${config.baseUrl}/api/gateway/paymentstatus/${transactionId}`,
     {
       method: 'GET',
