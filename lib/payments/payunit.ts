@@ -84,6 +84,14 @@ export interface PaymentStatusResponse {
   amount?: string;
 }
 
+export interface PayunitRuntimeInfo {
+  mode: PayunitMode;
+  baseUrl: string;
+  proxyEnabled: boolean;
+  proxyConfigured: boolean;
+  proxyInUse: boolean;
+}
+
 function resolveMode(
   apiKey: string,
   configuredMode?: string
@@ -360,6 +368,18 @@ export function shouldUseHostedCheckoutFallback(error: unknown): boolean {
     error.message.startsWith('Payunit API error (') ||
     error.message === 'Payunit API returned invalid JSON.'
   );
+}
+
+export function getPayunitRuntimeInfo(): PayunitRuntimeInfo {
+  const config = getConfig();
+
+  return {
+    mode: config.mode,
+    baseUrl: config.baseUrl,
+    proxyEnabled: config.proxyEnabled,
+    proxyConfigured: Boolean(config.proxyUrl && config.proxyAuthToken),
+    proxyInUse: shouldUseProxy(config),
+  };
 }
 
 // ---------------------------------------------------------------------------
