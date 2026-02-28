@@ -8,6 +8,7 @@
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import {
   buildPayunitTransactionId,
+  getPayunitRuntimeInfo,
   initializePayment,
   makePayment,
   normalizePhone,
@@ -78,6 +79,10 @@ function logHostedCheckoutFallback(
     checkoutUrl,
     error: error instanceof Error ? error.message : 'Unknown error',
   });
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error';
 }
 
 // ---------------------------------------------------------------------------
@@ -186,10 +191,20 @@ export async function initiateSubscriptionPayment(
   // 4. Create pending transaction
   const phone = normalizePhone(params.phoneNumber);
   const gateway = resolveGateway(phone, params.gateway);
+  const payunitRuntime = getPayunitRuntimeInfo();
   const metadata = {
     plan_slug: params.planSlug,
     plan_type: plan.plan_type,
     role: plan.role,
+    payunit: {
+      stage: 'created',
+      gateway,
+      proxy_enabled: payunitRuntime.proxyEnabled,
+      proxy_configured: payunitRuntime.proxyConfigured,
+      proxy_in_use: payunitRuntime.proxyInUse,
+      mode: payunitRuntime.mode,
+      base_url: payunitRuntime.baseUrl,
+    },
   };
 
   const { data: transaction, error: txError } = await supabase
@@ -221,14 +236,34 @@ export async function initiateSubscriptionPayment(
   const payunitTransactionId = buildPayunitTransactionId(transaction.id);
 
   // 5. Initialize Payunit transaction
-  const initResult = await initializePayment({
-    amount: finalAmount,
-    currency: 'XAF',
-    transactionId: payunitTransactionId,
-    returnUrl,
-    notifyUrl,
-    paymentCountry: 'CM',
-  });
+  let initResult;
+
+  try {
+    initResult = await initializePayment({
+      amount: finalAmount,
+      currency: 'XAF',
+      transactionId: payunitTransactionId,
+      returnUrl,
+      notifyUrl,
+      paymentCountry: 'CM',
+    });
+  } catch (error) {
+    await supabase
+      .from('transactions')
+      .update({
+        metadata: {
+          ...metadata,
+          payunit: {
+            ...(metadata.payunit as Record<string, unknown>),
+            stage: 'initialize_failed',
+            last_error: getErrorMessage(error),
+          },
+        },
+      })
+      .eq('id', transaction.id);
+
+    throw error;
+  }
 
   if (initResult.providers?.length) {
     const supported = initResult.providers.some(
@@ -240,6 +275,8 @@ export async function initiateSubscriptionPayment(
   }
 
   const payunitMetadata = {
+    ...(metadata.payunit as Record<string, unknown>),
+    stage: 'initialized',
     transaction_id: payunitTransactionId,
     gateway,
     transaction_url: initResult.transaction_url,
@@ -286,6 +323,20 @@ export async function initiateSubscriptionPayment(
       })
       .eq('id', transaction.id);
   } catch (error) {
+    await supabase
+      .from('transactions')
+      .update({
+        metadata: {
+          ...metadata,
+          payunit: {
+            ...payunitMetadata,
+            stage: 'makepayment_failed',
+            last_error: getErrorMessage(error),
+          },
+        },
+      })
+      .eq('id', transaction.id);
+
     if (initResult.transaction_url && shouldUseHostedCheckoutFallback(error)) {
       logHostedCheckoutFallback(
         'subscription',
@@ -386,12 +437,22 @@ export async function initiateJobTierPayment(
   // 5. Create pending transaction
   const phone = normalizePhone(params.phoneNumber);
   const gateway = resolveGateway(phone, params.gateway);
+  const payunitRuntime = getPayunitRuntimeInfo();
   const metadata = {
     plan_slug: params.planSlug,
     plan_type: plan.plan_type,
     role: plan.role,
     add_on_slugs: params.addOnSlugs || [],
     add_on_ids: addOnIds,
+    payunit: {
+      stage: 'created',
+      gateway,
+      proxy_enabled: payunitRuntime.proxyEnabled,
+      proxy_configured: payunitRuntime.proxyConfigured,
+      proxy_in_use: payunitRuntime.proxyInUse,
+      mode: payunitRuntime.mode,
+      base_url: payunitRuntime.baseUrl,
+    },
   };
 
   const { data: transaction, error: txError } = await supabase
@@ -424,14 +485,34 @@ export async function initiateJobTierPayment(
   const payunitTransactionId = buildPayunitTransactionId(transaction.id);
 
   // 6. Initialize Payunit transaction
-  const initResult = await initializePayment({
-    amount: finalAmount,
-    currency: 'XAF',
-    transactionId: payunitTransactionId,
-    returnUrl,
-    notifyUrl,
-    paymentCountry: 'CM',
-  });
+  let initResult;
+
+  try {
+    initResult = await initializePayment({
+      amount: finalAmount,
+      currency: 'XAF',
+      transactionId: payunitTransactionId,
+      returnUrl,
+      notifyUrl,
+      paymentCountry: 'CM',
+    });
+  } catch (error) {
+    await supabase
+      .from('transactions')
+      .update({
+        metadata: {
+          ...metadata,
+          payunit: {
+            ...(metadata.payunit as Record<string, unknown>),
+            stage: 'initialize_failed',
+            last_error: getErrorMessage(error),
+          },
+        },
+      })
+      .eq('id', transaction.id);
+
+    throw error;
+  }
 
   if (initResult.providers?.length) {
     const supported = initResult.providers.some(
@@ -443,6 +524,8 @@ export async function initiateJobTierPayment(
   }
 
   const payunitMetadata = {
+    ...(metadata.payunit as Record<string, unknown>),
+    stage: 'initialized',
     transaction_id: payunitTransactionId,
     gateway,
     transaction_url: initResult.transaction_url,
@@ -489,6 +572,20 @@ export async function initiateJobTierPayment(
       })
       .eq('id', transaction.id);
   } catch (error) {
+    await supabase
+      .from('transactions')
+      .update({
+        metadata: {
+          ...metadata,
+          payunit: {
+            ...payunitMetadata,
+            stage: 'makepayment_failed',
+            last_error: getErrorMessage(error),
+          },
+        },
+      })
+      .eq('id', transaction.id);
+
     if (initResult.transaction_url && shouldUseHostedCheckoutFallback(error)) {
       logHostedCheckoutFallback(
         'job_tier',
