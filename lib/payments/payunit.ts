@@ -105,14 +105,18 @@ function resolveMode(
   return 'test';
 }
 
+function readBooleanEnv(value?: string): boolean {
+  const normalized = (value || '').replace(/\\r|\\n/g, '').trim().toLowerCase();
+  return normalized === 'true';
+}
+
 function getConfig(): PayunitConfig {
   const apiUser = process.env.PAYUNIT_API_USER;
   const apiPassword = process.env.PAYUNIT_API_PASSWORD;
   const apiKey = process.env.PAYUNIT_API_KEY;
   const mode = resolveMode(apiKey || '', process.env.PAYUNIT_MODE);
   const baseUrl = process.env.PAYUNIT_BASE_URL || 'https://gateway.payunit.net';
-  const proxyEnabled =
-    (process.env.PAYUNIT_USE_SUPABASE_PROXY || '').trim() === 'true';
+  const proxyEnabled = readBooleanEnv(process.env.PAYUNIT_USE_SUPABASE_PROXY);
   const proxyUrl = deriveProxyUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const proxyAuthToken = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
 
