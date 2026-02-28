@@ -164,6 +164,11 @@ export default function PaymentModal({
         return;
       }
 
+      if (data.checkout_url) {
+        window.location.assign(data.checkout_url);
+        return;
+      }
+
       setTransactionId(data.transaction_id);
       setStatus('polling');
       pollStatus(data.transaction_id);

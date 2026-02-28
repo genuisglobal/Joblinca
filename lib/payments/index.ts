@@ -12,6 +12,7 @@ import {
   makePayment,
   normalizePhone,
   resolveGateway,
+  shouldUseHostedCheckoutFallback,
 } from './payunit';
 
 // ---------------------------------------------------------------------------
@@ -43,6 +44,7 @@ export interface PaymentResult {
   originalAmount: number;
   discountAmount: number;
   currency: string;
+  checkoutUrl?: string;
 }
 
 export interface PromoValidationResult {
@@ -219,35 +221,67 @@ export async function initiateSubscriptionPayment(
     }
   }
 
-  // 6. Trigger mobile money push
-  const payunitResult = await makePayment({
-    amount: finalAmount,
-    currency: 'XAF',
-    transactionId: payunitTransactionId,
-    phoneNumber: phone,
-    returnUrl,
-    notifyUrl,
+  const payunitMetadata = {
+    transaction_id: payunitTransactionId,
     gateway,
-    paymentType: 'button',
-  });
+    transaction_url: initResult.transaction_url,
+  };
 
-  // 7. Store Payunit reference + metadata
+  // 6. Store Payunit reference immediately so hosted checkout/webhooks can reconcile
   await supabase
     .from('transactions')
     .update({
       provider_reference: payunitTransactionId,
       metadata: {
         ...metadata,
-        payunit: {
-          transaction_id: payunitTransactionId,
-          gateway: payunitResult.gateway || gateway,
-          t_id: payunitResult.t_id,
-          payment_status: payunitResult.payment_status,
-          transaction_url: initResult.transaction_url,
-        },
+        payunit: payunitMetadata,
       },
     })
     .eq('id', transaction.id);
+
+  // 7. Trigger mobile money push. If the direct push is blocked upstream,
+  // fall back to Payunit's hosted checkout page instead of failing the flow.
+  try {
+    const payunitResult = await makePayment({
+      amount: finalAmount,
+      currency: 'XAF',
+      transactionId: payunitTransactionId,
+      phoneNumber: phone,
+      returnUrl,
+      notifyUrl,
+      gateway,
+      paymentType: 'button',
+    });
+
+    await supabase
+      .from('transactions')
+      .update({
+        metadata: {
+          ...metadata,
+          payunit: {
+            ...payunitMetadata,
+            gateway: payunitResult.gateway || gateway,
+            t_id: payunitResult.t_id,
+            payment_status: payunitResult.payment_status,
+          },
+        },
+      })
+      .eq('id', transaction.id);
+  } catch (error) {
+    if (initResult.transaction_url && shouldUseHostedCheckoutFallback(error)) {
+      return {
+        transactionId: transaction.id,
+        reference: payunitTransactionId,
+        amount: finalAmount,
+        originalAmount,
+        discountAmount,
+        currency: 'XAF',
+        checkoutUrl: initResult.transaction_url,
+      };
+    }
+
+    throw error;
+  }
 
   return {
     transactionId: transaction.id,
@@ -381,35 +415,67 @@ export async function initiateJobTierPayment(
     }
   }
 
-  // 7. Trigger mobile money push
-  const payunitResult = await makePayment({
-    amount: finalAmount,
-    currency: 'XAF',
-    transactionId: payunitTransactionId,
-    phoneNumber: phone,
-    returnUrl,
-    notifyUrl,
+  const payunitMetadata = {
+    transaction_id: payunitTransactionId,
     gateway,
-    paymentType: 'button',
-  });
+    transaction_url: initResult.transaction_url,
+  };
 
-  // 8. Store Payunit reference + metadata
+  // 7. Store Payunit reference immediately so hosted checkout/webhooks can reconcile
   await supabase
     .from('transactions')
     .update({
       provider_reference: payunitTransactionId,
       metadata: {
         ...metadata,
-        payunit: {
-          transaction_id: payunitTransactionId,
-          gateway: payunitResult.gateway || gateway,
-          t_id: payunitResult.t_id,
-          payment_status: payunitResult.payment_status,
-          transaction_url: initResult.transaction_url,
-        },
+        payunit: payunitMetadata,
       },
     })
     .eq('id', transaction.id);
+
+  // 8. Trigger mobile money push. If the direct push is blocked upstream,
+  // fall back to Payunit's hosted checkout page instead of failing the flow.
+  try {
+    const payunitResult = await makePayment({
+      amount: finalAmount,
+      currency: 'XAF',
+      transactionId: payunitTransactionId,
+      phoneNumber: phone,
+      returnUrl,
+      notifyUrl,
+      gateway,
+      paymentType: 'button',
+    });
+
+    await supabase
+      .from('transactions')
+      .update({
+        metadata: {
+          ...metadata,
+          payunit: {
+            ...payunitMetadata,
+            gateway: payunitResult.gateway || gateway,
+            t_id: payunitResult.t_id,
+            payment_status: payunitResult.payment_status,
+          },
+        },
+      })
+      .eq('id', transaction.id);
+  } catch (error) {
+    if (initResult.transaction_url && shouldUseHostedCheckoutFallback(error)) {
+      return {
+        transactionId: transaction.id,
+        reference: payunitTransactionId,
+        amount: finalAmount,
+        originalAmount,
+        discountAmount,
+        currency: 'XAF',
+        checkoutUrl: initResult.transaction_url,
+      };
+    }
+
+    throw error;
+  }
 
   return {
     transactionId: transaction.id,

@@ -63,6 +63,7 @@ export async function POST(request: NextRequest) {
         original_amount: result.originalAmount,
         discount_amount: result.discountAmount,
         currency: result.currency,
+        checkout_url: result.checkoutUrl || null,
       },
       { status: 201 }
     );
