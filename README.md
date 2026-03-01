@@ -96,6 +96,10 @@ JobLinca is designed to run on **Vercel** (for the Next.js frontend and API rout
 
 Complex AI tasks (CV screening, matching, grading and chatbots) should be implemented as independent REST services and deployed on [Replit](https://replit.com).  Those services can be called from the Next.js API routes or Supabase Edge Functions using your `OPENAI_API_KEY`.
 
+### Fixed-IP PayUnit proxy
+
+If PayUnit blocks server-to-server requests from serverless providers, deploy the dedicated fixed-IP proxy in [`services/payunit-proxy`](./services/payunit-proxy).  The main app will prefer that proxy when `PAYUNIT_PROXY_URL` and `PAYUNIT_PROXY_SHARED_SECRET` are configured.
+
 ## Core modules (overview)
 
  - **Authentication & Profiles** – Email/phone authentication via Supabase, role‑based access, and editable user profiles.  The core `profiles` table stores basic details (full name, phone and role). Additional role‑specific information is stored in separate tables: `job_seeker_profiles` (location, headline, resume URL and career info), `talent_profiles` (school status, portfolio and internship eligibility) and `recruiter_profiles` (recruiter type, verification status, tier plan, company name and contact details).

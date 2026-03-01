@@ -12,6 +12,9 @@
  *   PAYUNIT_API_KEY
  *   PAYUNIT_MODE        - test | live (defaults to test)
  *   PAYUNIT_BASE_URL    - defaults to https://gateway.payunit.net
+ *   PAYUNIT_PROXY_URL   - optional external fixed-IP proxy base URL
+ *   PAYUNIT_PROXY_SHARED_SECRET - shared secret for the external proxy
+ *   PAYUNIT_USE_SUPABASE_PROXY  - optional fallback proxy flag
  *   PAYUNIT_DEFAULT_GATEWAY (optional)
  */
 
@@ -23,9 +26,11 @@ interface PayunitConfig {
   apiKey: string;
   mode: PayunitMode;
   baseUrl: string;
-  proxyEnabled: boolean;
-  proxyUrl: string | null;
-  proxyAuthToken: string | null;
+  externalProxyUrl: string | null;
+  externalProxySecret: string | null;
+  supabaseProxyEnabled: boolean;
+  supabaseProxyUrl: string | null;
+  supabaseProxyAuthToken: string | null;
 }
 
 interface PayunitEnvelope<T> {
@@ -90,6 +95,7 @@ export interface PayunitRuntimeInfo {
   proxyEnabled: boolean;
   proxyConfigured: boolean;
   proxyInUse: boolean;
+  proxyTarget: 'none' | 'external' | 'supabase';
 }
 
 function resolveMode(
@@ -118,19 +124,37 @@ function readBooleanEnv(value?: string): boolean {
   return normalized === 'true';
 }
 
+function normalizeProxyUrl(value?: string): string | null {
+  const normalized = (value || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.replace(/\/+$/, '');
+}
+
 function getConfig(): PayunitConfig {
   const apiUser = process.env.PAYUNIT_API_USER;
   const apiPassword = process.env.PAYUNIT_API_PASSWORD;
   const apiKey = process.env.PAYUNIT_API_KEY;
   const mode = resolveMode(apiKey || '', process.env.PAYUNIT_MODE);
   const baseUrl = process.env.PAYUNIT_BASE_URL || 'https://gateway.payunit.net';
-  const proxyEnabled = readBooleanEnv(process.env.PAYUNIT_USE_SUPABASE_PROXY);
-  const proxyUrl = deriveProxyUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const proxyAuthToken = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
+  const externalProxyUrl = normalizeProxyUrl(process.env.PAYUNIT_PROXY_URL);
+  const externalProxySecret =
+    (process.env.PAYUNIT_PROXY_SHARED_SECRET || '').trim() || null;
+  const supabaseProxyEnabled = readBooleanEnv(process.env.PAYUNIT_USE_SUPABASE_PROXY);
+  const supabaseProxyUrl = deriveSupabaseProxyUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  const supabaseProxyAuthToken = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
 
   if (!apiUser || !apiPassword || !apiKey) {
     throw new Error(
       'PAYUNIT_API_USER, PAYUNIT_API_PASSWORD, and PAYUNIT_API_KEY must be configured.'
+    );
+  }
+
+  if (Boolean(externalProxyUrl) !== Boolean(externalProxySecret)) {
+    throw new Error(
+      'PAYUNIT_PROXY_URL and PAYUNIT_PROXY_SHARED_SECRET must be configured together.'
     );
   }
 
@@ -140,9 +164,11 @@ function getConfig(): PayunitConfig {
     apiKey,
     mode,
     baseUrl,
-    proxyEnabled,
-    proxyUrl,
-    proxyAuthToken,
+    externalProxyUrl,
+    externalProxySecret,
+    supabaseProxyEnabled,
+    supabaseProxyUrl,
+    supabaseProxyAuthToken,
   };
 }
 
@@ -223,7 +249,7 @@ function summarizeResponseText(text: string): string {
   return compact.slice(0, 400);
 }
 
-function deriveProxyUrl(supabaseUrl?: string): string | null {
+function deriveSupabaseProxyUrl(supabaseUrl?: string): string | null {
   if (!supabaseUrl) {
     return null;
   }
@@ -236,8 +262,20 @@ function deriveProxyUrl(supabaseUrl?: string): string | null {
   }
 }
 
-function shouldUseProxy(config: PayunitConfig): boolean {
-  return Boolean(config.proxyEnabled && config.proxyUrl && config.proxyAuthToken);
+function getProxyTarget(config: PayunitConfig): 'none' | 'external' | 'supabase' {
+  if (config.externalProxyUrl && config.externalProxySecret) {
+    return 'external';
+  }
+
+  if (
+    config.supabaseProxyEnabled &&
+    config.supabaseProxyUrl &&
+    config.supabaseProxyAuthToken
+  ) {
+    return 'supabase';
+  }
+
+  return 'none';
 }
 
 function buildProxyPath(config: PayunitConfig, url: string): string {
@@ -253,7 +291,11 @@ function buildProxyPath(config: PayunitConfig, url: string): string {
   }
 }
 
-function buildProxyRequestInit(
+function buildExternalProxyEndpoint(proxyUrl: string): string {
+  return proxyUrl.endsWith('/proxy') ? proxyUrl : `${proxyUrl}/proxy`;
+}
+
+function buildExternalProxyRequestInit(
   config: PayunitConfig,
   url: string,
   options: RequestInit
@@ -276,8 +318,37 @@ function buildProxyRequestInit(
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.proxyAuthToken}`,
-      apikey: config.proxyAuthToken || '',
+      Authorization: `Bearer ${config.externalProxySecret}`,
+    },
+    body: JSON.stringify(payload),
+  };
+}
+
+function buildSupabaseProxyRequestInit(
+  config: PayunitConfig,
+  url: string,
+  options: RequestInit
+): RequestInit {
+  const payload: Record<string, unknown> = {
+    path: buildProxyPath(config, url),
+    method: options.method || 'GET',
+  };
+
+  if (typeof options.body === 'string') {
+    try {
+      payload.body = JSON.parse(options.body);
+    } catch {
+      payload.body = options.body;
+    }
+  }
+
+  return {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${config.supabaseProxyAuthToken}`,
+      apikey: config.supabaseProxyAuthToken || '',
       'x-payunit-api-user': config.apiUser,
       'x-payunit-api-password': config.apiPassword,
       'x-payunit-api-key': config.apiKey,
@@ -293,10 +364,19 @@ async function requestJson<T>(
   url: string,
   options: RequestInit
 ): Promise<T> {
-  const proxied = shouldUseProxy(config);
-  const res = proxied
-    ? await fetch(config.proxyUrl as string, buildProxyRequestInit(config, url, options))
-    : await fetch(url, options);
+  const proxyTarget = getProxyTarget(config);
+  const res =
+    proxyTarget === 'external'
+      ? await fetch(
+          buildExternalProxyEndpoint(config.externalProxyUrl as string),
+          buildExternalProxyRequestInit(config, url, options)
+        )
+      : proxyTarget === 'supabase'
+        ? await fetch(
+            config.supabaseProxyUrl as string,
+            buildSupabaseProxyRequestInit(config, url, options)
+          )
+        : await fetch(url, options);
   const text = await res.text();
   const contentType = res.headers.get('content-type');
   const requestBody = summarizeRequestBody(options.body);
@@ -309,7 +389,7 @@ async function requestJson<T>(
 
     console.error('Payunit HTTP request failed', {
       url,
-      proxied,
+      proxyTarget,
       method: options.method || 'GET',
       status: res.status,
       contentType,
@@ -333,7 +413,7 @@ async function requestJson<T>(
   } catch {
     console.error('Payunit API returned invalid JSON', {
       url,
-      proxied,
+      proxyTarget,
       method: options.method || 'GET',
       status: res.status,
       contentType,
@@ -372,13 +452,24 @@ export function shouldUseHostedCheckoutFallback(error: unknown): boolean {
 
 export function getPayunitRuntimeInfo(): PayunitRuntimeInfo {
   const config = getConfig();
+  const proxyTarget = getProxyTarget(config);
+  const proxyEnabled =
+    Boolean(config.externalProxyUrl || config.externalProxySecret) ||
+    config.supabaseProxyEnabled;
+  const proxyConfigured =
+    proxyTarget === 'external'
+      ? Boolean(config.externalProxyUrl && config.externalProxySecret)
+      : proxyTarget === 'supabase'
+        ? Boolean(config.supabaseProxyUrl && config.supabaseProxyAuthToken)
+        : false;
 
   return {
     mode: config.mode,
     baseUrl: config.baseUrl,
-    proxyEnabled: config.proxyEnabled,
-    proxyConfigured: Boolean(config.proxyUrl && config.proxyAuthToken),
-    proxyInUse: shouldUseProxy(config),
+    proxyEnabled,
+    proxyConfigured,
+    proxyInUse: proxyTarget !== 'none',
+    proxyTarget,
   };
 }
 
