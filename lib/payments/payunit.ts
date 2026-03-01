@@ -249,6 +249,33 @@ function summarizeResponseText(text: string): string {
   return compact.slice(0, 400);
 }
 
+function extractJsonErrorMessage(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('{')) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+
+    if (typeof parsed.message === 'string' && parsed.message.trim()) {
+      return parsed.message.trim();
+    }
+
+    if (typeof parsed.error === 'string' && parsed.error.trim()) {
+      return parsed.error.trim();
+    }
+
+    if (typeof parsed.status === 'string' && parsed.status.trim()) {
+      return parsed.status.trim();
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 function deriveSupabaseProxyUrl(supabaseUrl?: string): string | null {
   if (!supabaseUrl) {
     return null;
@@ -383,9 +410,10 @@ async function requestJson<T>(
 
   if (!res.ok) {
     const htmlResponse = isHtmlPayload(text, contentType);
+    const jsonErrorMessage = htmlResponse ? null : extractJsonErrorMessage(text);
     const responseSummary = htmlResponse
       ? 'HTML response omitted'
-      : summarizeResponseText(text);
+      : jsonErrorMessage || summarizeResponseText(text);
 
     console.error('Payunit HTTP request failed', {
       url,
