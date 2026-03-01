@@ -7,9 +7,9 @@
  * Auth: Basic (API user + API password) + x-api-key (application token) + mode header.
  *
  * Environment variables:
- *   PAYUNIT_API_USER
- *   PAYUNIT_API_PASSWORD
- *   PAYUNIT_API_KEY
+ *   PAYUNIT_API_USER     - required for direct/Supabase proxy usage
+ *   PAYUNIT_API_PASSWORD - required for direct/Supabase proxy usage
+ *   PAYUNIT_API_KEY      - required for direct/Supabase proxy usage
  *   PAYUNIT_MODE        - test | live (defaults to test)
  *   PAYUNIT_BASE_URL    - defaults to https://gateway.payunit.net
  *   PAYUNIT_PROXY_URL   - optional external fixed-IP proxy base URL
@@ -134,9 +134,9 @@ function normalizeProxyUrl(value?: string): string | null {
 }
 
 function getConfig(): PayunitConfig {
-  const apiUser = process.env.PAYUNIT_API_USER;
-  const apiPassword = process.env.PAYUNIT_API_PASSWORD;
-  const apiKey = process.env.PAYUNIT_API_KEY;
+  const apiUser = (process.env.PAYUNIT_API_USER || '').trim();
+  const apiPassword = (process.env.PAYUNIT_API_PASSWORD || '').trim();
+  const apiKey = (process.env.PAYUNIT_API_KEY || '').trim();
   const mode = resolveMode(apiKey || '', process.env.PAYUNIT_MODE);
   const baseUrl = process.env.PAYUNIT_BASE_URL || 'https://gateway.payunit.net';
   const externalProxyUrl = normalizeProxyUrl(process.env.PAYUNIT_PROXY_URL);
@@ -146,15 +146,15 @@ function getConfig(): PayunitConfig {
   const supabaseProxyUrl = deriveSupabaseProxyUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const supabaseProxyAuthToken = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
 
-  if (!apiUser || !apiPassword || !apiKey) {
-    throw new Error(
-      'PAYUNIT_API_USER, PAYUNIT_API_PASSWORD, and PAYUNIT_API_KEY must be configured.'
-    );
-  }
-
   if (Boolean(externalProxyUrl) !== Boolean(externalProxySecret)) {
     throw new Error(
       'PAYUNIT_PROXY_URL and PAYUNIT_PROXY_SHARED_SECRET must be configured together.'
+    );
+  }
+
+  if (!externalProxyUrl && (!apiUser || !apiPassword || !apiKey)) {
+    throw new Error(
+      'PAYUNIT_API_USER, PAYUNIT_API_PASSWORD, and PAYUNIT_API_KEY must be configured unless an external PAYUNIT_PROXY_URL is used.'
     );
   }
 
