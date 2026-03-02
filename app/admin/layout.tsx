@@ -30,6 +30,7 @@ export default async function AdminLayout({
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           <NavLink href="/admin" icon={<DashboardIcon />} label="Dashboard" />
+          <NavLink href="/admin/jobs/new" icon={<PlusIcon />} label="Post Job" />
 
           <div className="pt-4 mt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500 uppercase mb-2 px-3">Management</p>
@@ -101,6 +102,14 @@ function BriefcaseIcon() {
   return (
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
     </svg>
   );
 }

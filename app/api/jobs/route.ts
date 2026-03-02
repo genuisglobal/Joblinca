@@ -1,6 +1,8 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
 
+const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
+
 // Handle GET /api/jobs and POST /api/jobs
 export async function GET() {
   const supabase = createServerSupabaseClient();
@@ -27,6 +29,26 @@ export async function POST(request: NextRequest) {
   if (userError || !user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
+
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role, admin_type')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return NextResponse.json({ error: 'Unable to verify posting permissions' }, { status: 403 });
+  }
+
+  const isRecruiter = profile.role === 'recruiter';
+  const isActiveAdmin = Boolean(
+    profile.admin_type && ACTIVE_ADMIN_TYPES.includes(profile.admin_type)
+  );
+
+  if (!isRecruiter && !isActiveAdmin) {
+    return NextResponse.json({ error: 'Recruiter or admin access required' }, { status: 403 });
+  }
+
   // Parse request body
   const body = await request.json();
   const {
@@ -50,8 +72,32 @@ export async function POST(request: NextRequest) {
   if (!title || !description) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
-  // Insert job with published=false and approval_status=pending by default
-  // Admin will approve later before it becomes visible
+  if (isActiveAdmin) {
+    const { data: recruiterProfile } = await supabase
+      .from('recruiters')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (!recruiterProfile) {
+      const { error: recruiterError } = await supabase.from('recruiters').insert({
+        id: user.id,
+        company_name: companyName || 'Admin Posted Job',
+        verified: true,
+      });
+
+      if (recruiterError) {
+        return NextResponse.json(
+          { error: recruiterError.message || 'Unable to prepare admin posting profile' },
+          { status: 500 }
+        );
+      }
+    }
+  }
+
+  const shouldPublishImmediately = isActiveAdmin;
+  const approvalStatus = isActiveAdmin ? 'approved' : 'pending';
+
   const { data: insertedJob, error } = await supabase
     .from('jobs')
     .insert({
@@ -60,10 +106,12 @@ export async function POST(request: NextRequest) {
       location,
       salary: salary ? Number(salary) : null,
       recruiter_id: user.id,
-      published: false,
-      approval_status: 'pending',
+      published: shouldPublishImmediately,
+      approval_status: approvalStatus,
+      approved_at: isActiveAdmin ? new Date().toISOString() : null,
+      approved_by: isActiveAdmin ? user.id : null,
       posted_by: user.id,
-      posted_by_role: 'recruiter',
+      posted_by_role: isActiveAdmin ? `admin_${profile.admin_type}` : 'recruiter',
       company_name: companyName || null,
       company_logo_url: companyLogoUrl || null,
       work_type: workType || 'onsite',

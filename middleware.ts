@@ -84,11 +84,18 @@ export async function middleware(req: NextRequest) {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, admin_type')
       .eq('id', user.id)
       .maybeSingle();
 
-    if (!profile || profile.role !== 'recruiter') {
+    const canUseAdminPostJob =
+      req.nextUrl.pathname === '/recruiter/post-job' &&
+      Boolean(
+        profile?.admin_type &&
+        ACTIVE_ADMIN_TYPES.includes(profile.admin_type)
+      );
+
+    if (!profile || (profile.role !== 'recruiter' && !canUseAdminPostJob)) {
       return NextResponse.redirect(new URL('/dashboard', req.url));
     }
   }
