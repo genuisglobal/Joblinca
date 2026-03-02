@@ -627,14 +627,29 @@ export function normalizePhone(phone: string): string {
   return cleaned;
 }
 
+function normalizeGatewayCode(gateway?: string): string | undefined {
+  const normalized = gateway?.trim().toUpperCase();
+
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (normalized === 'CM_MTN') {
+    return 'CM_MTNMOMO';
+  }
+
+  return normalized;
+}
+
 export function resolveGateway(phone: string, override?: string): string {
-  if (override) return override;
+  const explicitGateway = normalizeGatewayCode(override);
+  if (explicitGateway) return explicitGateway;
 
   const carrier = detectCarrier(phone);
-  if (carrier === 'MTN') return 'CM_MTN';
+  if (carrier === 'MTN') return 'CM_MTNMOMO';
   if (carrier === 'ORANGE') return 'CM_ORANGE';
 
-  const fallback = process.env.PAYUNIT_DEFAULT_GATEWAY;
+  const fallback = normalizeGatewayCode(process.env.PAYUNIT_DEFAULT_GATEWAY);
   if (fallback) return fallback;
 
   throw new Error(
