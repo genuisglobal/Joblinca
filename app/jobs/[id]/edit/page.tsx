@@ -1,31 +1,119 @@
 'use client';
 
-import { useState, type ChangeEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 
-export default function AdminCreateJobPage() {
+interface EditableJob {
+  id: string;
+  posted_by: string | null;
+  title: string;
+  company_name: string | null;
+  company_logo_url: string | null;
+  location: string | null;
+  salary: number | null;
+  work_type: string | null;
+  job_type: string | null;
+  visibility: string | null;
+  description: string | null;
+}
+
+interface ViewerState {
+  backHref: string;
+  isAdminUser: boolean;
+  logoUploadEndpoint: string;
+}
+
+export default function EditJobPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const pathname = usePathname();
+  const supabase = useMemo(() => createClient(), []);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [viewer, setViewer] = useState<ViewerState | null>(null);
+  const [form, setForm] = useState<EditableJob | null>(null);
 
-  // Form fields
-  const [title, setTitle] = useState('');
-  const [companyName, setCompanyName] = useState('');
-  const [companyLogoUrl, setCompanyLogoUrl] = useState('');
-  const [location, setLocation] = useState('');
-  const [salary, setSalary] = useState('');
-  const [workType, setWorkType] = useState('onsite');
-  const [jobType, setJobType] = useState('job');
-  const [visibility, setVisibility] = useState('public');
-  const [description, setDescription] = useState('');
-  const [autoApprove, setAutoApprove] = useState(true);
-  const [published, setPublished] = useState(true);
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadEditState() {
+      try {
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
+
+        if (!mounted) {
+          return;
+        }
+
+        if (authError || !user) {
+          router.replace(`/auth/login?redirect=${pathname}`);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('admin_type')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        const isAdminUser = Boolean(profile?.admin_type);
+        setViewer({
+          backHref: isAdminUser
+            ? `/admin/jobs/${params.id}`
+            : `/dashboard/recruiter/jobs/${params.id}`,
+          isAdminUser,
+          logoUploadEndpoint: isAdminUser ? '/api/admin/jobs/logo' : '/api/profile/logo',
+        });
+
+        const res = await fetch(`/api/jobs/${params.id}`, {
+          cache: 'no-store',
+        });
+
+        if (!mounted) {
+          return;
+        }
+
+        if (res.status === 401) {
+          router.replace(`/auth/login?redirect=${pathname}`);
+          return;
+        }
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setError(data.error || 'Unable to load this job for editing.');
+          setLoading(false);
+          return;
+        }
+
+        setForm(data.job as EditableJob);
+      } catch (err) {
+        console.error('Edit job load error:', err);
+        if (mounted) {
+          setError('Unable to load this job for editing.');
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadEditState();
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase, router, pathname, params.id]);
 
   const handleLogoChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) {
+    if (!file || !viewer) {
       return;
     }
 
@@ -36,7 +124,7 @@ export default function AdminCreateJobPage() {
       const formData = new FormData();
       formData.append('logo', file);
 
-      const res = await fetch('/api/admin/jobs/logo', {
+      const res = await fetch(viewer.logoUploadEndpoint, {
         method: 'POST',
         body: formData,
       });
@@ -47,7 +135,14 @@ export default function AdminCreateJobPage() {
         throw new Error(data.error || 'Failed to upload logo');
       }
 
-      setCompanyLogoUrl(data.logoUrl || '');
+      setForm((current) =>
+        current
+          ? {
+              ...current,
+              company_logo_url: (data.logoUrl as string) || null,
+            }
+          : current
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to upload logo');
     } finally {
@@ -56,58 +151,94 @@ export default function AdminCreateJobPage() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
+    if (!form || !viewer) {
+      return;
+    }
 
     if (uploadingLogo) {
       setError('Please wait for the logo upload to finish.');
       return;
     }
 
-    setLoading(true);
+    setSaving(true);
     setError(null);
 
     try {
-      const res = await fetch('/api/admin/jobs/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(`/api/jobs/${params.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          title,
-          companyName,
-          companyLogoUrl: companyLogoUrl || undefined,
-          location,
-          salary: salary ? parseFloat(salary) : undefined,
-          workType,
-          jobType,
-          visibility,
-          description,
-          autoApprove,
-          published,
+          title: form.title,
+          companyName: form.company_name,
+          companyLogoUrl: form.company_logo_url,
+          location: form.location,
+          salary: form.salary,
+          workType: form.work_type,
+          jobType: form.job_type,
+          visibility: form.visibility,
+          description: form.description,
         }),
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Failed to create job');
+        throw new Error(data.error || 'Failed to update job');
       }
 
-      const { id } = await res.json();
-      router.push(`/admin/jobs/${id}`);
+      router.push(viewer.backHref);
+      router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setError(err instanceof Error ? err.message : 'Failed to update job');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
+  if (loading) {
+    return (
+      <main className="min-h-screen flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <p className="text-gray-400">Loading job editor...</p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!form) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-md text-center">
+          <h1 className="text-2xl font-semibold text-white mb-3">Unable to edit this job</h1>
+          <p className="text-gray-400 mb-6">{error || 'This job could not be loaded.'}</p>
+          <Link
+            href={viewer?.backHref || '/dashboard'}
+            className="inline-flex items-center justify-center px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+          >
+            Go Back
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <main className="p-6 max-w-3xl mx-auto">
       <div className="mb-6">
-        <Link href="/admin/jobs" className="text-blue-400 hover:text-blue-300 text-sm mb-2 inline-block">
-          &larr; Back to Jobs
+        <Link
+          href={viewer?.backHref || '/dashboard'}
+          className="text-blue-400 hover:text-blue-300 text-sm mb-2 inline-block"
+        >
+          &larr; Back to Job
         </Link>
-        <h1 className="text-2xl font-bold text-white">Create Job</h1>
-        <p className="text-gray-400 mt-1">Create a new job posting as an administrator</p>
+        <h1 className="text-2xl font-bold text-white">Edit Job</h1>
+        <p className="text-gray-400 mt-1">Update your job posting details</p>
       </div>
 
       {error && (
@@ -117,7 +248,6 @@ export default function AdminCreateJobPage() {
       )}
 
       <form onSubmit={handleSubmit} className="bg-gray-800 rounded-xl p-6 space-y-6">
-        {/* Basic Info */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">Basic Information</h2>
 
@@ -127,10 +257,9 @@ export default function AdminCreateJobPage() {
             </label>
             <input
               type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              value={form.title}
+              onChange={(e) => setForm({ ...form, title: e.target.value })}
               required
-              placeholder="e.g. Software Engineer"
               className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -141,10 +270,9 @@ export default function AdminCreateJobPage() {
             </label>
             <input
               type="text"
-              value={companyName}
-              onChange={(e) => setCompanyName(e.target.value)}
+              value={form.company_name || ''}
+              onChange={(e) => setForm({ ...form, company_name: e.target.value })}
               required
-              placeholder="e.g. Acme Corp"
               className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -164,20 +292,20 @@ export default function AdminCreateJobPage() {
             {uploadingLogo && (
               <p className="text-sm text-blue-400 mt-2">Uploading logo...</p>
             )}
-            {companyLogoUrl && (
+            {form.company_logo_url && (
               <div className="mt-3 flex items-center gap-4 rounded-lg border border-gray-700 bg-gray-700/50 p-3">
                 <img
-                  src={companyLogoUrl}
+                  src={form.company_logo_url}
                   alt="Company logo preview"
                   className="h-14 w-14 rounded-lg object-cover"
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-white">Logo uploaded</p>
-                  <p className="truncate text-xs text-gray-400">{companyLogoUrl}</p>
+                  <p className="text-sm font-medium text-white">Logo ready</p>
+                  <p className="truncate text-xs text-gray-400">{form.company_logo_url}</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setCompanyLogoUrl('')}
+                  onClick={() => setForm({ ...form, company_logo_url: null })}
                   className="px-3 py-1.5 text-sm text-gray-300 hover:text-white transition-colors"
                 >
                   Remove
@@ -187,7 +315,6 @@ export default function AdminCreateJobPage() {
           </div>
         </div>
 
-        {/* Location & Type */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">Location & Type</h2>
 
@@ -196,9 +323,8 @@ export default function AdminCreateJobPage() {
               <label className="block text-sm font-medium text-gray-300 mb-1">Location</label>
               <input
                 type="text"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="e.g. Douala, Cameroon"
+                value={form.location || ''}
+                onChange={(e) => setForm({ ...form, location: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -207,9 +333,13 @@ export default function AdminCreateJobPage() {
               <label className="block text-sm font-medium text-gray-300 mb-1">Salary (XAF)</label>
               <input
                 type="number"
-                value={salary}
-                onChange={(e) => setSalary(e.target.value)}
-                placeholder="Optional"
+                value={form.salary ?? ''}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    salary: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
                 min="0"
                 className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
@@ -220,8 +350,8 @@ export default function AdminCreateJobPage() {
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">Work Type</label>
               <select
-                value={workType}
-                onChange={(e) => setWorkType(e.target.value)}
+                value={form.work_type || 'onsite'}
+                onChange={(e) => setForm({ ...form, work_type: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="onsite">Onsite</option>
@@ -233,8 +363,8 @@ export default function AdminCreateJobPage() {
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">Job Type</label>
               <select
-                value={jobType}
-                onChange={(e) => setJobType(e.target.value)}
+                value={form.job_type || 'job'}
+                onChange={(e) => setForm({ ...form, job_type: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="job">Job</option>
@@ -246,8 +376,8 @@ export default function AdminCreateJobPage() {
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">Visibility</label>
               <select
-                value={visibility}
-                onChange={(e) => setVisibility(e.target.value)}
+                value={form.visibility || 'public'}
+                onChange={(e) => setForm({ ...form, visibility: e.target.value })}
                 className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="public">Public</option>
@@ -257,7 +387,6 @@ export default function AdminCreateJobPage() {
           </div>
         </div>
 
-        {/* Description */}
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">Description</h2>
 
@@ -266,66 +395,31 @@ export default function AdminCreateJobPage() {
               Job Description <span className="text-red-400">*</span>
             </label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={form.description || ''}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
               required
-              placeholder="Describe the role, responsibilities, requirements, and benefits..."
               rows={8}
               className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             />
           </div>
         </div>
 
-        {/* Admin Options */}
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">Admin Options</h2>
-
-          <div className="space-y-3">
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoApprove}
-                onChange={(e) => setAutoApprove(e.target.checked)}
-                className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <span className="text-white font-medium">Auto-approve</span>
-                <p className="text-sm text-gray-400">Skip the approval process (recommended for admin-created jobs)</p>
-              </div>
-            </label>
-
-            <label className="flex items-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={published}
-                onChange={(e) => setPublished(e.target.checked)}
-                className="w-5 h-5 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <span className="text-white font-medium">Published</span>
-                <p className="text-sm text-gray-400">Make the job immediately visible to users</p>
-              </div>
-            </label>
-          </div>
-        </div>
-
-        {/* Submit */}
         <div className="flex items-center justify-end gap-4 pt-4 border-t border-gray-700">
           <Link
-            href="/admin/jobs"
+            href={viewer?.backHref || '/dashboard'}
             className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
           >
             Cancel
           </Link>
           <button
             type="submit"
-            disabled={loading || uploadingLogo}
+            disabled={saving || uploadingLogo}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
           >
-            {loading ? 'Creating...' : uploadingLogo ? 'Uploading Logo...' : 'Create Job'}
+            {saving ? 'Saving...' : uploadingLogo ? 'Uploading Logo...' : 'Save Changes'}
           </button>
         </div>
       </form>
-    </div>
+    </main>
   );
 }
