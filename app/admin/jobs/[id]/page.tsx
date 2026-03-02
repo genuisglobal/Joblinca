@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { checkAdminStatus } from '@/lib/admin';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import JobActions from './JobActions';
@@ -7,43 +8,64 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+type ProfileSummary = {
+  id?: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+  role?: string | null;
+};
+
 export default async function AdminJobDetailPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = createServerSupabaseClient();
 
   const { data: job, error } = await supabase
     .from('jobs')
-    .select(`
-      *,
-      poster:posted_by (
-        id,
-        full_name,
-        first_name,
-        last_name,
-        email,
-        role
-      ),
-      recruiter:recruiter_id (
-        id,
-        full_name,
-        first_name,
-        last_name,
-        email
-      ),
-      approver:approved_by (
-        id,
-        full_name,
-        first_name,
-        last_name,
-        email
-      )
-    `)
+    .select('*')
     .eq('id', id)
     .single();
 
   if (error || !job) {
     notFound();
   }
+
+  const { userId, adminType } = await checkAdminStatus();
+  const canEdit = job.posted_by === userId || adminType === 'super';
+
+  const fetchProfile = async (
+    profileId: string | null | undefined,
+    includeRole = false
+  ): Promise<ProfileSummary | null> => {
+    if (!profileId) {
+      return null;
+    }
+
+    if (includeRole) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, full_name, first_name, last_name, email, role')
+        .eq('id', profileId)
+        .maybeSingle();
+
+      return data as ProfileSummary | null;
+    }
+
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, full_name, first_name, last_name, email')
+      .eq('id', profileId)
+      .maybeSingle();
+
+    return data as ProfileSummary | null;
+  };
+
+  const [poster, recruiter, approver] = await Promise.all([
+    fetchProfile(job.posted_by, true),
+    fetchProfile(job.recruiter_id),
+    fetchProfile(job.approved_by),
+  ]);
 
   // Get application count
   const { count: applicationCount } = await supabase
@@ -71,7 +93,17 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
           <h1 className="text-2xl font-bold text-white">{job.title}</h1>
           <p className="text-gray-400 mt-1">{job.company_name || 'No company specified'}</p>
         </div>
-        <StatusBadge status={job.approval_status} />
+        <div className="flex items-center gap-3">
+          {canEdit && (
+            <Link
+              href={`/admin/jobs/${job.id}/edit`}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Edit Job
+            </Link>
+          )}
+          <StatusBadge status={job.approval_status} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -130,8 +162,8 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
           <div className="bg-gray-800 rounded-xl p-6">
             <h2 className="text-lg font-semibold text-white mb-4">Information</h2>
             <div className="space-y-4">
-              <MetaItem label="Posted By" value={getName(job.poster)} />
-              <MetaItem label="Recruiter" value={getName(job.recruiter)} />
+              <MetaItem label="Posted By" value={getName(poster)} />
+              <MetaItem label="Recruiter" value={getName(recruiter)} />
               <MetaItem label="Created" value={new Date(job.created_at).toLocaleString()} />
               <MetaItem label="Published" value={job.published ? 'Yes' : 'No'} />
               {job.approved_at && (
@@ -142,7 +174,7 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
                   />
                   <MetaItem
                     label={job.approval_status === 'approved' ? 'Approved By' : 'Rejected By'}
-                    value={getName(job.approver)}
+                    value={getName(approver)}
                   />
                 </>
               )}

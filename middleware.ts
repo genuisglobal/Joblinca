@@ -118,6 +118,15 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // Protect edit routes - require authentication
+  if (req.nextUrl.pathname.match(/^\/jobs\/[^/]+\/edit$/)) {
+    if (!user) {
+      const redirectUrl = new URL('/auth/login', req.url);
+      redirectUrl.searchParams.set('redirect', req.nextUrl.pathname);
+      return NextResponse.redirect(redirectUrl);
+    }
+  }
+
   return res;
 }
 

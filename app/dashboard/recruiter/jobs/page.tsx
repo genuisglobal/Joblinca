@@ -226,6 +226,12 @@ export default function RecruiterJobsPage() {
                         View
                       </Link>
                       <Link
+                        href={`/jobs/${job.id}/edit`}
+                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                      >
+                        Edit
+                      </Link>
+                      <Link
                         href={`/jobs/${job.id}`}
                         className="px-3 py-1 text-sm bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition-colors"
                         target="_blank"
