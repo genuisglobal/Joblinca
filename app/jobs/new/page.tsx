@@ -8,6 +8,7 @@ import QuestionBuilder from './QuestionBuilder';
 import AIQuestionGenerator from './AIQuestionGenerator';
 
 type ApplyMethod = 'joblinca' | 'external_url' | 'email' | 'phone' | 'whatsapp' | 'multiple';
+const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
 
 export default function NewJobPage() {
   const router = useRouter();
@@ -41,7 +42,7 @@ export default function NewJobPage() {
   // AI description generation
   const [generatingDescription, setGeneratingDescription] = useState(false);
 
-  // Gate access based on role.  We only allow recruiters to post jobs.
+  // Gate access based on role. Recruiters and active admins can post jobs.
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
 
@@ -58,7 +59,7 @@ export default function NewJobPage() {
         }
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('role')
+          .select('role, admin_type')
           .eq('id', user.id)
           .single();
 
@@ -69,11 +70,15 @@ export default function NewJobPage() {
           return;
         }
 
-        if (profile && profile.role === 'recruiter') {
+        const isActiveAdmin = Boolean(
+          profile?.admin_type && ACTIVE_ADMIN_TYPES.includes(profile.admin_type)
+        );
+
+        if (profile && (profile.role === 'recruiter' || isActiveAdmin)) {
           setAllowed(true);
         } else {
           // Redirect non‑recruiters to dashboard with message
-          console.log('User role:', profile?.role, '- not a recruiter');
+          console.log('User role/admin:', profile?.role, profile?.admin_type, '- cannot post jobs');
           router.replace('/dashboard');
         }
       } catch (err) {
