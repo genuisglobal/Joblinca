@@ -329,7 +329,7 @@ export default function PaymentModal({
               {/* Pay Button */}
               <div className="grid gap-2 sm:grid-cols-2">
                 <button
-                  onClick={() => handlePayment('CM_MTN')}
+                  onClick={() => handlePayment('CM_MTNMOMO')}
                   disabled={status === 'processing' || !phone.trim()}
                   className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                 >
