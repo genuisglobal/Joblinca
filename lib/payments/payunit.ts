@@ -8,10 +8,12 @@
  *
  * Environment variables:
  *   PAYUNIT_API_USER     - required for direct/Supabase proxy usage
+ *   PAYUNIT_API_USERNAME - optional alias for PAYUNIT_API_USER
  *   PAYUNIT_API_PASSWORD - required for direct/Supabase proxy usage
  *   PAYUNIT_API_KEY      - required for direct/Supabase proxy usage
  *   PAYUNIT_MODE        - test | live (defaults to test)
  *   PAYUNIT_BASE_URL    - defaults to https://gateway.payunit.net
+ *   PAYUNIT_FORCE_DIRECT - optional flag to bypass external/Supabase proxies
  *   PAYUNIT_PROXY_URL   - optional external fixed-IP proxy base URL
  *   PAYUNIT_PROXY_SHARED_SECRET - shared secret for the external proxy
  *   PAYUNIT_USE_SUPABASE_PROXY  - optional fallback proxy flag
@@ -26,6 +28,7 @@ interface PayunitConfig {
   apiKey: string;
   mode: PayunitMode;
   baseUrl: string;
+  forceDirect: boolean;
   externalProxyUrl: string | null;
   externalProxySecret: string | null;
   supabaseProxyEnabled: boolean;
@@ -134,27 +137,46 @@ function normalizeProxyUrl(value?: string): string | null {
 }
 
 function getConfig(): PayunitConfig {
-  const apiUser = (process.env.PAYUNIT_API_USER || '').trim();
+  const apiUser = (
+    process.env.PAYUNIT_API_USER ||
+    process.env.PAYUNIT_API_USERNAME ||
+    ''
+  ).trim();
   const apiPassword = (process.env.PAYUNIT_API_PASSWORD || '').trim();
   const apiKey = (process.env.PAYUNIT_API_KEY || '').trim();
   const mode = resolveMode(apiKey || '', process.env.PAYUNIT_MODE);
   const baseUrl = process.env.PAYUNIT_BASE_URL || 'https://gateway.payunit.net';
+  const forceDirect = readBooleanEnv(process.env.PAYUNIT_FORCE_DIRECT);
   const externalProxyUrl = normalizeProxyUrl(process.env.PAYUNIT_PROXY_URL);
   const externalProxySecret =
     (process.env.PAYUNIT_PROXY_SHARED_SECRET || '').trim() || null;
   const supabaseProxyEnabled = readBooleanEnv(process.env.PAYUNIT_USE_SUPABASE_PROXY);
   const supabaseProxyUrl = deriveSupabaseProxyUrl(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const supabaseProxyAuthToken = process.env.SUPABASE_SERVICE_ROLE_KEY || null;
+  const hasDirectCredentials = Boolean(apiUser && apiPassword && apiKey);
 
-  if (Boolean(externalProxyUrl) !== Boolean(externalProxySecret)) {
+  if (
+    !forceDirect &&
+    Boolean(externalProxyUrl) !== Boolean(externalProxySecret)
+  ) {
     throw new Error(
       'PAYUNIT_PROXY_URL and PAYUNIT_PROXY_SHARED_SECRET must be configured together.'
     );
   }
 
-  if (!externalProxyUrl && (!apiUser || !apiPassword || !apiKey)) {
+  if (
+    !forceDirect &&
+    !externalProxyUrl &&
+    !hasDirectCredentials
+  ) {
     throw new Error(
-      'PAYUNIT_API_USER, PAYUNIT_API_PASSWORD, and PAYUNIT_API_KEY must be configured unless an external PAYUNIT_PROXY_URL is used.'
+      'PAYUNIT_API_USER (or PAYUNIT_API_USERNAME), PAYUNIT_API_PASSWORD, and PAYUNIT_API_KEY must be configured unless an external PAYUNIT_PROXY_URL is used.'
+    );
+  }
+
+  if (forceDirect && !hasDirectCredentials) {
+    throw new Error(
+      'PAYUNIT_FORCE_DIRECT requires PAYUNIT_API_USER (or PAYUNIT_API_USERNAME), PAYUNIT_API_PASSWORD, and PAYUNIT_API_KEY.'
     );
   }
 
@@ -164,6 +186,7 @@ function getConfig(): PayunitConfig {
     apiKey,
     mode,
     baseUrl,
+    forceDirect,
     externalProxyUrl,
     externalProxySecret,
     supabaseProxyEnabled,
@@ -290,6 +313,10 @@ function deriveSupabaseProxyUrl(supabaseUrl?: string): string | null {
 }
 
 function getProxyTarget(config: PayunitConfig): 'none' | 'external' | 'supabase' {
+  if (config.forceDirect) {
+    return 'none';
+  }
+
   if (config.externalProxyUrl && config.externalProxySecret) {
     return 'external';
   }
@@ -482,8 +509,9 @@ export function getPayunitRuntimeInfo(): PayunitRuntimeInfo {
   const config = getConfig();
   const proxyTarget = getProxyTarget(config);
   const proxyEnabled =
-    Boolean(config.externalProxyUrl || config.externalProxySecret) ||
-    config.supabaseProxyEnabled;
+    !config.forceDirect &&
+    (Boolean(config.externalProxyUrl || config.externalProxySecret) ||
+      config.supabaseProxyEnabled);
   const proxyConfigured =
     proxyTarget === 'external'
       ? Boolean(config.externalProxyUrl && config.externalProxySecret)
@@ -592,8 +620,24 @@ export async function getPaymentStatus(
 // ---------------------------------------------------------------------------
 
 export function buildPayunitTransactionId(transactionId: string): string {
-  const cleaned = transactionId.replace(/[^a-zA-Z0-9]/g, '');
-  return `jbl${cleaned}`;
+  const cleanedHex = transactionId.replace(/[^a-fA-F0-9]/g, '').toLowerCase();
+
+  if (cleanedHex) {
+    try {
+      // PayUnit expects numeric-only transaction IDs.
+      // Convert a stable slice of the UUID hex into a decimal string.
+      return BigInt(`0x${cleanedHex.slice(0, 15)}`).toString();
+    } catch {
+      // Fall back to digit extraction below.
+    }
+  }
+
+  const digitsOnly = transactionId.replace(/\D/g, '');
+  if (digitsOnly) {
+    return digitsOnly.slice(0, 18);
+  }
+
+  return Date.now().toString();
 }
 
 export function detectCarrier(

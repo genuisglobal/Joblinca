@@ -85,6 +85,30 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error';
 }
 
+function normalizeUrlEnv(value?: string): string | null {
+  const normalized = (value || '').trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.replace(/\/+$/, '');
+}
+
+function buildPayunitUrls(transactionId: string) {
+  const appUrl = normalizeUrlEnv(process.env.NEXT_PUBLIC_APP_URL) || 'http://localhost:3000';
+  const notifyUrl =
+    normalizeUrlEnv(process.env.PAYUNIT_NOTIFY_URL) ||
+    `${appUrl}/api/payments/webhook`;
+  const configuredReturnUrl = normalizeUrlEnv(process.env.PAYUNIT_RETURN_URL);
+
+  return {
+    notifyUrl,
+    returnUrl:
+      configuredReturnUrl ||
+      `${appUrl}/payment/return?tx=${transactionId}`,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Discount calculation
 // ---------------------------------------------------------------------------
@@ -231,9 +255,7 @@ export async function initiateSubscriptionPayment(
     throw new Error('Failed to create transaction record');
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const notifyUrl = `${appUrl}/api/payments/webhook`;
-  const returnUrl = `${appUrl}/payment/return?tx=${transaction.id}`;
+  const { notifyUrl, returnUrl } = buildPayunitUrls(transaction.id);
   const payunitTransactionId = buildPayunitTransactionId(transaction.id);
 
   // 5. Initialize Payunit transaction
@@ -481,9 +503,7 @@ export async function initiateJobTierPayment(
     throw new Error('Failed to create transaction record');
   }
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  const notifyUrl = `${appUrl}/api/payments/webhook`;
-  const returnUrl = `${appUrl}/payment/return?tx=${transaction.id}`;
+  const { notifyUrl, returnUrl } = buildPayunitUrls(transaction.id);
   const payunitTransactionId = buildPayunitTransactionId(transaction.id);
 
   // 6. Initialize Payunit transaction
