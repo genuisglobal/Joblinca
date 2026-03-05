@@ -160,3 +160,55 @@ export async function sendInterviewReminderWhatsapp(opts: {
     opts.userId
   );
 }
+
+export async function sendMatchedJobsDigestWhatsapp(opts: {
+  to: string;
+  subscribed: boolean;
+  roleKeywords: string;
+  location: string;
+  jobsCount: number;
+  fallbackText: string;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://joblinca.com';
+  const jobsUrl = `${appUrl}/jobs`;
+  const templateName = process.env.WA_MATCHED_JOBS_TEMPLATE || 'matched_jobs_digest_v1';
+  const languageCode = process.env.WA_MATCHED_JOBS_TEMPLATE_LANG || 'en';
+
+  const components: WATemplateComponent[] = [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: opts.subscribed ? 'Premium' : 'Free' },
+        { type: 'text', text: opts.roleKeywords.slice(0, 120) || 'jobs' },
+        { type: 'text', text: opts.location.slice(0, 80) || 'your town' },
+        { type: 'text', text: String(Math.max(1, opts.jobsCount)) },
+        { type: 'text', text: jobsUrl },
+      ],
+    },
+  ];
+
+  try {
+    await sendWhatsappTemplate(
+      opts.to,
+      templateName,
+      languageCode,
+      components,
+      opts.userId
+    );
+    return 'template';
+  } catch (templateError) {
+    try {
+      await sendWhatsappMessage(opts.to, opts.fallbackText, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Matched jobs send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
