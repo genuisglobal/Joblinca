@@ -21,9 +21,12 @@ import {
 } from '@/lib/whatsapp';
 import {
   upsertConversation,
+  setOptIn,
   saveInboundMessage,
   saveStatusUpdate,
 } from '@/lib/whatsapp-db';
+import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
+import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
 
 // ─── GET: webhook verification ────────────────────────────────────────────────
 
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse('OK', { status: 200 });
   }
 
-  // 4. Process each entry synchronously (DB writes are fast enough for MVP)
+  // 4. Process each entry with bounded parallelism per change.
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       if (change.field !== 'messages') continue;
@@ -81,14 +84,20 @@ export async function POST(request: NextRequest) {
         (value.contacts ?? []).map(c => [c.wa_id, c])
       );
 
+      const tasks: Array<Promise<void>> = [];
+
       // Handle inbound messages
       for (const msg of value.messages ?? []) {
-        await handleInboundMessage(msg, contactMap.get(msg.from));
+        tasks.push(handleInboundMessage(msg, contactMap.get(msg.from)));
       }
 
       // Handle delivery / read status updates
       for (const status of value.statuses ?? []) {
-        await handleStatusUpdate(status);
+        tasks.push(handleStatusUpdate(status));
+      }
+
+      if (tasks.length > 0) {
+        await Promise.allSettled(tasks);
       }
     }
   }
@@ -127,7 +136,13 @@ async function handleInboundMessage(
     void markRead(msg.id).catch(() => {});
 
     // 5. Route by message content
-    await routeInboundMessage(msg, textBody, conversation.id, toE164(msg.from));
+    await routeInboundMessage(
+      msg,
+      textBody,
+      conversation.id,
+      toE164(msg.from),
+      conversation.user_id
+    );
   } catch (err) {
     // Log but don't re-throw — we must return 200 to Meta
     console.error('[WA webhook] handleInboundMessage error:', err);
@@ -139,29 +154,50 @@ async function handleInboundMessage(
 async function routeInboundMessage(
   msg: WAInboundMessage,
   textBody: string | null,
-  _conversationId: string,
-  _phone: string
+  conversationId: string,
+  phone: string,
+  conversationUserId: string | null
 ): Promise<void> {
   const lower = textBody?.trim().toLowerCase() ?? '';
 
+  // Phase 1 recruiter screening flow.
+  const screeningResult = await handleWhatsAppScreeningInbound({
+    message: msg,
+    textBody,
+    conversationId,
+    conversationUserId,
+    waPhone: phone,
+  });
+  if (screeningResult.handled) {
+    return;
+  }
+
   // Opt-in keywords
   if (['start', 'subscribe', 'oui', 'yes'].includes(lower)) {
-    // TODO: call setOptIn(phone, true) and send a welcome template
-    console.log('[WA] Opt-in request from', msg.from);
+    await setOptIn(phone, true);
+    await sendWhatsappMessage(
+      phone,
+      'You are now subscribed to JobLinca WhatsApp updates. Send APPLY <jobId> to start a WhatsApp application.'
+    );
     return;
   }
 
   // Opt-out keywords (STOP is required by Meta policy)
   if (['stop', 'unsubscribe', 'non', 'no'].includes(lower)) {
-    // TODO: call setOptIn(phone, false) and confirm
-    console.log('[WA] Opt-out request from', msg.from);
+    await setOptIn(phone, false);
+    await sendWhatsappMessage(
+      phone,
+      'You have been unsubscribed from JobLinca WhatsApp updates. Reply START to subscribe again.'
+    );
     return;
   }
 
   // Help / menu
   if (['help', 'aide', 'menu'].includes(lower)) {
-    // TODO: send a menu template or text reply
-    console.log('[WA] Help request from', msg.from);
+    await sendWhatsappMessage(
+      phone,
+      'WhatsApp commands:\n- APPLY <jobId>\n- HELP\n- STOP\n- START'
+    );
     return;
   }
 

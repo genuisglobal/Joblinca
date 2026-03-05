@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint . --ext .ts,.tsx"
+    "lint": "next lint",
+    "test:wa-screening": "node tests/wa-screening-state-machine.test.js && node tests/wa-screening-ai.test.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
@@ -30,6 +31,8 @@
   "devDependencies": {
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.0.0",
     "typescript": "^5.2.2"
   }
 }
