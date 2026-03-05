@@ -33,6 +33,7 @@ import {
   extractLocationHint,
   extractRoleKeywordsHint,
 } from '@/lib/whatsapp-agent/parser';
+import { parseIntentFromFreeText } from '@/lib/whatsapp-agent/intent-nlp';
 import {
   mergePayload,
   menuMessage,
@@ -46,9 +47,9 @@ import {
   getJobByPublicId,
   formatJobBatchMessage,
   formatJobDetailsMessage,
-  isScreeningEnabledForJob,
   type TimeFilter,
 } from '@/lib/whatsapp-agent/job-search';
+import { resolveAiScreeningDecisionForJob } from '@/lib/whatsapp-agent/ai-screening-policy';
 import {
   canApplyNow,
   evaluateViewBatch,
@@ -324,7 +325,13 @@ async function handleApplyCommand(lead: WaLeadRow, inbound: InboundAgentInput, p
     return;
   }
 
-  if (isScreeningEnabledForJob(job)) {
+  const aiDecision = await resolveAiScreeningDecisionForJob({
+    recruiter_id: job.recruiter_id,
+    hiring_tier: job.hiring_tier,
+    wa_ai_screening_enabled: job.wa_ai_screening_enabled,
+  });
+
+  if (aiDecision.enabled) {
     const screeningResult = await handleWhatsAppScreeningInbound({
       message: {
         ...inbound.message,
@@ -340,6 +347,12 @@ async function handleApplyCommand(lead: WaLeadRow, inbound: InboundAgentInput, p
     if (screeningResult.handled) {
       await incrementApplyCounter(lead, 1);
       await clearPendingApply(lead.id);
+      logEvent('info', 'ai_screening_routed', {
+        leadId: lead.id,
+        jobId: job.id,
+        decisionSource: aiDecision.source,
+        planSlug: aiDecision.planSlug,
+      });
       return;
     }
   }
@@ -696,13 +709,23 @@ async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promis
   return true;
 }
 
-async function startJobSearchFromIntent(lead: WaLeadRow, inboundText: string): Promise<void> {
-  const locationHint = extractLocationHint(inboundText);
-  const roleHint = extractRoleKeywordsHint(inboundText);
+async function startJobSearchFromIntent(
+  lead: WaLeadRow,
+  inboundText: string,
+  hints?: {
+    locationHint?: string | null;
+    roleKeywordsHint?: string | null;
+    timeFilterHint?: TimeFilter | null;
+  }
+): Promise<void> {
+  const locationHint = hints?.locationHint ?? extractLocationHint(inboundText);
+  const roleHint = hints?.roleKeywordsHint ?? extractRoleKeywordsHint(inboundText);
+  const timeFilterHint = hints?.timeFilterHint ?? null;
   const payload = mergePayload(lead.state_payload, {
     jobSearch: {
       location: locationHint,
       roleKeywords: roleHint,
+      timeFilter: timeFilterHint || null,
     },
   });
 
@@ -715,6 +738,27 @@ async function startJobSearchFromIntent(lead: WaLeadRow, inboundText: string): P
   if (!roleHint) {
     await updateLeadState(lead.id, 'jobseeker.awaiting_keywords', 'jobseeker', payload);
     await sendMessage(lead.phone_e164, 'Role or skill keywords?', lead.linked_user_id);
+    return;
+  }
+
+  if (timeFilterHint) {
+    await updateLeadState(lead.id, 'jobseeker.ready_results', 'jobseeker', payload);
+    await saveLastSearch(lead.id, {
+      location: locationHint,
+      roleKeywords: roleHint,
+      timeFilter: timeFilterHint,
+      offset: 0,
+    });
+    await runJobSearchAndRespond(
+      {
+        ...lead,
+        last_search_location: locationHint,
+        last_search_role_keywords: roleHint,
+        last_search_time_filter: timeFilterHint,
+        last_search_offset: 0,
+      },
+      0
+    );
     return;
   }
 
@@ -816,6 +860,37 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
 
     if (isNextCommand(text)) {
       await runJobSearchAndRespond(lead, lead.last_search_offset || 0);
+      return { handled: true, reason: 'handled' };
+    }
+
+    const intent = parseIntentFromFreeText(text);
+    if (intent.intent === 'menu') {
+      await sendMenuAndSetState(lead);
+      return { handled: true, reason: 'handled' };
+    }
+
+    if (
+      intent.intent === 'recruiter' &&
+      (lead.conversation_state === 'idle' || lead.conversation_state === 'menu')
+    ) {
+      await handleMenuChoice(lead, 2, role);
+      return { handled: true, reason: 'handled' };
+    }
+
+    if (
+      intent.intent === 'talent' &&
+      (lead.conversation_state === 'idle' || lead.conversation_state === 'menu')
+    ) {
+      await handleMenuChoice(lead, 3, role);
+      return { handled: true, reason: 'handled' };
+    }
+
+    if (intent.intent === 'jobseeker') {
+      await startJobSearchFromIntent(lead, text, {
+        locationHint: intent.locationHint,
+        roleKeywordsHint: intent.roleKeywordsHint,
+        timeFilterHint: intent.timeFilterHint,
+      });
       return { handled: true, reason: 'handled' };
     }
 

@@ -17,6 +17,21 @@ function sanitizeText(value: unknown): string | null {
   return trimmed || null;
 }
 
+function sanitizeOptionalBoolean(
+  value: unknown
+): boolean | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const lower = value.trim().toLowerCase();
+    if (lower === 'true') return true;
+    if (lower === 'false') return false;
+    if (lower === 'inherit' || lower === 'default' || lower === 'null') return null;
+  }
+  return undefined;
+}
+
 async function getAuthorizedJobEditor(jobId: string) {
   const supabase = createServerSupabaseClient();
   const serviceClient = createServiceSupabaseClient();
@@ -92,7 +107,8 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       work_type,
       job_type,
       visibility,
-      description
+      description,
+      wa_ai_screening_enabled
     `
     )
     .eq('id', params.id)
@@ -121,10 +137,18 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const workType = sanitizeText(body.workType) || 'onsite';
   const jobType = sanitizeText(body.jobType) || 'job';
   const visibility = sanitizeText(body.visibility) || 'public';
+  const waAiScreeningEnabled = sanitizeOptionalBoolean(body.waAiScreeningEnabled);
 
   if (!title || !companyName || !description) {
     return NextResponse.json(
       { error: 'Title, company name, and description are required.' },
+      { status: 400 }
+    );
+  }
+
+  if (body.waAiScreeningEnabled !== undefined && waAiScreeningEnabled === undefined) {
+    return NextResponse.json(
+      { error: 'waAiScreeningEnabled must be true, false, or null.' },
       { status: 400 }
     );
   }
@@ -155,6 +179,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       job_type: jobType,
       visibility,
       description,
+      wa_ai_screening_enabled:
+        waAiScreeningEnabled === undefined ? undefined : waAiScreeningEnabled,
       updated_at: new Date().toISOString(),
     })
     .eq('id', params.id)
@@ -170,7 +196,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       work_type,
       job_type,
       visibility,
-      description
+      description,
+      wa_ai_screening_enabled
     `
     )
     .single();
