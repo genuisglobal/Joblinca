@@ -162,6 +162,9 @@ Legacy path `/api/messaging/whatsapp` re-exports the same handlers.
 
 ## 7. Production Checklist
 
+Implementation status (codebase): WhatsApp webhook/send/screening routes and DB migrations are in the repository.
+Go-live status (production): only complete once all checklist items below are verified in Meta, Vercel, and Supabase.
+
 - [ ] `WHATSAPP_ACCESS_TOKEN` set in Vercel environment (Production + Preview)
 - [ ] `WHATSAPP_PHONE_NUMBER_ID` set in Vercel environment
 - [ ] `WHATSAPP_APP_SECRET` set in Vercel environment

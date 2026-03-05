@@ -32,6 +32,15 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
+    label: 'WhatsApp Screening',
+    href: '/dashboard/recruiter/whatsapp-applications',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h14a2 2 0 012 2v11a2 2 0 01-2 2H7l-4 4V5z" />
+      </svg>
+    ),
+  },
+  {
     label: 'My Jobs',
     href: '/dashboard/recruiter/jobs',
     icon: (
