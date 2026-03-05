@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import StatusBadge from '../../../components/StatusBadge';
@@ -49,10 +49,12 @@ export default function RecruiterJobDetailPage({
   params: { id: string };
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [job, setJob] = useState<Job | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
+  const showCreatedNotice = searchParams.get('created') === '1';
 
   useEffect(() => {
     let mounted = true;
@@ -199,6 +201,22 @@ export default function RecruiterJobDetailPage({
               <p className="text-gray-300 mt-1">{job.rejection_reason}</p>
               <p className="text-sm text-gray-400 mt-2">
                 Please update your job posting and contact support if you have questions.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCreatedNotice && (
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-blue-400">Job Submitted</h3>
+              <p className="text-gray-300 mt-1">
+                Your job has been created. It is pending review and will appear on the public jobs page once an admin approves it.
               </p>
             </div>
           </div>

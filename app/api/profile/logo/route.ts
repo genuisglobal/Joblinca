@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
 
 // POST: Upload company logo image
@@ -66,9 +67,10 @@ export async function POST(request: NextRequest) {
     const ext = file.name.split('.').pop() || 'jpg';
     const filePath = `logos/${user.id}/logo-${Date.now()}.${ext}`;
 
-    // Upload to Supabase Storage
+    const serviceClient = createServiceSupabaseClient();
+
     const buffer = await file.arrayBuffer();
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await serviceClient.storage
       .from('avatars')
       .upload(filePath, buffer, {
         contentType: file.type,
@@ -84,11 +86,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get public URL
-    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+    const { data: urlData } = serviceClient.storage.from('avatars').getPublicUrl(filePath);
     const logoUrl = urlData.publicUrl;
 
     // Update recruiter profile with new logo URL
-    const { error: updateError } = await supabase
+    const { error: updateError } = await serviceClient
       .from('recruiter_profiles')
       .update({
         company_logo_url: logoUrl,

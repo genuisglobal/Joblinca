@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
 
 // POST: Upload avatar image
@@ -47,9 +48,11 @@ export async function POST(request: NextRequest) {
     const ext = file.name.split('.').pop() || 'jpg';
     const filePath = `avatars/${user.id}/avatar-${Date.now()}.${ext}`;
 
-    // Upload to Supabase Storage
+    // Use service-role client for storage so RLS never blocks the upload
+    const serviceClient = createServiceSupabaseClient();
+
     const buffer = await file.arrayBuffer();
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await serviceClient.storage
       .from('avatars')
       .upload(filePath, buffer, {
         contentType: file.type,
@@ -65,11 +68,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get public URL
-    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+    const { data: urlData } = serviceClient.storage.from('avatars').getPublicUrl(filePath);
     const avatarUrl = urlData.publicUrl;
 
     // Update profile with new avatar URL
-    const { error: updateError } = await supabase
+    const { error: updateError } = await serviceClient
       .from('profiles')
       .update({
         avatar_url: avatarUrl,

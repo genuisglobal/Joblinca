@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
 
 // POST: Upload resume file
@@ -70,9 +71,10 @@ export async function POST(request: NextRequest) {
     const ext = file.name.split('.').pop() || 'pdf';
     const filePath = `resumes/${user.id}/resume-${Date.now()}.${ext}`;
 
-    // Upload to Supabase Storage
+    const serviceClient = createServiceSupabaseClient();
+
     const buffer = await file.arrayBuffer();
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await serviceClient.storage
       .from('resumes')
       .upload(filePath, buffer, {
         contentType: file.type,
@@ -88,12 +90,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Get public URL
-    const { data: urlData } = supabase.storage.from('resumes').getPublicUrl(filePath);
+    const { data: urlData } = serviceClient.storage.from('resumes').getPublicUrl(filePath);
     const resumeUrl = urlData.publicUrl;
 
     // Update the appropriate profile table
     if (profile.role === 'job_seeker') {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await serviceClient
         .from('job_seeker_profiles')
         .update({
           resume_url: resumeUrl,
@@ -109,7 +111,7 @@ export async function POST(request: NextRequest) {
         );
       }
     } else if (profile.role === 'talent') {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await serviceClient
         .from('talent_profiles')
         .update({
           resume_url: resumeUrl,

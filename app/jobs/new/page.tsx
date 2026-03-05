@@ -45,6 +45,7 @@ export default function NewJobPage() {
   // Gate access based on role. Recruiters and active admins can post jobs.
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
+  const [postingMode, setPostingMode] = useState<'recruiter' | 'admin' | null>(null);
 
   useEffect(() => {
     async function checkRole() {
@@ -75,6 +76,7 @@ export default function NewJobPage() {
         );
 
         if (profile && (profile.role === 'recruiter' || isActiveAdmin)) {
+          setPostingMode(isActiveAdmin ? 'admin' : 'recruiter');
           setAllowed(true);
         } else {
           // Redirect non‑recruiters to dashboard with message
@@ -203,7 +205,11 @@ export default function NewJobPage() {
       });
       if (res.ok) {
         const { id } = await res.json();
-        router.push(`/jobs/${id}`);
+        if (postingMode === 'recruiter') {
+          router.push(`/dashboard/recruiter/jobs/${id}?created=1`);
+        } else {
+          router.push(`/jobs/${id}`);
+        }
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data?.error || 'Unable to create job');
@@ -320,6 +326,11 @@ export default function NewJobPage() {
     <main className="max-w-2xl mx-auto p-6 text-gray-100">
       <h1 className="text-2xl font-bold mb-4">Post a New Job</h1>
       {error && <p className="text-red-500 mb-4">{error}</p>}
+      {postingMode === 'recruiter' && (
+        <div className="mb-4 rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-4 text-sm text-yellow-200">
+          Recruiter-posted jobs are reviewed before they appear on the public jobs page. After submission, you will be taken to your dashboard while the post is pending approval.
+        </div>
+      )}
       {/* Use lighter card and input backgrounds for better readability */}
       <form onSubmit={handleSubmit} className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
         <div>
@@ -588,7 +599,7 @@ export default function NewJobPage() {
           type="submit"
           className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
         >
-          Create Job
+          {postingMode === 'recruiter' ? 'Submit for Review' : 'Create Job'}
         </button>
       </form>
 
