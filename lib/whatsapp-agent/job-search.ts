@@ -29,6 +29,7 @@ export interface SearchJobRow {
   closes_at: string | null;
   recruiter_id: string;
   hiring_tier: string | null;
+  wa_ai_screening_enabled: boolean | null;
 }
 
 function toSinceIso(timeFilter: TimeFilter): string {
@@ -74,7 +75,7 @@ export async function searchPublishedJobs(input: SearchJobsInput): Promise<{
   let query = jobSearchDb
     .from('jobs')
     .select(
-      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, hiring_tier',
+      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, hiring_tier, wa_ai_screening_enabled',
       { count: 'exact' }
     )
     .eq('published', true)
@@ -113,7 +114,7 @@ export async function getJobByPublicId(publicId: string): Promise<SearchJobRow |
   const { data, error } = await jobSearchDb
     .from('jobs')
     .select(
-      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, hiring_tier'
+      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, hiring_tier, wa_ai_screening_enabled'
     )
     .eq('public_id', normalized)
     .eq('published', true)

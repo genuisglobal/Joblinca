@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
     applyPhone,
     applyWhatsapp,
     closesAt,
+    waAiScreeningEnabled,
   } = body;
   if (!title || !description) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
@@ -124,6 +125,8 @@ export async function POST(request: NextRequest) {
       apply_phone: applyPhone || null,
       apply_whatsapp: applyWhatsapp || null,
       closes_at: closesAt ? new Date(closesAt).toISOString() : null,
+      wa_ai_screening_enabled:
+        typeof waAiScreeningEnabled === 'boolean' ? waAiScreeningEnabled : null,
     })
     .select('*')
     .single();
