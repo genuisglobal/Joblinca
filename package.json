@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "test:wa-screening": "node tests/wa-screening-state-machine.test.js && node tests/wa-screening-ai.test.js",
-    "test:wa-agent": "node tests/wa-job-agent-parser.test.js && node tests/wa-job-agent-limits-state.test.js"
+    "test:wa-agent": "node tests/wa-job-agent-parser.test.js && node tests/wa-job-agent-limits-state.test.js && node tests/wa-matched-jobs-policy.test.js"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
