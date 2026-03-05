@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { fetchAllExternalJobs } from '@/lib/externalJobs';
+import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -13,24 +14,11 @@ export const maxDuration = 60;
  * - External scheduler (GitHub Actions, etc.)
  * - Manual call with CRON_SECRET header
  *
- * Authentication: uses CRON_SECRET env var instead of user session.
- * Falls back to checking the Vercel cron signature header.
+ * Authentication: supports CRON_SECRET bearer auth and Vercel cron headers.
  */
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.CRON_SECRET;
-
-  // Verify the request is authorized
-  if (cronSecret) {
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-  } else {
-    // If no CRON_SECRET set, only allow from localhost in development
-    const host = request.headers.get('host') || '';
-    if (!host.includes('localhost') && !host.includes('127.0.0.1')) {
-      return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 });
-    }
+  if (!isAuthorizedCronRequest(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   // Use service role key to bypass RLS

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
-import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
+import { sendMatchedJobsDigestWhatsapp } from '@/lib/messaging/whatsapp';
 import { getWaLimitContext } from '@/lib/whatsapp-agent/limits';
 import { searchPublishedJobs } from '@/lib/whatsapp-agent/job-search';
 import {
@@ -8,6 +8,7 @@ import {
   type MatchedJobsEligibilityResult,
 } from '@/lib/whatsapp-agent/matched-jobs-policy';
 import { touchWeeklyMatchMarker } from '@/lib/whatsapp-agent/leads';
+import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -44,17 +45,6 @@ const cronDb = createServiceSupabaseClient();
 function sanitizeError(error: unknown): string {
   const message = error instanceof Error ? error.message : 'unknown_error';
   return message.length <= 160 ? message : `${message.slice(0, 157)}...`;
-}
-
-function isAuthorized(request: NextRequest): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
-    const host = request.headers.get('host') || '';
-    return host.includes('localhost') || host.includes('127.0.0.1');
-  }
-
-  const authHeader = request.headers.get('authorization');
-  return authHeader === `Bearer ${cronSecret}`;
 }
 
 function buildMatchedMessage(params: {
@@ -238,7 +228,16 @@ async function processLead(
       jobs: payload,
     });
 
-    await sendWhatsappMessage(lead.phone_e164, message, lead.linked_user_id || null);
+    await sendMatchedJobsDigestWhatsapp({
+      to: lead.phone_e164,
+      userId: lead.linked_user_id || null,
+      subscribed: limits.subscribed,
+      roleKeywords: lead.last_search_role_keywords || 'your role',
+      location: lead.last_search_location || 'your location',
+      jobsCount: payload.length,
+      fallbackText: message,
+    });
+
     await finalizeDispatch({
       dispatchId: dispatch.id,
       status: 'sent',
@@ -258,7 +257,7 @@ async function processLead(
 }
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -321,4 +320,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-
