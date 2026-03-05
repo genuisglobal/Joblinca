@@ -27,6 +27,7 @@ import {
 } from '@/lib/whatsapp-db';
 import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
+import { handleWhatsAppJobAgentInbound } from '@/lib/whatsapp-agent/router';
 
 // ─── GET: webhook verification ────────────────────────────────────────────────
 
@@ -169,6 +170,18 @@ async function routeInboundMessage(
     waPhone: phone,
   });
   if (screeningResult.handled) {
+    return;
+  }
+
+  // WhatsApp Job Agent flow (menu + job search + recruiter gate + talent leads).
+  const agentResult = await handleWhatsAppJobAgentInbound({
+    message: msg,
+    textBody,
+    conversationId,
+    conversationUserId,
+    waPhone: phone,
+  });
+  if (agentResult.handled) {
     return;
   }
 

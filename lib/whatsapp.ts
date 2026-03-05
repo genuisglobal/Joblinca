@@ -128,6 +128,11 @@ export interface WASendResponse {
   messages: Array<{ id: string }>;
 }
 
+export interface WAQuickReplyButton {
+  id: string;
+  title: string;
+}
+
 // ─── Template component types ─────────────────────────────────────────────────
 
 export type WATemplateComponent =
@@ -179,6 +184,56 @@ export async function sendText(
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`WA sendText failed (${res.status}): ${err}`);
+  }
+  return res.json() as Promise<WASendResponse>;
+}
+
+// â”€â”€â”€ Outbound: send interactive quick-reply buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export async function sendQuickReplyButtons(
+  to: string,
+  body: string,
+  buttons: WAQuickReplyButton[],
+  footer?: string
+): Promise<WASendResponse> {
+  const { token, phoneId } = getCredentials();
+  const normalizedButtons = buttons
+    .filter((b) => b.id.trim() && b.title.trim())
+    .slice(0, 3)
+    .map((b) => ({
+      type: 'reply',
+      reply: {
+        id: b.id.trim().slice(0, 256),
+        title: b.title.trim().slice(0, 20),
+      },
+    }));
+
+  if (normalizedButtons.length === 0) {
+    throw new Error('sendQuickReplyButtons requires at least one button');
+  }
+
+  const res = await fetch(`${WA_BASE_URL}/${phoneId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: body },
+        ...(footer ? { footer: { text: footer } } : {}),
+        action: { buttons: normalizedButtons },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`WA sendQuickReplyButtons failed (${res.status}): ${err}`);
   }
   return res.json() as Promise<WASendResponse>;
 }

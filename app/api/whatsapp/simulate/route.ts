@@ -3,6 +3,7 @@ import { requireAdmin, AdminRequiredError } from '@/lib/admin';
 import type { WAContact, WAInboundMessage } from '@/lib/whatsapp';
 import { upsertConversation, saveInboundMessage } from '@/lib/whatsapp-db';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
+import { handleWhatsAppJobAgentInbound } from '@/lib/whatsapp-agent/router';
 
 interface SimulateBody {
   from?: string;
@@ -107,12 +108,23 @@ export async function POST(request: NextRequest) {
       waPhone: from,
     });
 
+    const agentResult = screeningResult.handled
+      ? { handled: false, reason: 'screening_precedence' }
+      : await handleWhatsAppJobAgentInbound({
+          message: inboundMessage,
+          textBody: text,
+          conversationId: conversation.id,
+          conversationUserId: conversation.user_id,
+          waPhone: from,
+        });
+
     return NextResponse.json({
       ok: true,
       duplicate: false,
       waMessageId,
       conversationId: conversation.id,
       screeningResult,
+      agentResult,
     });
   } catch (error) {
     return NextResponse.json(
@@ -123,4 +135,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
