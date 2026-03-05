@@ -5,7 +5,13 @@
  * `lib/whatsapp.ts` that also persist every outbound message to the DB.
  */
 
-import { sendText, sendTemplate, type WATemplateComponent } from '@/lib/whatsapp';
+import {
+  sendText,
+  sendTemplate,
+  sendQuickReplyButtons,
+  type WAQuickReplyButton,
+  type WATemplateComponent,
+} from '@/lib/whatsapp';
 import { saveOutboundMessage } from '@/lib/whatsapp-db';
 
 // ─── Send a plain-text message ────────────────────────────────────────────────
@@ -49,6 +55,34 @@ export async function sendWhatsappTemplate(
       messageType: 'template',
       templateName,
       userId: userId ?? null,
+    });
+  }
+}
+
+// â”€â”€â”€ Send quick reply buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+export async function sendWhatsappQuickReplies(opts: {
+  to: string;
+  body: string;
+  buttons: WAQuickReplyButton[];
+  footer?: string;
+  userId?: string | null;
+}): Promise<void> {
+  const result = await sendQuickReplyButtons(
+    opts.to,
+    opts.body,
+    opts.buttons,
+    opts.footer
+  );
+  const waMessageId = result.messages?.[0]?.id ?? null;
+
+  if (waMessageId) {
+    await saveOutboundMessage({
+      to: opts.to,
+      message: `[interactive_buttons] ${opts.body}`,
+      waMessageId,
+      messageType: 'interactive',
+      userId: opts.userId ?? null,
     });
   }
 }
