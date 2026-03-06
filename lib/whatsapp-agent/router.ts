@@ -38,6 +38,7 @@ import {
   mergePayload,
   menuMessage,
   timeFilterPrompt,
+  isMenuRootState,
   type WaConversationState,
   type WaRoleSelection,
   type WaStatePayload,
@@ -825,7 +826,9 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       return { handled: true, reason: 'handled' };
     }
 
-    const menuChoice = parseMenuChoice(text);
+    const menuChoice = isMenuRootState(lead.conversation_state)
+      ? parseMenuChoice(text)
+      : null;
     if (menuChoice) {
       await handleMenuChoice(lead, menuChoice, role);
       return { handled: true, reason: 'handled' };

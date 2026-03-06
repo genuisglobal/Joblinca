@@ -4,6 +4,7 @@ import { toE164 } from '@/lib/whatsapp';
 import { linkConversationToUser } from '@/lib/whatsapp-db';
 import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { getUserSubscription } from '@/lib/subscriptions';
+import { resolveProfileIdByPhone } from '@/lib/phone-match';
 import {
   generateOptionalFollowUpQuestion,
   generateRecruiterSummary,
@@ -530,33 +531,11 @@ async function resolveUserIdByPhone(
   if (existingUserId) return existingUserId;
 
   const e164 = toE164(waPhone);
-  const digits = normalizeDigits(e164);
+  const resolved = await resolveProfileIdByPhone(screeningDb, e164);
+  if (!resolved) return null;
 
-  const exactQuery = await screeningDb
-    .from('profiles')
-    .select('id')
-    .eq('phone', e164)
-    .limit(1)
-    .maybeSingle();
-
-  if (exactQuery.data?.id) {
-    await linkConversationToUser(e164, exactQuery.data.id).catch(() => {});
-    return exactQuery.data.id;
-  }
-
-  const digitsQuery = await screeningDb
-    .from('profiles')
-    .select('id')
-    .eq('phone', digits)
-    .limit(1)
-    .maybeSingle();
-
-  if (digitsQuery.data?.id) {
-    await linkConversationToUser(e164, digitsQuery.data.id).catch(() => {});
-    return digitsQuery.data.id;
-  }
-
-  return null;
+  await linkConversationToUser(e164, resolved).catch(() => {});
+  return resolved;
 }
 
 async function getJob(jobId: string): Promise<JobRow | null> {
@@ -1609,7 +1588,7 @@ export async function handleWhatsAppScreeningInbound(
       input.message.referral?.source_url ?? null,
       Boolean(input.message.context?.id)
     );
-    if (!intent.isApplyIntent && !input.message.context?.id) {
+    if (!intent.isApplyIntent) {
       return { handled: false, reason: 'not_apply_intent' };
     }
 
