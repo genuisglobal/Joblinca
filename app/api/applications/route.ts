@@ -49,6 +49,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
 
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  if (profileError || !profile) {
+    return NextResponse.json(
+      { error: 'Complete account setup before applying to jobs' },
+      { status: 403 }
+    );
+  }
+
+  const role = (profile.role || '').toLowerCase();
+  if (['recruiter', 'admin', 'staff'].includes(role)) {
+    return NextResponse.json(
+      { error: 'Only candidate accounts can apply to jobs' },
+      { status: 403 }
+    );
+  }
+
   const body = await request.json();
   const { jobId, coverLetter, answers } = body;
 
@@ -59,7 +80,7 @@ export async function POST(request: NextRequest) {
   // Check if the job exists and is published
   const { data: job, error: jobError } = await supabase
     .from('jobs')
-    .select('id, published')
+    .select('id, published, approval_status')
     .eq('id', jobId)
     .single();
 
@@ -68,6 +89,13 @@ export async function POST(request: NextRequest) {
   }
 
   if (!job.published) {
+    return NextResponse.json(
+      { error: 'This job is not accepting applications' },
+      { status: 400 }
+    );
+  }
+
+  if (job.approval_status && job.approval_status !== 'approved') {
     return NextResponse.json(
       { error: 'This job is not accepting applications' },
       { status: 400 }
