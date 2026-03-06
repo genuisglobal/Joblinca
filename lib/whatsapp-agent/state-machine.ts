@@ -5,7 +5,11 @@ export type WaRoleSelection = 'jobseeker' | 'recruiter' | 'talent' | null;
 export type WaConversationState =
   | 'idle'
   | 'menu'
+  | 'jobseeker.awaiting_account_choice'
+  | 'jobseeker.awaiting_location_scope'
+  | 'jobseeker.awaiting_location_town'
   | 'jobseeker.awaiting_location'
+  | 'jobseeker.awaiting_role_mode'
   | 'jobseeker.awaiting_keywords'
   | 'jobseeker.awaiting_time_filter'
   | 'jobseeker.ready_results'
@@ -22,7 +26,10 @@ export type WaConversationState =
   | 'talent.completed';
 
 export interface JobSearchDraft {
+  searchType?: 'job' | 'internship' | null;
+  locationScope?: 'nationwide' | 'town' | null;
   location?: string | null;
+  roleMode?: 'all' | 'specific' | null;
   roleKeywords?: string | null;
   timeFilter?: ParsedTimeFilter | null;
 }
@@ -68,7 +75,10 @@ export function isMenuRootState(state: WaConversationState): boolean {
 export function defaultStatePayload(): WaStatePayload {
   return {
     jobSearch: {
+      searchType: 'job',
+      locationScope: null,
       location: null,
+      roleMode: null,
       roleKeywords: null,
       timeFilter: null,
     },
@@ -122,8 +132,8 @@ export function menuMessage(): string {
     'Reply with a number:',
     '1) Find a job',
     '2) Post a job',
-    '3) Create a talent profile',
-    '4) Help / Menu',
+    '3) Find internship',
+    '4) Create account',
   ].join('\n');
 }
 

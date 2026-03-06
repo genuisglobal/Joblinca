@@ -43,7 +43,6 @@ function hasAny(value: string, keywords: string[]): boolean {
 function detectIntent(value: string): WaDetectedIntent {
   const compactValue = compact(value);
   const menuCommand =
-    compactValue === '4' ||
     /^(menu|help|aide|start)(\s+(menu|help|aide))?$/i.test(compactValue);
 
   const recruiterIntent = hasAny(value, [

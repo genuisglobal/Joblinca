@@ -24,11 +24,15 @@ import {
 import {
   parseApplyCommand,
   parseDetailsCommand,
+  parseLocationScope,
   parseMenuChoice,
+  parseRoleMode,
   parseTimeFilter,
+  isCreateAccountIntent,
   isGreeting,
   isHelpMenu,
   isNextCommand,
+  looksLikeInternshipIntent,
   looksLikeJobIntent,
   extractLocationHint,
   extractRoleKeywordsHint,
@@ -61,13 +65,21 @@ import {
   FREE_MONTHLY_VIEW_LIMIT,
   getWaLimitContext,
 } from '@/lib/whatsapp-agent/limits';
+import { getUserSubscription } from '@/lib/subscriptions';
+import OpenAI from 'openai';
 
 const agentDb = createServiceSupabaseClient();
 const SEARCH_PAGE_SIZE = 10;
+const NO_ACCOUNT_PREVIEW_LIMIT = 3;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://joblinca.com';
-const ACCOUNT_URL = `${APP_URL}/auth/login`;
+const REGISTER_URL = `${APP_URL}/auth/register`;
 const SUBSCRIBE_URL = `${APP_URL}/pricing`;
 const JOBS_URL = `${APP_URL}/jobs`;
+const WA_RECRUITER_POSTING_FEE_XAF = Number(process.env.WA_RECRUITER_POSTING_FEE_XAF || '0');
+const WA_RECRUITER_REQUIRE_SUBSCRIPTION =
+  process.env.WA_RECRUITER_REQUIRE_SUBSCRIPTION !== '0';
+const RECRUITER_DESC_SYSTEM_PROMPT =
+  'You are an HR copywriter. Generate a concise and professional job description in markdown with sections: About the Role, Responsibilities, Requirements, Nice to Have. Keep it practical for Cameroon hiring.';
 
 interface InboundAgentInput {
   message: WAInboundMessage;
@@ -126,6 +138,50 @@ function parseSalary(raw: string): number | null {
   const value = Number(digits);
   if (Number.isNaN(value)) return null;
   return value;
+}
+
+function buildRegisterUrl(phone: string, role: 'job_seeker' | 'recruiter' = 'job_seeker'): string {
+  const params = new URLSearchParams({
+    role,
+    source: 'whatsapp',
+    phone,
+  });
+  return `${REGISTER_URL}?${params.toString()}`;
+}
+
+function locationScopePrompt(searchType: 'job' | 'internship'): string {
+  const label = searchType === 'internship' ? 'internships' : 'jobs';
+  return [
+    `Great. Let us find ${label}.`,
+    'Choose location scope:',
+    '1) Nationwide',
+    '2) Specific town',
+  ].join('\n');
+}
+
+function roleModePrompt(searchType: 'job' | 'internship'): string {
+  const label = searchType === 'internship' ? 'internships' : 'jobs';
+  return [
+    `Do you want:`,
+    `1) All ${label}`,
+    '2) Specific role',
+  ].join('\n');
+}
+
+function parseAccountChoice(input: string): 'create' | 'continue' | null {
+  const value = input.trim().toLowerCase();
+  if (['1', 'create', 'create account', 'register', 'signup', 'sign up'].includes(value)) {
+    return 'create';
+  }
+  if (['2', 'continue', 'continue search', 'search'].includes(value)) {
+    return 'continue';
+  }
+  return null;
+}
+
+function getSearchTypeFromLead(lead: WaLeadRow): 'job' | 'internship' {
+  const payload = mergePayload(lead.state_payload, {});
+  return payload.jobSearch?.searchType === 'internship' ? 'internship' : 'job';
 }
 
 function detectApplyMethod(raw: string): {
@@ -223,6 +279,114 @@ async function sendMenuAndSetState(lead: WaLeadRow): Promise<void> {
   await sendMessage(lead.phone_e164, menuMessage(), lead.linked_user_id);
 }
 
+async function getProfileDisplayName(userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const { data } = await agentDb
+    .from('profiles')
+    .select('full_name')
+    .eq('id', userId)
+    .maybeSingle();
+  const raw = (data?.full_name as string | undefined) || '';
+  const compact = raw.trim();
+  return compact || null;
+}
+
+async function enforceRecruiterPostingAccess(
+  lead: WaLeadRow,
+  role: string | null
+): Promise<{ allowed: boolean; reason?: string }> {
+  if (!lead.linked_user_id) {
+    await sendMessage(
+      lead.phone_e164,
+      `Recruiter posting requires a website account. Create account: ${buildRegisterUrl(lead.phone_e164, 'recruiter')}`,
+      lead.linked_user_id
+    );
+    return { allowed: false, reason: 'missing_account' };
+  }
+
+  if (role !== 'recruiter' && role !== 'admin' && role !== 'staff') {
+    await sendMessage(
+      lead.phone_e164,
+      `This number is not linked to a recruiter account. Login/create recruiter profile: ${buildRegisterUrl(lead.phone_e164, 'recruiter')}`,
+      lead.linked_user_id
+    );
+    return { allowed: false, reason: 'not_recruiter' };
+  }
+
+  if (role === 'admin' || role === 'staff') {
+    return { allowed: true };
+  }
+
+  if (!WA_RECRUITER_REQUIRE_SUBSCRIPTION) {
+    return { allowed: true };
+  }
+
+  const subscription = await getUserSubscription(lead.linked_user_id);
+  if (!subscription.isActive || subscription.plan?.role !== 'recruiter') {
+    await sendMessage(
+      lead.phone_e164,
+      `Active recruiter subscription required before posting jobs. Subscribe here: ${SUBSCRIBE_URL}`,
+      lead.linked_user_id
+    );
+    return { allowed: false, reason: 'missing_subscription' };
+  }
+
+  if (WA_RECRUITER_POSTING_FEE_XAF > 0) {
+    await sendMessage(
+      lead.phone_e164,
+      `Posting fee: ${WA_RECRUITER_POSTING_FEE_XAF.toLocaleString('en-US')} XAF (charged on website).`,
+      lead.linked_user_id
+    );
+  }
+
+  return { allowed: true };
+}
+
+async function expandRecruiterDescriptionWithAi(input: {
+  jobTitle: string;
+  companyName: string | null;
+  seedDescription: string;
+}): Promise<string> {
+  const seed = input.seedDescription.trim();
+  if (!seed) return seed;
+  if (!process.env.OPENAI_API_KEY) return seed;
+
+  try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const completionPromise = openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: RECRUITER_DESC_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            `Job title: ${input.jobTitle}`,
+            `Company: ${input.companyName || 'Not specified'}`,
+            `Recruiter short brief: ${seed}`,
+          ].join('\n'),
+        },
+      ],
+      temperature: 0.5,
+      max_tokens: 800,
+    });
+
+    const timeoutPromise = new Promise<null>((resolve) =>
+      setTimeout(() => resolve(null), 8000)
+    );
+    const completion = await Promise.race([completionPromise, timeoutPromise]);
+    if (!completion) return seed;
+
+    const generated = completion.choices?.[0]?.message?.content?.trim();
+    if (!generated) return seed;
+    return generated;
+  } catch (error) {
+    logEvent('warn', 'recruiter_description_ai_failed', {
+      error: error instanceof Error ? error.message : 'unknown_error',
+    });
+    return seed;
+  }
+}
+
 async function loadLead(input: InboundAgentInput): Promise<WaLeadRow> {
   const phone = toE164(input.waPhone || input.message.from);
   let lead = await getOrCreateWaLead({
@@ -256,9 +420,14 @@ async function runJobSearchAndRespond(lead: WaLeadRow, offset: number): Promise<
   const location = (lead.last_search_location || '').trim();
   const roleKeywords = (lead.last_search_role_keywords || '').trim();
   const timeFilter = lead.last_search_time_filter;
+  const searchType = getSearchTypeFromLead(lead);
 
-  if (!location || !roleKeywords || !timeFilter) {
-    await sendMessage(lead.phone_e164, 'No active search found. Reply 1 to start job search.', lead.linked_user_id);
+  if (!timeFilter) {
+    await sendMessage(
+      lead.phone_e164,
+      'No active search found. Reply 1 for jobs or 3 for internships.',
+      lead.linked_user_id
+    );
     return;
   }
 
@@ -266,13 +435,20 @@ async function runJobSearchAndRespond(lead: WaLeadRow, offset: number): Promise<
   const { jobs } = await searchPublishedJobs({
     location,
     roleKeywords,
+    jobType: searchType,
     timeFilter: timeFilter as TimeFilter,
     offset,
     limit: SEARCH_PAGE_SIZE,
   });
 
   if (jobs.length === 0) {
-    await sendMessage(lead.phone_e164, 'No more jobs for this search. Reply MENU to start a new search.', lead.linked_user_id);
+    await sendMessage(
+      lead.phone_e164,
+      searchType === 'internship'
+        ? 'No more internships for this search. Reply MENU to start a new search.'
+        : 'No more jobs for this search. Reply MENU to start a new search.',
+      lead.linked_user_id
+    );
     return;
   }
 
@@ -281,22 +457,49 @@ async function runJobSearchAndRespond(lead: WaLeadRow, offset: number): Promise<
     currentViews: lead.views_month_count || 0,
     batchSize: jobs.length,
   });
+  const previewRemaining = Math.max(
+    0,
+    NO_ACCOUNT_PREVIEW_LIMIT - (lead.views_month_count || 0)
+  );
+  const noAccountVisibleCap = lead.linked_user_id
+    ? decision.visibleCount
+    : Math.min(decision.visibleCount, previewRemaining);
+  const visibleCount = noAccountVisibleCap;
+  const lockedCount = Math.max(0, jobs.length - visibleCount);
+
+  if (!lead.linked_user_id && visibleCount <= 0) {
+    await sendMessage(
+      lead.phone_e164,
+      `You reached your WhatsApp preview limit (${NO_ACCOUNT_PREVIEW_LIMIT} jobs). Create account to continue: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
+      lead.linked_user_id
+    );
+    return;
+  }
 
   await sendMessage(
     lead.phone_e164,
     formatJobBatchMessage({
       jobs,
-      visibleCount: decision.visibleCount,
-      lockedCount: decision.lockedCount,
+      visibleCount,
+      lockedCount,
       hasMore: jobs.length === SEARCH_PAGE_SIZE,
       subscribed: limitCtx.subscribed,
+      headingLabel: searchType === 'internship' ? 'Internships' : 'Jobs',
     }),
     lead.linked_user_id
   );
   await sendQuickActions(lead.phone_e164, lead.linked_user_id);
 
   await setLastSearchOffset(lead.id, offset + jobs.length);
-  await incrementViewCounter(lead, decision.incrementBy);
+  await incrementViewCounter(lead, visibleCount);
+
+  if (!lead.linked_user_id && lockedCount > 0) {
+    await sendMessage(
+      lead.phone_e164,
+      `Create account to unlock all results and apply instantly: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
+      lead.linked_user_id
+    );
+  }
 }
 
 async function handleApplyCommand(lead: WaLeadRow, inbound: InboundAgentInput, publicId: string): Promise<void> {
@@ -310,7 +513,7 @@ async function handleApplyCommand(lead: WaLeadRow, inbound: InboundAgentInput, p
     await storePendingApply(lead.id, job.id, job.public_id || publicId);
     await sendMessage(
       lead.phone_e164,
-      `To apply, create/login on website first: ${ACCOUNT_URL}\nWe saved your intent for ${job.public_id || publicId}.`,
+      `To apply, create your account first: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}\nWe saved your intent for ${job.public_id || publicId}.`,
       lead.linked_user_id
     );
     return;
@@ -447,22 +650,8 @@ async function handleRecruiterFlow(
   inboundText: string,
   role: string | null
 ): Promise<boolean> {
-  if (!lead.linked_user_id) {
-    await sendMessage(
-      lead.phone_e164,
-      `Recruiter posting requires website account. Create/login here: ${ACCOUNT_URL}`,
-      lead.linked_user_id
-    );
-    await sendMenuAndSetState(lead);
-    return true;
-  }
-
-  if (role !== 'recruiter' && role !== 'admin' && role !== 'staff') {
-    await sendMessage(
-      lead.phone_e164,
-      `Recruiter account required. Login with recruiter account: ${ACCOUNT_URL}`,
-      lead.linked_user_id
-    );
+  const access = await enforceRecruiterPostingAccess(lead, role);
+  if (!access.allowed) {
     await sendMenuAndSetState(lead);
     return true;
   }
@@ -493,7 +682,11 @@ async function handleRecruiterFlow(
       recruiterDraft: { salary: text },
     });
     await updateLeadState(lead.id, 'recruiter.awaiting_description', 'recruiter', nextPayload);
-    await sendMessage(lead.phone_e164, 'Job description?', lead.linked_user_id);
+    await sendMessage(
+      lead.phone_e164,
+      'Send a short job brief (1-3 lines). AI will expand it into a full description.',
+      lead.linked_user_id
+    );
     return true;
   }
 
@@ -544,6 +737,11 @@ async function handleRecruiterFlow(
 
   const applyMethod = detectApplyMethod(draft.applicationMethod);
   const salary = parseSalary(draft.salary);
+  const aiDescription = await expandRecruiterDescriptionWithAi({
+    jobTitle: draft.jobTitle,
+    companyName: recruiterProfile.data.company_name || null,
+    seedDescription: draft.description,
+  });
 
   const { data: createdJob, error: createError } = await agentDb
     .from('jobs')
@@ -554,7 +752,7 @@ async function handleRecruiterFlow(
       title: draft.jobTitle,
       location: draft.location,
       salary,
-      description: draft.description,
+      description: aiDescription || draft.description,
       company_name: recruiterProfile.data.company_name || null,
       published: false,
       approval_status: 'pending',
@@ -667,10 +865,162 @@ async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promis
   const payload = mergePayload(lead.state_payload, {});
   const text = sanitizeFreeText(inboundText, 200);
 
-  if (lead.conversation_state === 'jobseeker.awaiting_location') {
-    const nextPayload = mergePayload(payload, {
-      jobSearch: { location: text },
+  const completeJobSearch = async (nextPayload: WaStatePayload): Promise<void> => {
+    const searchDraft = nextPayload.jobSearch;
+    if (!searchDraft?.timeFilter) {
+      await sendMessage(
+        lead.phone_e164,
+        'Missing search fields. Reply MENU and choose 1 again.',
+        lead.linked_user_id
+      );
+      await sendMenuAndSetState(lead);
+      return;
+    }
+
+    const normalizedLocation =
+      searchDraft.locationScope === 'nationwide'
+        ? ''
+        : (searchDraft.location || '').trim();
+    const normalizedRoleKeywords =
+      searchDraft.roleMode === 'all'
+        ? ''
+        : (searchDraft.roleKeywords || '').trim();
+
+    await updateLeadState(lead.id, 'jobseeker.ready_results', 'jobseeker', nextPayload);
+    await saveLastSearch(lead.id, {
+      location: normalizedLocation,
+      roleKeywords: normalizedRoleKeywords,
+      timeFilter: searchDraft.timeFilter,
+      offset: 0,
     });
+
+    await runJobSearchAndRespond(
+      {
+        ...lead,
+        state_payload: nextPayload as Record<string, unknown>,
+        last_search_location: normalizedLocation,
+        last_search_role_keywords: normalizedRoleKeywords,
+        last_search_time_filter: searchDraft.timeFilter,
+        last_search_offset: 0,
+      },
+      0
+    );
+  };
+
+  if (lead.conversation_state === 'jobseeker.awaiting_account_choice') {
+    const accountChoice = parseAccountChoice(text);
+    if (!accountChoice) {
+      await sendMessage(
+        lead.phone_e164,
+        'Reply 1 to create account or 2 to continue search.',
+        lead.linked_user_id
+      );
+      return true;
+    }
+
+    if (accountChoice === 'create') {
+      await sendMessage(
+        lead.phone_e164,
+        `Create your account with this WhatsApp number: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
+        lead.linked_user_id
+      );
+      await sendMenuAndSetState(lead);
+      return true;
+    }
+
+    const nextPayload = mergePayload(payload, {});
+    await updateLeadState(lead.id, 'jobseeker.awaiting_location_scope', 'jobseeker', nextPayload);
+    await sendMessage(
+      lead.phone_e164,
+      locationScopePrompt(nextPayload.jobSearch?.searchType === 'internship' ? 'internship' : 'job'),
+      lead.linked_user_id
+    );
+    return true;
+  }
+
+  if (
+    lead.conversation_state === 'jobseeker.awaiting_location_scope' ||
+    lead.conversation_state === 'jobseeker.awaiting_location'
+  ) {
+    const locationScope = parseLocationScope(text);
+    if (!locationScope) {
+      await sendMessage(
+        lead.phone_e164,
+        'Reply 1 for Nationwide or 2 for Specific town.',
+        lead.linked_user_id
+      );
+      return true;
+    }
+
+    const nextPayload = mergePayload(payload, {
+      jobSearch: {
+        locationScope,
+        location: locationScope === 'nationwide' ? 'Nationwide' : null,
+      },
+    });
+
+    if (locationScope === 'nationwide') {
+      await updateLeadState(lead.id, 'jobseeker.awaiting_time_filter', 'jobseeker', nextPayload);
+      await sendMessage(lead.phone_e164, timeFilterPrompt(), lead.linked_user_id);
+      return true;
+    }
+
+    await updateLeadState(lead.id, 'jobseeker.awaiting_location_town', 'jobseeker', nextPayload);
+    await sendMessage(lead.phone_e164, 'Which town?', lead.linked_user_id);
+    return true;
+  }
+
+  if (lead.conversation_state === 'jobseeker.awaiting_location_town') {
+    const nextPayload = mergePayload(payload, {
+      jobSearch: { locationScope: 'town', location: text },
+    });
+    await updateLeadState(lead.id, 'jobseeker.awaiting_time_filter', 'jobseeker', nextPayload);
+    await sendMessage(lead.phone_e164, timeFilterPrompt(), lead.linked_user_id);
+    return true;
+  }
+
+  if (lead.conversation_state === 'jobseeker.awaiting_time_filter') {
+    const timeFilter = parseTimeFilter(text);
+    if (!timeFilter) {
+      await sendMessage(lead.phone_e164, 'Invalid time filter. Reply 1, 2 or 3.', lead.linked_user_id);
+      return true;
+    }
+
+    const nextPayload = mergePayload(payload, {
+      jobSearch: { timeFilter },
+    });
+    await updateLeadState(lead.id, 'jobseeker.awaiting_role_mode', 'jobseeker', nextPayload);
+    await sendMessage(
+      lead.phone_e164,
+      roleModePrompt(nextPayload.jobSearch?.searchType === 'internship' ? 'internship' : 'job'),
+      lead.linked_user_id
+    );
+    return true;
+  }
+
+  if (lead.conversation_state === 'jobseeker.awaiting_role_mode') {
+    const roleMode = parseRoleMode(text);
+    if (!roleMode) {
+      await sendMessage(
+        lead.phone_e164,
+        'Reply 1 for all jobs or 2 for specific role.',
+        lead.linked_user_id
+      );
+      return true;
+    }
+
+    const nextPayload = mergePayload(payload, {
+      jobSearch: {
+        roleMode,
+        roleKeywords: roleMode === 'all' ? '' : null,
+      },
+    });
+
+    if (roleMode === 'all') {
+      await completeJobSearch(nextPayload);
+      return true;
+    }
+
     await updateLeadState(lead.id, 'jobseeker.awaiting_keywords', 'jobseeker', nextPayload);
     await sendMessage(lead.phone_e164, 'Role or skill keywords?', lead.linked_user_id);
     return true;
@@ -678,85 +1028,66 @@ async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promis
 
   if (lead.conversation_state === 'jobseeker.awaiting_keywords') {
     const nextPayload = mergePayload(payload, {
-      jobSearch: { roleKeywords: text },
+      jobSearch: {
+        roleMode: 'specific',
+        roleKeywords: text,
+      },
     });
-    await updateLeadState(lead.id, 'jobseeker.awaiting_time_filter', 'jobseeker', nextPayload);
-    await sendMessage(lead.phone_e164, timeFilterPrompt(), lead.linked_user_id);
+    await completeJobSearch(nextPayload);
     return true;
   }
 
-  if (lead.conversation_state !== 'jobseeker.awaiting_time_filter') {
-    return false;
-  }
-
-  const timeFilter = parseTimeFilter(text);
-  if (!timeFilter) {
-    await sendMessage(lead.phone_e164, 'Invalid time filter. Reply 1, 2 or 3.', lead.linked_user_id);
-    return true;
-  }
-
-  const nextPayload = mergePayload(payload, {
-    jobSearch: { timeFilter },
-  });
-
-  const searchDraft = nextPayload.jobSearch;
-  if (!searchDraft?.location || !searchDraft.roleKeywords || !searchDraft.timeFilter) {
-    await sendMessage(lead.phone_e164, 'Missing search fields. Reply MENU and choose 1 again.', lead.linked_user_id);
-    await sendMenuAndSetState(lead);
-    return true;
-  }
-
-  await updateLeadState(lead.id, 'jobseeker.ready_results', 'jobseeker', nextPayload);
-  await saveLastSearch(lead.id, {
-    location: searchDraft.location,
-    roleKeywords: searchDraft.roleKeywords,
-    timeFilter: searchDraft.timeFilter,
-    offset: 0,
-  });
-
-  await runJobSearchAndRespond(
-    {
-      ...lead,
-      last_search_location: searchDraft.location,
-      last_search_role_keywords: searchDraft.roleKeywords,
-      last_search_time_filter: searchDraft.timeFilter,
-      last_search_offset: 0,
-    },
-    0
-  );
-
-  return true;
+  return false;
 }
 
 async function startJobSearchFromIntent(
   lead: WaLeadRow,
   inboundText: string,
+  searchType: 'job' | 'internship',
   hints?: {
     locationHint?: string | null;
     roleKeywordsHint?: string | null;
     timeFilterHint?: TimeFilter | null;
   }
 ): Promise<void> {
+  if (!lead.linked_user_id) {
+    const accountChoicePayload = mergePayload(lead.state_payload, {
+      jobSearch: {
+        searchType,
+      },
+    });
+    await updateLeadState(lead.id, 'jobseeker.awaiting_account_choice', 'jobseeker', accountChoicePayload);
+    await sendMessage(
+      lead.phone_e164,
+      [
+        'No account was found for this WhatsApp number.',
+        `You can preview up to ${NO_ACCOUNT_PREVIEW_LIMIT} jobs.`,
+        'Reply:',
+        '1) Create account',
+        '2) Continue search',
+      ].join('\n'),
+      lead.linked_user_id
+    );
+    return;
+  }
+
   const locationHint = hints?.locationHint ?? extractLocationHint(inboundText);
   const roleHint = hints?.roleKeywordsHint ?? extractRoleKeywordsHint(inboundText);
   const timeFilterHint = hints?.timeFilterHint ?? null;
   const payload = mergePayload(lead.state_payload, {
     jobSearch: {
+      searchType,
+      locationScope: locationHint ? 'town' : null,
       location: locationHint,
+      roleMode: roleHint ? 'specific' : null,
       roleKeywords: roleHint,
       timeFilter: timeFilterHint || null,
     },
   });
 
   if (!locationHint) {
-    await updateLeadState(lead.id, 'jobseeker.awaiting_location', 'jobseeker', payload);
-    await sendMessage(lead.phone_e164, 'Job search started. Which location?', lead.linked_user_id);
-    return;
-  }
-
-  if (!roleHint) {
-    await updateLeadState(lead.id, 'jobseeker.awaiting_keywords', 'jobseeker', payload);
-    await sendMessage(lead.phone_e164, 'Role or skill keywords?', lead.linked_user_id);
+    await updateLeadState(lead.id, 'jobseeker.awaiting_location_scope', 'jobseeker', payload);
+    await sendMessage(lead.phone_e164, locationScopePrompt(searchType), lead.linked_user_id);
     return;
   }
 
@@ -764,15 +1095,16 @@ async function startJobSearchFromIntent(
     await updateLeadState(lead.id, 'jobseeker.ready_results', 'jobseeker', payload);
     await saveLastSearch(lead.id, {
       location: locationHint,
-      roleKeywords: roleHint,
+      roleKeywords: roleHint || '',
       timeFilter: timeFilterHint,
       offset: 0,
     });
     await runJobSearchAndRespond(
       {
         ...lead,
+        state_payload: payload as Record<string, unknown>,
         last_search_location: locationHint,
-        last_search_role_keywords: roleHint,
+        last_search_role_keywords: roleHint || '',
         last_search_time_filter: timeFilterHint,
         last_search_offset: 0,
       },
@@ -781,37 +1113,59 @@ async function startJobSearchFromIntent(
     return;
   }
 
+  if (!roleHint) {
+    await updateLeadState(lead.id, 'jobseeker.awaiting_role_mode', 'jobseeker', payload);
+    await sendMessage(lead.phone_e164, roleModePrompt(searchType), lead.linked_user_id);
+    return;
+  }
+
   await updateLeadState(lead.id, 'jobseeker.awaiting_time_filter', 'jobseeker', payload);
   await sendMessage(lead.phone_e164, timeFilterPrompt(), lead.linked_user_id);
 }
 
 async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: string | null): Promise<void> {
-  if (choice === 4) {
-    await sendMenuAndSetState(lead);
-    return;
-  }
+  if (choice === 1 || choice === 3) {
+    const searchType: 'job' | 'internship' = choice === 3 ? 'internship' : 'job';
+    const nextPayload = mergePayload({}, {
+      jobSearch: {
+        searchType,
+        locationScope: null,
+        location: null,
+        roleMode: null,
+        roleKeywords: null,
+        timeFilter: null,
+      },
+    });
 
-  if (choice === 1) {
-    await updateLeadState(lead.id, 'jobseeker.awaiting_location', 'jobseeker', mergePayload({}, {}));
-    await sendMessage(lead.phone_e164, 'Great. Which location are you targeting?', lead.linked_user_id);
-    return;
-  }
-
-  if (choice === 2) {
     if (!lead.linked_user_id) {
+      await updateLeadState(lead.id, 'jobseeker.awaiting_account_choice', 'jobseeker', nextPayload);
       await sendMessage(
         lead.phone_e164,
-        `Recruiter posting requires website account. Create/login: ${ACCOUNT_URL}`,
+        [
+          'No account was found for this WhatsApp number.',
+          `You can preview up to ${NO_ACCOUNT_PREVIEW_LIMIT} jobs.`,
+          'Reply:',
+          '1) Create account',
+          '2) Continue search',
+        ].join('\n'),
         lead.linked_user_id
       );
       return;
     }
-    if (role !== 'recruiter' && role !== 'admin' && role !== 'staff') {
-      await sendMessage(
-        lead.phone_e164,
-        `Recruiter account required. Login with recruiter profile: ${ACCOUNT_URL}`,
-        lead.linked_user_id
-      );
+
+    const name = await getProfileDisplayName(lead.linked_user_id);
+    await updateLeadState(lead.id, 'jobseeker.awaiting_location_scope', 'jobseeker', nextPayload);
+    await sendMessage(
+      lead.phone_e164,
+      `${name ? `Welcome ${name}. ` : ''}${locationScopePrompt(searchType)}`,
+      lead.linked_user_id
+    );
+    return;
+  }
+
+  if (choice === 2) {
+    const access = await enforceRecruiterPostingAccess(lead, role);
+    if (!access.allowed) {
       return;
     }
     await updateLeadState(lead.id, 'recruiter.awaiting_title', 'recruiter', mergePayload({}, {}));
@@ -819,8 +1173,12 @@ async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: st
     return;
   }
 
-  await updateLeadState(lead.id, 'talent.awaiting_name', 'talent', mergePayload({}, {}));
-  await sendMessage(lead.phone_e164, 'Talent profile started. Full name?', lead.linked_user_id);
+  await sendMessage(
+    lead.phone_e164,
+    `Create your account using this WhatsApp number: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
+    lead.linked_user_id
+  );
+  await sendMenuAndSetState(lead);
 }
 
 export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): Promise<InboundAgentResult> {
@@ -876,6 +1234,16 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       return { handled: true, reason: 'handled' };
     }
 
+    if (isCreateAccountIntent(text) && isMenuRootState(lead.conversation_state)) {
+      await sendMessage(
+        lead.phone_e164,
+        `Create your account using this WhatsApp number: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
+        lead.linked_user_id
+      );
+      await sendMenuAndSetState(lead);
+      return { handled: true, reason: 'handled' };
+    }
+
     if (isJobseekerState(lead.conversation_state)) {
       const handled = await handleJobSeekerFlow(lead, text);
       if (handled) return { handled: true, reason: 'handled' };
@@ -913,16 +1281,8 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       return { handled: true, reason: 'handled' };
     }
 
-    if (
-      intent.intent === 'talent' &&
-      (lead.conversation_state === 'idle' || lead.conversation_state === 'menu')
-    ) {
-      await handleMenuChoice(lead, 3, role);
-      return { handled: true, reason: 'handled' };
-    }
-
     if (intent.intent === 'jobseeker') {
-      await startJobSearchFromIntent(lead, text, {
+      await startJobSearchFromIntent(lead, text, 'job', {
         locationHint: intent.locationHint,
         roleKeywordsHint: intent.roleKeywordsHint,
         timeFilterHint: intent.timeFilterHint,
@@ -930,8 +1290,13 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       return { handled: true, reason: 'handled' };
     }
 
+    if (looksLikeInternshipIntent(text)) {
+      await startJobSearchFromIntent(lead, text, 'internship');
+      return { handled: true, reason: 'handled' };
+    }
+
     if (looksLikeJobIntent(text)) {
-      await startJobSearchFromIntent(lead, text);
+      await startJobSearchFromIntent(lead, text, 'job');
       return { handled: true, reason: 'handled' };
     }
 

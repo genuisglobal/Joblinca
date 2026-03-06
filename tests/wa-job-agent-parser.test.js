@@ -28,6 +28,10 @@ function run() {
   assert.equal(parser.isGreeting('what'), false);
   console.log('ok - greeting parsing');
 
+  assert.equal(parser.isHelpMenu('help'), true);
+  assert.equal(parser.isHelpMenu('4'), false);
+  console.log('ok - help/menu parsing');
+
   assert.equal(parser.parseMenuChoice('1'), 1);
   assert.equal(parser.parseMenuChoice('4'), 4);
   assert.equal(parser.parseMenuChoice('0'), null);
@@ -65,7 +69,19 @@ function run() {
   assert.equal(parser.parseTimeFilter('any'), null);
   console.log('ok - time filter parsing');
 
+  assert.equal(parser.parseLocationScope('1'), 'nationwide');
+  assert.equal(parser.parseLocationScope('town'), 'town');
+  assert.equal(parser.parseLocationScope('unknown'), null);
+  console.log('ok - location scope parsing');
+
+  assert.equal(parser.parseRoleMode('1'), 'all');
+  assert.equal(parser.parseRoleMode('specific role'), 'specific');
+  assert.equal(parser.parseRoleMode('none'), null);
+  console.log('ok - role mode parsing');
+
   assert.equal(parser.looksLikeJobIntent('I need work in Douala'), true);
+  assert.equal(parser.looksLikeInternshipIntent('I need an internship in Buea'), true);
+  assert.equal(parser.isCreateAccountIntent('create account'), true);
   assert.equal(parser.looksLikeJobIntent('hello there'), false);
   console.log('ok - intent detection');
 }
