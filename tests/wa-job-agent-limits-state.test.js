@@ -81,6 +81,11 @@ function run() {
   assert.equal(merged.jobSearch.location, 'Douala');
   assert.equal(merged.jobSearch.roleKeywords, 'driver');
   console.log('ok - state payload merge');
+
+  assert.equal(state.isMenuRootState('idle'), true);
+  assert.equal(state.isMenuRootState('menu'), true);
+  assert.equal(state.isMenuRootState('jobseeker.awaiting_time_filter'), false);
+  console.log('ok - menu root state guard');
 }
 
 try {

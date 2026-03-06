@@ -61,6 +61,10 @@ export function isTalentState(state: string): boolean {
   return state.startsWith('talent.');
 }
 
+export function isMenuRootState(state: WaConversationState): boolean {
+  return state === 'idle' || state === 'menu';
+}
+
 export function defaultStatePayload(): WaStatePayload {
   return {
     jobSearch: {

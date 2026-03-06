@@ -1,6 +1,7 @@
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { toE164 } from '@/lib/whatsapp';
 import { linkConversationToUser } from '@/lib/whatsapp-db';
+import { resolveProfileIdByPhone } from '@/lib/phone-match';
 import type {
   WaConversationState,
   WaRoleSelection,
@@ -58,10 +59,6 @@ function weekBucketGmtPlus1(now = new Date()): string {
   const yearStart = new Date(Date.UTC(temp.getUTCFullYear(), 0, 1));
   const weekNo = Math.ceil((((temp.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   return `${temp.getUTCFullYear()}-${String(weekNo).padStart(2, '0')}`;
-}
-
-function phoneDigitsOnly(value: string): string {
-  return value.replace(/[^\d]/g, '');
 }
 
 export async function getOrCreateWaLead(params: {
@@ -132,27 +129,7 @@ export async function ensureLeadMonthlyReset(lead: WaLeadRow): Promise<WaLeadRow
 }
 
 export async function resolveWebsiteUserByPhone(phone: string): Promise<string | null> {
-  const e164 = toE164(phone);
-  const digits = phoneDigitsOnly(e164);
-
-  const exact = await leadDb
-    .from('profiles')
-    .select('id')
-    .eq('phone', e164)
-    .limit(1)
-    .maybeSingle();
-
-  if (exact.data?.id) return exact.data.id;
-
-  const digitsOnly = await leadDb
-    .from('profiles')
-    .select('id')
-    .eq('phone', digits)
-    .limit(1)
-    .maybeSingle();
-
-  if (digitsOnly.data?.id) return digitsOnly.data.id;
-  return null;
+  return resolveProfileIdByPhone(leadDb, phone);
 }
 
 export async function syncLeadUserLink(lead: WaLeadRow, linkedUserId: string | null): Promise<WaLeadRow> {
