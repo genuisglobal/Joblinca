@@ -49,6 +49,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Recruiter or admin access required' }, { status: 403 });
   }
 
+  if (isRecruiter) {
+    const { data: recruiterProfile, error: recruiterLookupError } = await supabase
+      .from('recruiters')
+      .select('id')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (recruiterLookupError || !recruiterProfile) {
+      return NextResponse.json(
+        { error: 'Recruiter account profile required before posting jobs' },
+        { status: 403 }
+      );
+    }
+  }
+
   // Parse request body
   const body = await request.json();
   const {
