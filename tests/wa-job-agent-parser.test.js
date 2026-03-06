@@ -40,11 +40,23 @@ function run() {
   const apply2 = parser.parseApplyCommand('jl1001');
   assert.equal(apply2.isApply, true);
   assert.equal(apply2.publicId, 'JL-1001');
+
+  const apply3 = parser.parseApplyCommand('APPLY jl 1002');
+  assert.equal(apply3.isApply, true);
+  assert.equal(apply3.publicId, 'JL-1002');
+
+  const apply4 = parser.parseApplyCommand('apply now');
+  assert.equal(apply4.isApply, true);
+  assert.equal(apply4.publicId, null);
   console.log('ok - apply parsing');
 
   const details = parser.parseDetailsCommand('DETAILS jl-123');
   assert.equal(details.isDetails, true);
   assert.equal(details.publicId, 'JL-123');
+
+  const details2 = parser.parseDetailsCommand('info jl 456');
+  assert.equal(details2.isDetails, true);
+  assert.equal(details2.publicId, 'JL-456');
   console.log('ok - details parsing');
 
   assert.equal(parser.parseTimeFilter('1'), '24h');
@@ -65,4 +77,3 @@ try {
   console.error('Test failure:', error instanceof Error ? error.message : error);
   process.exit(1);
 }
-

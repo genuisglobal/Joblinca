@@ -28,7 +28,33 @@ function loadModule(relativePath) {
   return module.exports;
 }
 
-function run() {
+function createFakeDb(rows) {
+  return {
+    from: () => ({
+      select: () => ({
+        eq: (_column, value) => ({
+          limit: async (count) => ({
+            data: rows.filter((row) => row.phone === value).slice(0, count),
+          }),
+        }),
+        ilike: (_column, pattern) => ({
+          limit: async (count) => {
+            const needle = String(pattern || '')
+              .replace(/%/g, '')
+              .toLowerCase();
+            return {
+              data: rows
+                .filter((row) => String(row.phone || '').toLowerCase().includes(needle))
+                .slice(0, count),
+            };
+          },
+        }),
+      }),
+    }),
+  };
+}
+
+async function run() {
   const phoneMatch = loadModule(path.join('lib', 'phone-match.ts'));
 
   assert.equal(phoneMatch.normalizePhoneDigits('+237 677-12-34-56'), '237677123456');
@@ -48,11 +74,33 @@ function run() {
   assert.equal(exactScore > localScore, true);
   assert.equal(localScore > mismatchScore, true);
   console.log('ok - score ranking');
+
+  const exactDb = createFakeDb([
+    { id: 'user-1', phone: '+237677123456' },
+    { id: 'user-2', phone: '+237699000000' },
+  ]);
+  const exactResolved = await phoneMatch.resolveProfileIdByPhone(exactDb, '+237677123456');
+  assert.equal(exactResolved, 'user-1');
+  console.log('ok - exact profile resolution');
+
+  const ambiguousFuzzyDb = createFakeDb([
+    { id: 'user-a', phone: '677123456' },
+    { id: 'user-b', phone: '0677123456' },
+  ]);
+  const ambiguousResolved = await phoneMatch.resolveProfileIdByPhone(ambiguousFuzzyDb, '+237677123456');
+  assert.equal(ambiguousResolved, null);
+  console.log('ok - ambiguous fuzzy resolution returns null');
 }
 
 try {
-  run();
-  console.log('All wa-phone-match tests passed.');
+  run()
+    .then(() => {
+      console.log('All wa-phone-match tests passed.');
+    })
+    .catch((error) => {
+      console.error('Test failure:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    });
 } catch (error) {
   console.error('Test failure:', error instanceof Error ? error.message : error);
   process.exit(1);

@@ -39,6 +39,9 @@ import {
   menuMessage,
   timeFilterPrompt,
   isMenuRootState,
+  isJobseekerState,
+  isRecruiterState,
+  isTalentState,
   type WaConversationState,
   type WaRoleSelection,
   type WaStatePayload,
@@ -229,7 +232,22 @@ async function loadLead(input: InboundAgentInput): Promise<WaLeadRow> {
     displayName: null,
   });
 
-  const linkedUserId = input.conversationUserId || (await resolveWebsiteUserByPhone(phone));
+  const resolvedByPhone = await resolveWebsiteUserByPhone(phone);
+  if (resolvedByPhone && input.conversationUserId && resolvedByPhone !== input.conversationUserId) {
+    logEvent('warn', 'conversation_user_mismatch_phone_resolution', {
+      leadId: lead.id,
+      waConversationId: input.conversationId,
+      conversationUserId: input.conversationUserId,
+      resolvedByPhone,
+    });
+  }
+
+  const linkedUserId =
+    resolvedByPhone ||
+    input.conversationUserId ||
+    lead.linked_user_id ||
+    null;
+
   lead = await syncLeadUserLink(lead, linkedUserId);
   return lead;
 }
@@ -826,14 +844,6 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       return { handled: true, reason: 'handled' };
     }
 
-    const menuChoice = isMenuRootState(lead.conversation_state)
-      ? parseMenuChoice(text)
-      : null;
-    if (menuChoice) {
-      await handleMenuChoice(lead, menuChoice, role);
-      return { handled: true, reason: 'handled' };
-    }
-
     const details = parseDetailsCommand(text);
     if (details.isDetails) {
       if (!details.publicId) {
@@ -863,6 +873,29 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
 
     if (isNextCommand(text)) {
       await runJobSearchAndRespond(lead, lead.last_search_offset || 0);
+      return { handled: true, reason: 'handled' };
+    }
+
+    if (isJobseekerState(lead.conversation_state)) {
+      const handled = await handleJobSeekerFlow(lead, text);
+      if (handled) return { handled: true, reason: 'handled' };
+    }
+
+    if (isRecruiterState(lead.conversation_state)) {
+      const handled = await handleRecruiterFlow(lead, text, role);
+      if (handled) return { handled: true, reason: 'handled' };
+    }
+
+    if (isTalentState(lead.conversation_state)) {
+      const handled = await handleTalentFlow(lead, text);
+      if (handled) return { handled: true, reason: 'handled' };
+    }
+
+    const menuChoice = isMenuRootState(lead.conversation_state)
+      ? parseMenuChoice(text)
+      : null;
+    if (menuChoice) {
+      await handleMenuChoice(lead, menuChoice, role);
       return { handled: true, reason: 'handled' };
     }
 
@@ -900,21 +933,6 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     if (looksLikeJobIntent(text)) {
       await startJobSearchFromIntent(lead, text);
       return { handled: true, reason: 'handled' };
-    }
-
-    if (lead.conversation_state.startsWith('jobseeker.')) {
-      await handleJobSeekerFlow(lead, text);
-      return { handled: true, reason: 'handled' };
-    }
-
-    if (lead.conversation_state.startsWith('recruiter.')) {
-      const handled = await handleRecruiterFlow(lead, text, role);
-      if (handled) return { handled: true, reason: 'handled' };
-    }
-
-    if (lead.conversation_state.startsWith('talent.')) {
-      const handled = await handleTalentFlow(lead, text);
-      if (handled) return { handled: true, reason: 'handled' };
     }
 
     if (lead.conversation_state === 'idle' || lead.conversation_state === 'menu') {

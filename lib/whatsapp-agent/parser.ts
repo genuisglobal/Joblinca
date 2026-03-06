@@ -20,10 +20,22 @@ function compact(input: string): string {
 
 export function normalizePublicJobId(value: string | null | undefined): string | null {
   if (!value) return null;
-  const cleaned = value.trim().toUpperCase().replace(/\s+/g, '');
+  const cleaned = value
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/([A-Z]{2,5})-(\d{1,10})$/, '$1$2');
   const match = cleaned.match(/^JL-?(\d{1,10})$/);
   if (!match) return null;
   return `JL-${match[1]}`;
+}
+
+function parsePublicJobIdFromCommand(input: string, command: 'apply' | 'postuler' | 'details' | 'detail' | 'info'): string | null {
+  const value = compact(input);
+  const pattern = new RegExp(`(?:^|\\b)${command}\\s+([a-z]{2,5}\\s*-?\\s*\\d{1,10})\\b`, 'i');
+  const match = value.match(pattern);
+  if (!match?.[1]) return null;
+  return normalizePublicJobId(match[1]);
 }
 
 export function isGreeting(input: string): boolean {
@@ -52,10 +64,12 @@ export function isNextCommand(input: string): boolean {
 
 export function parseMenuChoice(input: string): 1 | 2 | 3 | 4 | null {
   const value = normalize(input);
-  if (value === '1') return 1;
-  if (value === '2') return 2;
-  if (value === '3') return 3;
-  if (value === '4') return 4;
+  const numeric = value.match(/^\D*([1-4])\D*$/);
+  if (!numeric) return null;
+  if (numeric[1] === '1') return 1;
+  if (numeric[1] === '2') return 2;
+  if (numeric[1] === '3') return 3;
+  if (numeric[1] === '4') return 4;
   return null;
 }
 
@@ -66,27 +80,36 @@ export function parseApplyCommand(input: string): ParsedApplyCommand {
     return { isApply: true, publicId: directId };
   }
 
-  const match = value.match(/^(apply|postuler)\s+([a-z]{2,5}-?\d{1,10})$/i);
-  if (!match) {
+  const hasApplyKeyword = /(?:^|\b)(?:apply|postuler)\b/i.test(value);
+  if (!hasApplyKeyword) {
     return { isApply: false, publicId: null };
   }
 
+  const parsed =
+    parsePublicJobIdFromCommand(value, 'apply') ??
+    parsePublicJobIdFromCommand(value, 'postuler');
+
   return {
     isApply: true,
-    publicId: normalizePublicJobId(match[2]),
+    publicId: parsed,
   };
 }
 
 export function parseDetailsCommand(input: string): ParsedDetailsCommand {
   const value = compact(input);
-  const match = value.match(/^(details?|info)\s+([a-z]{2,5}-?\d{1,10})$/i);
-  if (!match) {
+  const hasDetailsKeyword = /^(details?|info)\b/i.test(value);
+  if (!hasDetailsKeyword) {
     return { isDetails: false, publicId: null };
   }
 
+  const parsed =
+    parsePublicJobIdFromCommand(value, 'details') ??
+    parsePublicJobIdFromCommand(value, 'detail') ??
+    parsePublicJobIdFromCommand(value, 'info');
+
   return {
     isDetails: true,
-    publicId: normalizePublicJobId(match[2]),
+    publicId: parsed,
   };
 }
 
@@ -166,4 +189,3 @@ export function extractRoleKeywordsHint(input: string): string | null {
   if (!stripped || stripped.length < 2) return null;
   return stripped.slice(0, 80);
 }
-

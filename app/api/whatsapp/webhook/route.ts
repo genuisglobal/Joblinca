@@ -29,6 +29,13 @@ import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
 import { handleWhatsAppJobAgentInbound } from '@/lib/whatsapp-agent/router';
 
+function toUnixTimestamp(value: string | undefined): number {
+  if (!value) return 0;
+  const parsed = Number(value);
+  if (Number.isNaN(parsed)) return 0;
+  return parsed;
+}
+
 // ─── GET: webhook verification ────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -74,7 +81,7 @@ export async function POST(request: NextRequest) {
     return new NextResponse('OK', { status: 200 });
   }
 
-  // 4. Process each entry with bounded parallelism per change.
+  // 4. Process each entry in delivery order to avoid conversation-state races.
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       if (change.field !== 'messages') continue;
@@ -85,20 +92,18 @@ export async function POST(request: NextRequest) {
         (value.contacts ?? []).map(c => [c.wa_id, c])
       );
 
-      const tasks: Array<Promise<void>> = [];
-
-      // Handle inbound messages
-      for (const msg of value.messages ?? []) {
-        tasks.push(handleInboundMessage(msg, contactMap.get(msg.from)));
+      const orderedMessages = [...(value.messages ?? [])].sort(
+        (a, b) => toUnixTimestamp(a.timestamp) - toUnixTimestamp(b.timestamp)
+      );
+      for (const msg of orderedMessages) {
+        await handleInboundMessage(msg, contactMap.get(msg.from));
       }
 
-      // Handle delivery / read status updates
-      for (const status of value.statuses ?? []) {
-        tasks.push(handleStatusUpdate(status));
-      }
-
-      if (tasks.length > 0) {
-        await Promise.allSettled(tasks);
+      const orderedStatuses = [...(value.statuses ?? [])].sort(
+        (a, b) => toUnixTimestamp(a.timestamp) - toUnixTimestamp(b.timestamp)
+      );
+      for (const status of orderedStatuses) {
+        await handleStatusUpdate(status);
       }
     }
   }
