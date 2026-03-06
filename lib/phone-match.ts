@@ -14,6 +14,10 @@ interface ProfilePhoneRow {
 const FUZZY_MIN_CONFIDENCE_SCORE = 85;
 const FUZZY_AMBIGUITY_GAP = 5;
 
+export interface ResolveProfileByPhoneOptions {
+  allowFuzzy?: boolean;
+}
+
 export function normalizePhoneDigits(value: string | null | undefined): string {
   if (!value) return '';
   return value.replace(/[^\d]/g, '');
@@ -73,8 +77,10 @@ export function scorePhoneDigitMatch(targetPhone: string, profilePhone: string |
 
 export async function resolveProfileIdByPhone(
   db: ProfileLookupDb,
-  phone: string
+  phone: string,
+  options: ResolveProfileByPhoneOptions = {}
 ): Promise<string | null> {
+  const allowFuzzy = options.allowFuzzy !== false;
   const e164 = toE164(phone);
   const candidates = buildPhoneLookupCandidates(e164);
   const exactMatches = new Set<string>();
@@ -98,6 +104,10 @@ export async function resolveProfileIdByPhone(
 
   if (exactMatches.size === 1) {
     return Array.from(exactMatches)[0];
+  }
+
+  if (!allowFuzzy) {
+    return null;
   }
 
   const digits = normalizePhoneDigits(e164);

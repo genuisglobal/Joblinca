@@ -17,7 +17,6 @@ import {
   incrementApplyCounter,
   storePendingApply,
   clearPendingApply,
-  upsertTalentLeadProfile,
   getProfileRole,
   type WaLeadRow,
 } from '@/lib/whatsapp-agent/leads';
@@ -45,9 +44,6 @@ import {
   isMenuRootState,
   isJobseekerState,
   isRecruiterState,
-  isTalentState,
-  type WaConversationState,
-  type WaRoleSelection,
   type WaStatePayload,
 } from '@/lib/whatsapp-agent/state-machine';
 import {
@@ -72,6 +68,7 @@ const agentDb = createServiceSupabaseClient();
 const SEARCH_PAGE_SIZE = 10;
 const NO_ACCOUNT_PREVIEW_LIMIT = 3;
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://joblinca.com';
+const ACCOUNT_URL = `${APP_URL}/auth/login`;
 const REGISTER_URL = `${APP_URL}/auth/register`;
 const SUBSCRIBE_URL = `${APP_URL}/pricing`;
 const JOBS_URL = `${APP_URL}/jobs`;
@@ -291,6 +288,31 @@ async function getProfileDisplayName(userId: string | null): Promise<string | nu
   return compact || null;
 }
 
+async function sendAccountStatusOrRegistration(
+  lead: WaLeadRow,
+  role: string | null
+): Promise<void> {
+  if (!lead.linked_user_id) {
+    await sendMessage(
+      lead.phone_e164,
+      `Create your account using this WhatsApp number: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
+      lead.linked_user_id
+    );
+    return;
+  }
+
+  const name = await getProfileDisplayName(lead.linked_user_id);
+  await sendMessage(
+    lead.phone_e164,
+    [
+      `This WhatsApp number is already linked to ${name || 'your account'}.`,
+      `Role: ${role || 'job_seeker'}`,
+      `Login here: ${ACCOUNT_URL}`,
+    ].join('\n'),
+    lead.linked_user_id
+  );
+}
+
 async function enforceRecruiterPostingAccess(
   lead: WaLeadRow,
   role: string | null
@@ -406,11 +428,17 @@ async function loadLead(input: InboundAgentInput): Promise<WaLeadRow> {
     });
   }
 
-  const linkedUserId =
-    resolvedByPhone ||
-    input.conversationUserId ||
-    lead.linked_user_id ||
-    null;
+  if (!resolvedByPhone && (input.conversationUserId || lead.linked_user_id)) {
+    logEvent('info', 'clearing_non_phone_verified_link', {
+      leadId: lead.id,
+      waConversationId: input.conversationId,
+      previousConversationUserId: input.conversationUserId,
+      previousLeadLinkedUserId: lead.linked_user_id,
+    });
+  }
+
+  // Force linkage to be strictly phone-verified for WhatsApp automation.
+  const linkedUserId = resolvedByPhone || null;
 
   lead = await syncLeadUserLink(lead, linkedUserId);
   return lead;
@@ -784,83 +812,6 @@ async function handleRecruiterFlow(
   return true;
 }
 
-async function handleTalentFlow(lead: WaLeadRow, inboundText: string): Promise<boolean> {
-  const payload = mergePayload(lead.state_payload, {});
-  const text = sanitizeFreeText(inboundText, 400);
-
-  if (lead.conversation_state === 'talent.awaiting_name') {
-    const nextPayload = mergePayload(payload, {
-      talentDraft: { fullName: text },
-    });
-    await updateLeadState(lead.id, 'talent.awaiting_institution', 'talent', nextPayload);
-    await sendMessage(lead.phone_e164, 'University or College name?', lead.linked_user_id);
-    return true;
-  }
-
-  if (lead.conversation_state === 'talent.awaiting_institution') {
-    const nextPayload = mergePayload(payload, {
-      talentDraft: { institutionName: text },
-    });
-    await updateLeadState(lead.id, 'talent.awaiting_town', 'talent', nextPayload);
-    await sendMessage(lead.phone_e164, 'Town?', lead.linked_user_id);
-    return true;
-  }
-
-  if (lead.conversation_state === 'talent.awaiting_town') {
-    const nextPayload = mergePayload(payload, {
-      talentDraft: { town: text },
-    });
-    await updateLeadState(lead.id, 'talent.awaiting_major', 'talent', nextPayload);
-    await sendMessage(lead.phone_e164, 'Course or major?', lead.linked_user_id);
-    return true;
-  }
-
-  if (lead.conversation_state === 'talent.awaiting_major') {
-    const nextPayload = mergePayload(payload, {
-      talentDraft: { courseOrMajor: text },
-    });
-    await updateLeadState(lead.id, 'talent.awaiting_cv_projects', 'talent', nextPayload);
-    await sendMessage(lead.phone_e164, 'Share CV link and/or projects.', lead.linked_user_id);
-    return true;
-  }
-
-  if (lead.conversation_state !== 'talent.awaiting_cv_projects') {
-    return false;
-  }
-
-  const nextPayload = mergePayload(payload, {
-    talentDraft: { cvOrProjects: text },
-  });
-  const draft = nextPayload.talentDraft;
-  if (
-    !draft?.fullName ||
-    !draft.institutionName ||
-    !draft.town ||
-    !draft.courseOrMajor ||
-    !draft.cvOrProjects
-  ) {
-    await sendMessage(lead.phone_e164, 'Please provide all required talent fields. Reply MENU to restart.', lead.linked_user_id);
-    return true;
-  }
-
-  await upsertTalentLeadProfile(lead.id, {
-    fullName: draft.fullName,
-    institutionName: draft.institutionName,
-    town: draft.town,
-    courseOrMajor: draft.courseOrMajor,
-    cvOrProjects: draft.cvOrProjects,
-    completed: true,
-  });
-
-  await updateLeadState(lead.id, 'menu', 'talent', mergePayload({}, {}));
-  await sendMessage(
-    lead.phone_e164,
-    `Talent profile saved as WhatsApp lead. A recruiter or team member can follow up. Reply MENU anytime.`,
-    lead.linked_user_id
-  );
-  return true;
-}
-
 async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promise<boolean> {
   const payload = mergePayload(lead.state_payload, {});
   const text = sanitizeFreeText(inboundText, 200);
@@ -1062,6 +1013,7 @@ async function startJobSearchFromIntent(
       [
         'No account was found for this WhatsApp number.',
         `You can preview up to ${NO_ACCOUNT_PREVIEW_LIMIT} jobs.`,
+        `Create account now: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
         'Reply:',
         '1) Create account',
         '2) Continue search',
@@ -1144,6 +1096,7 @@ async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: st
         [
           'No account was found for this WhatsApp number.',
           `You can preview up to ${NO_ACCOUNT_PREVIEW_LIMIT} jobs.`,
+          `Create account now: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
           'Reply:',
           '1) Create account',
           '2) Continue search',
@@ -1173,11 +1126,7 @@ async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: st
     return;
   }
 
-  await sendMessage(
-    lead.phone_e164,
-    `Create your account using this WhatsApp number: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
-    lead.linked_user_id
-  );
+  await sendAccountStatusOrRegistration(lead, role);
   await sendMenuAndSetState(lead);
 }
 
@@ -1192,6 +1141,19 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     const text = sanitizeFreeText(inboundText);
     const lower = text.toLowerCase();
     const role = lead.linked_user_id ? await getProfileRole(lead.linked_user_id) : null;
+
+    if (lead.conversation_state.startsWith('talent.')) {
+      await updateLeadState(lead.id, 'menu', lead.role_selected, mergePayload({}, {}));
+      lead = {
+        ...lead,
+        conversation_state: 'menu',
+        state_payload: mergePayload({}, {}) as Record<string, unknown>,
+      };
+      logEvent('info', 'legacy_talent_state_reset', {
+        leadId: lead.id,
+        waMessageId: input.message.id,
+      });
+    }
 
     if (['stop', 'unsubscribe', 'no', 'non'].includes(lower)) {
       return { handled: false, reason: 'delegated' };
@@ -1235,11 +1197,7 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     }
 
     if (isCreateAccountIntent(text) && isMenuRootState(lead.conversation_state)) {
-      await sendMessage(
-        lead.phone_e164,
-        `Create your account using this WhatsApp number: ${buildRegisterUrl(lead.phone_e164, 'job_seeker')}`,
-        lead.linked_user_id
-      );
+      await sendAccountStatusOrRegistration(lead, role);
       await sendMenuAndSetState(lead);
       return { handled: true, reason: 'handled' };
     }
@@ -1251,11 +1209,6 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
 
     if (isRecruiterState(lead.conversation_state)) {
       const handled = await handleRecruiterFlow(lead, text, role);
-      if (handled) return { handled: true, reason: 'handled' };
-    }
-
-    if (isTalentState(lead.conversation_state)) {
-      const handled = await handleTalentFlow(lead, text);
       if (handled) return { handled: true, reason: 'handled' };
     }
 
