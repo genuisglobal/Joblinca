@@ -95,6 +95,10 @@ export async function GET(
     const addOnSlugs = Array.isArray(metadata.add_on_slugs)
       ? metadata.add_on_slugs.filter((value): value is string => typeof value === 'string')
       : [];
+    const billing =
+      metadata.billing && typeof metadata.billing === 'object'
+        ? (metadata.billing as Record<string, unknown>)
+        : {};
 
     return NextResponse.json({
       transaction_id: latestTransaction.id,
@@ -111,6 +115,16 @@ export async function GET(
       payment_phone: latestTransaction.payment_phone ?? null,
       job_id: latestTransaction.job_id ?? null,
       add_on_slugs: addOnSlugs,
+      subtotal_amount:
+        typeof billing.subtotal_amount === 'number' ? billing.subtotal_amount : null,
+      processing_fee_percent:
+        typeof billing.processing_fee_percent === 'number'
+          ? billing.processing_fee_percent
+          : null,
+      processing_fee_amount:
+        typeof billing.processing_fee_amount === 'number'
+          ? billing.processing_fee_amount
+          : null,
     });
   } catch {
     return NextResponse.json({ error: 'Failed to check status' }, { status: 500 });

@@ -15,6 +15,10 @@ import {
   resolveGateway,
   shouldUseHostedCheckoutFallback,
 } from './payunit';
+import {
+  calculateChargeBreakdown,
+  getProcessingFeePercentServer,
+} from './fees';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +48,9 @@ export interface PaymentResult {
   amount: number;
   originalAmount: number;
   discountAmount: number;
+  subtotalAmount: number;
+  processingFeeAmount: number;
+  processingFeePercent: number;
   currency: string;
   checkoutUrl?: string;
 }
@@ -208,7 +215,10 @@ export async function initiateSubscriptionPayment(
     promoResult
   );
 
-  if (finalAmount <= 0) {
+  const processingFeePercent = getProcessingFeePercentServer();
+  const charge = calculateChargeBreakdown(finalAmount, processingFeePercent);
+
+  if (charge.totalAmount <= 0) {
     throw new Error('Final amount must be greater than zero');
   }
 
@@ -220,6 +230,12 @@ export async function initiateSubscriptionPayment(
     plan_slug: params.planSlug,
     plan_type: plan.plan_type,
     role: plan.role,
+    billing: {
+      subtotal_amount: charge.subtotalAmount,
+      processing_fee_percent: charge.processingFeePercent,
+      processing_fee_amount: charge.processingFeeAmount,
+      total_amount: charge.totalAmount,
+    },
     payunit: {
       stage: 'created',
       gateway,
@@ -236,7 +252,7 @@ export async function initiateSubscriptionPayment(
     .from('transactions')
     .insert({
       user_id: params.userId,
-      amount: finalAmount,
+      amount: charge.totalAmount,
       currency: 'XAF',
       description: `Subscription: ${plan.name}`,
       status: 'pending',
@@ -263,7 +279,7 @@ export async function initiateSubscriptionPayment(
 
   try {
     initResult = await initializePayment({
-      amount: finalAmount,
+      amount: charge.totalAmount,
       currency: 'XAF',
       transactionId: payunitTransactionId,
       returnUrl,
@@ -321,7 +337,7 @@ export async function initiateSubscriptionPayment(
   // fall back to Payunit's hosted checkout page instead of failing the flow.
   try {
     const payunitResult = await makePayment({
-      amount: finalAmount,
+      amount: charge.totalAmount,
       currency: 'XAF',
       transactionId: payunitTransactionId,
       phoneNumber: phone,
@@ -373,9 +389,12 @@ export async function initiateSubscriptionPayment(
       return {
         transactionId: transaction.id,
         reference: payunitTransactionId,
-        amount: finalAmount,
+        amount: charge.totalAmount,
         originalAmount,
         discountAmount,
+        subtotalAmount: charge.subtotalAmount,
+        processingFeeAmount: charge.processingFeeAmount,
+        processingFeePercent: charge.processingFeePercent,
         currency: 'XAF',
         checkoutUrl: initResult.transaction_url,
       };
@@ -387,9 +406,12 @@ export async function initiateSubscriptionPayment(
   return {
     transactionId: transaction.id,
     reference: payunitTransactionId,
-    amount: finalAmount,
+    amount: charge.totalAmount,
     originalAmount,
     discountAmount,
+    subtotalAmount: charge.subtotalAmount,
+    processingFeeAmount: charge.processingFeeAmount,
+    processingFeePercent: charge.processingFeePercent,
     currency: 'XAF',
   };
 }
@@ -453,7 +475,10 @@ export async function initiateJobTierPayment(
     promoResult
   );
 
-  if (finalAmount <= 0) {
+  const processingFeePercent = getProcessingFeePercentServer();
+  const charge = calculateChargeBreakdown(finalAmount, processingFeePercent);
+
+  if (charge.totalAmount <= 0) {
     throw new Error('Final amount must be greater than zero');
   }
 
@@ -467,6 +492,12 @@ export async function initiateJobTierPayment(
     role: plan.role,
     add_on_slugs: params.addOnSlugs || [],
     add_on_ids: addOnIds,
+    billing: {
+      subtotal_amount: charge.subtotalAmount,
+      processing_fee_percent: charge.processingFeePercent,
+      processing_fee_amount: charge.processingFeeAmount,
+      total_amount: charge.totalAmount,
+    },
     payunit: {
       stage: 'created',
       gateway,
@@ -483,7 +514,7 @@ export async function initiateJobTierPayment(
     .from('transactions')
     .insert({
       user_id: params.userId,
-      amount: finalAmount,
+      amount: charge.totalAmount,
       currency: 'XAF',
       description: `Job Tier: ${plan.name}`,
       status: 'pending',
@@ -511,7 +542,7 @@ export async function initiateJobTierPayment(
 
   try {
     initResult = await initializePayment({
-      amount: finalAmount,
+      amount: charge.totalAmount,
       currency: 'XAF',
       transactionId: payunitTransactionId,
       returnUrl,
@@ -569,7 +600,7 @@ export async function initiateJobTierPayment(
   // fall back to Payunit's hosted checkout page instead of failing the flow.
   try {
     const payunitResult = await makePayment({
-      amount: finalAmount,
+      amount: charge.totalAmount,
       currency: 'XAF',
       transactionId: payunitTransactionId,
       phoneNumber: phone,
@@ -621,9 +652,12 @@ export async function initiateJobTierPayment(
       return {
         transactionId: transaction.id,
         reference: payunitTransactionId,
-        amount: finalAmount,
+        amount: charge.totalAmount,
         originalAmount,
         discountAmount,
+        subtotalAmount: charge.subtotalAmount,
+        processingFeeAmount: charge.processingFeeAmount,
+        processingFeePercent: charge.processingFeePercent,
         currency: 'XAF',
         checkoutUrl: initResult.transaction_url,
       };
@@ -635,9 +669,12 @@ export async function initiateJobTierPayment(
   return {
     transactionId: transaction.id,
     reference: payunitTransactionId,
-    amount: finalAmount,
+    amount: charge.totalAmount,
     originalAmount,
     discountAmount,
+    subtotalAmount: charge.subtotalAmount,
+    processingFeeAmount: charge.processingFeeAmount,
+    processingFeePercent: charge.processingFeePercent,
     currency: 'XAF',
   };
 }

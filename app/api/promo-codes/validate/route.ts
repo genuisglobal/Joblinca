@@ -2,6 +2,10 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { validatePromoCode, calculateDiscount } from '@/lib/payments/index';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import {
+  calculateChargeBreakdown,
+  getProcessingFeePercentServer,
+} from '@/lib/payments/fees';
 
 /**
  * POST /api/promo-codes/validate
@@ -57,6 +61,8 @@ export async function POST(request: NextRequest) {
     }
 
     const discount = calculateDiscount(plan.amount_xaf, result);
+    const feePercent = getProcessingFeePercentServer();
+    const charge = calculateChargeBreakdown(discount.finalAmount, feePercent);
 
     return NextResponse.json({
       valid: true,
@@ -65,6 +71,9 @@ export async function POST(request: NextRequest) {
       original_amount: discount.originalAmount,
       discount_amount: discount.discountAmount,
       final_amount: discount.finalAmount,
+      processing_fee_percent: charge.processingFeePercent,
+      processing_fee_amount: charge.processingFeeAmount,
+      total_amount: charge.totalAmount,
     });
   } catch {
     return NextResponse.json({ error: 'Validation failed' }, { status: 500 });
