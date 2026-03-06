@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface Plan {
   id: string;
@@ -18,7 +18,17 @@ interface PaymentModalProps {
   onSuccess?: () => void;
 }
 
-type PaymentStatus = 'idle' | 'validating' | 'processing' | 'polling' | 'success' | 'failed';
+type PaymentStatus =
+  | 'idle'
+  | 'validating'
+  | 'processing'
+  | 'polling'
+  | 'success'
+  | 'failed';
+
+const POLL_INTERVAL_MS = 5000;
+const POLL_TIMEOUT_MS = 5 * 60 * 1000;
+const FALLBACK_REDIRECT_MS = 60 * 1000;
 
 export default function PaymentModal({
   plan,
@@ -41,11 +51,41 @@ export default function PaymentModal({
   const [transactionId, setTransactionId] = useState('');
   const [carrier, setCarrier] = useState('');
 
-  const finalAmount = promoResult?.valid
-    ? promoResult.final_amount
-    : plan.amount_xaf;
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const stopPollingRef = useRef(false);
 
-  // Auto-detect carrier from phone number
+  const finalAmount = promoResult?.valid ? promoResult.final_amount : plan.amount_xaf;
+
+  const clearTimers = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (fallbackTimerRef.current) {
+      clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const goToTrackingPage = useCallback((txId: string) => {
+    window.location.assign(`/payment/return?tx=${encodeURIComponent(txId)}`);
+  }, []);
+
+  const goToSubscriptionActivePage = useCallback((txId: string) => {
+    window.location.assign(
+      `/payment/subscription-active?tx=${encodeURIComponent(txId)}`
+    );
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopPollingRef.current = true;
+      clearTimers();
+    };
+  }, [clearTimers]);
+
+  // Auto-detect carrier from phone number (buttons still allow manual override).
   useEffect(() => {
     const cleaned = phone.replace(/[\s\-()]/g, '').replace(/^\+?237/, '');
     if (cleaned.length < 3) {
@@ -56,7 +96,11 @@ export default function PaymentModal({
     const prefix2 = cleaned.substring(0, 2);
     const prefixNum = parseInt(prefix3, 10);
 
-    if (prefix2 === '67' || (prefixNum >= 650 && prefixNum <= 654) || (prefixNum >= 680 && prefixNum <= 689)) {
+    if (
+      prefix2 === '67' ||
+      (prefixNum >= 650 && prefixNum <= 654) ||
+      (prefixNum >= 680 && prefixNum <= 689)
+    ) {
       setCarrier('MTN MoMo');
     } else if (prefix2 === '69' || (prefixNum >= 655 && prefixNum <= 659)) {
       setCarrier('Orange Money');
@@ -65,7 +109,6 @@ export default function PaymentModal({
     }
   }, [phone]);
 
-  // Validate promo code
   async function validatePromo() {
     if (!promoCode.trim()) return;
     setPromoLoading(true);
@@ -79,56 +122,86 @@ export default function PaymentModal({
       const data = await res.json();
       setPromoResult(data);
     } catch {
-      setPromoResult({ valid: false, discount_amount: 0, final_amount: plan.amount_xaf, reason: 'Validation failed' });
+      setPromoResult({
+        valid: false,
+        discount_amount: 0,
+        final_amount: plan.amount_xaf,
+        reason: 'Validation failed',
+      });
+    } finally {
+      setPromoLoading(false);
     }
-    setPromoLoading(false);
   }
 
-  // Poll for payment status
-  const pollStatus = useCallback(async (txId: string) => {
-    const maxAttempts = 60; // 5 minutes at 5-second intervals
-    let attempts = 0;
+  const pollStatus = useCallback(
+    async (txId: string) => {
+      clearTimers();
+      stopPollingRef.current = false;
+      const startedAt = Date.now();
 
-    const poll = async () => {
-      if (attempts >= maxAttempts) {
-        setStatus('failed');
-        setError('Payment timed out. Please check your phone and try again.');
-        return;
-      }
-      attempts++;
+      fallbackTimerRef.current = setTimeout(() => {
+        if (!stopPollingRef.current) {
+          goToTrackingPage(txId);
+        }
+      }, FALLBACK_REDIRECT_MS);
 
-      try {
-        const res = await fetch(`/api/payments/${txId}/status`);
-        const data = await res.json();
-
-        if (data.status === 'completed') {
-          setStatus('success');
-          onSuccess?.();
+      const poll = async () => {
+        if (stopPollingRef.current) {
           return;
         }
-        if (data.status === 'failed') {
+
+        if (Date.now() - startedAt >= POLL_TIMEOUT_MS) {
+          stopPollingRef.current = true;
+          clearTimers();
           setStatus('failed');
-          setError('Payment was declined. Please try again.');
+          setError(
+            'Payment timed out. You can edit your number and retry, or continue tracking this payment.'
+          );
           return;
         }
 
-        // Still pending, poll again
-        setTimeout(poll, 5000);
-      } catch {
-        setTimeout(poll, 5000);
-      }
-    };
+        try {
+          const res = await fetch(`/api/payments/${txId}/status`);
+          const data = await res.json();
 
-    poll();
-  }, [onSuccess]);
+          if (data.status === 'completed') {
+            stopPollingRef.current = true;
+            clearTimers();
+            setStatus('success');
+            onSuccess?.();
+            goToSubscriptionActivePage(txId);
+            return;
+          }
 
-  // Initiate payment
+          if (data.status === 'failed') {
+            stopPollingRef.current = true;
+            clearTimers();
+            setStatus('failed');
+            setError(
+              'Payment was not confirmed. Edit your number if needed and retry.'
+            );
+            return;
+          }
+        } catch {
+          // Ignore and continue polling.
+        }
+
+        pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
+      };
+
+      await poll();
+    },
+    [clearTimers, goToSubscriptionActivePage, goToTrackingPage, onSuccess]
+  );
+
   async function handlePayment(gatewayOverride?: string) {
     if (!phone.trim()) {
       setError('Please enter your phone number');
       return;
     }
 
+    stopPollingRef.current = false;
+    clearTimers();
     setError('');
     setStatus('processing');
 
@@ -171,7 +244,7 @@ export default function PaymentModal({
 
       setTransactionId(data.transaction_id);
       setStatus('polling');
-      pollStatus(data.transaction_id);
+      await pollStatus(data.transaction_id);
     } catch {
       setStatus('failed');
       setError('Something went wrong. Please try again.');
@@ -181,7 +254,6 @@ export default function PaymentModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-700">
           <h2 className="text-lg font-semibold text-white">Complete Payment</h2>
           <button
@@ -195,9 +267,7 @@ export default function PaymentModal({
           </button>
         </div>
 
-        {/* Content */}
         <div className="p-5 space-y-5">
-          {/* Plan Summary */}
           <div className="bg-gray-900 rounded-lg p-4">
             <p className="text-sm text-gray-400">Plan</p>
             <p className="text-white font-medium">{plan.name}</p>
@@ -229,14 +299,10 @@ export default function PaymentModal({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-white mb-1">Payment Successful</h3>
-              <p className="text-gray-400 text-sm">Your subscription is now active.</p>
-              <button
-                onClick={onClose}
-                className="mt-4 px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
-              >
-                Done
-              </button>
+              <h3 className="text-lg font-semibold text-white mb-1">Payment Confirmed</h3>
+              <p className="text-gray-400 text-sm">
+                Redirecting you to your active subscription page...
+              </p>
             </div>
           ) : status === 'polling' ? (
             <div className="text-center py-6">
@@ -249,13 +315,17 @@ export default function PaymentModal({
               <p className="text-gray-400 text-sm">
                 Check your phone for the {carrier || 'Mobile Money'} prompt and approve the payment.
               </p>
+              <p className="text-xs text-gray-500 mt-2">
+                If confirmation takes longer than 1 minute, we will continue this flow on a dedicated tracking page.
+              </p>
               {transactionId && (
-                <p className="text-xs text-gray-600 mt-2">Ref: {transactionId.substring(0, 8)}</p>
+                <p className="text-xs text-gray-600 mt-2">
+                  Ref: {transactionId.substring(0, 8)}
+                </p>
               )}
             </div>
           ) : (
             <>
-              {/* Phone Number */}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">
                   Phone Number
@@ -276,12 +346,11 @@ export default function PaymentModal({
                 </div>
                 {carrier && (
                   <p className="text-xs text-gray-500 mt-1">
-                    Detected: {carrier}
+                    Detected: {carrier}. You can still choose a different network below.
                   </p>
                 )}
               </div>
 
-              {/* Promo Code */}
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">
                   Promo Code (optional)
@@ -319,14 +388,21 @@ export default function PaymentModal({
                 )}
               </div>
 
-              {/* Error */}
               {error && (
-                <div className="bg-red-900/20 border border-red-800 rounded-lg p-3">
+                <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 space-y-2">
                   <p className="text-sm text-red-400">{error}</p>
+                  {transactionId && (
+                    <button
+                      type="button"
+                      onClick={() => goToTrackingPage(transactionId)}
+                      className="text-xs text-blue-300 hover:text-blue-200 underline"
+                    >
+                      Continue tracking this payment
+                    </button>
+                  )}
                 </div>
               )}
 
-              {/* Pay Button */}
               <div className="grid gap-2 sm:grid-cols-2">
                 <button
                   onClick={() => handlePayment('CM_MTNMOMO')}

@@ -1,5 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import {
+  finalizeFailedPayment,
+  finalizeSuccessfulPayment,
+} from '@/lib/payments/finalize';
 
 /**
  * POST /api/payments/webhook
@@ -68,184 +72,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch the full transaction
-    const { data: transaction, error: txError } = await supabase
-      .from('transactions')
-      .select('*, pricing_plans(*)')
-      .eq('id', transactionId)
-      .single();
-
-    if (txError || !transaction) {
-      return NextResponse.json(
-        { error: 'Transaction not found' },
-        { status: 404 }
-      );
-    }
-
-    // Prevent double-processing (allow if completion came from polling without callback)
-    if (transaction.status === 'completed' && transaction.callback_received_at) {
-      return NextResponse.json({ message: 'Already processed' }, { status: 200 });
-    }
-
-    const meta = (transaction.metadata || {}) as Record<string, unknown>;
-    const existingPayunit =
-      (meta.payunit as Record<string, unknown> | undefined) || {};
-
     if (payunitStatus === 'SUCCESS') {
-      // Update transaction to completed
-      await supabase
-        .from('transactions')
-        .update({
-          status: 'completed',
-          callback_received_at: new Date().toISOString(),
-          provider_reference:
-            payunitTransactionId || transaction.provider_reference,
-          metadata: {
-            ...meta,
-            payunit: {
-              ...existingPayunit,
-              transaction_id: payunitTransactionId,
-              transaction_status: payunitStatus,
-              gateway,
-              amount: data.amount || body?.amount,
-              currency: data.currency || body?.currency,
-              t_id: data.t_id,
-              payment_status: data.payment_status,
-            },
-          },
-        })
-        .eq('id', transactionId);
-
-      const plan = transaction.pricing_plans;
-
-      if (plan) {
-        const planType = plan.plan_type;
-        const planRole = plan.role;
-
-        // --- Subscription plan ---
-        if (planType === 'subscription' && plan.duration_days) {
-          // Check for existing active subscription to extend
-          const { data: existingSub } = await supabase
-            .from('subscriptions')
-            .select('id, end_date')
-            .eq('user_id', transaction.user_id)
-            .eq('status', 'active')
-            .order('end_date', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          const startDate = new Date();
-          let endDate: Date;
-
-          if (existingSub && new Date(existingSub.end_date) > startDate) {
-            // Extend from current end date
-            endDate = new Date(existingSub.end_date);
-          } else {
-            endDate = new Date(startDate);
-          }
-          endDate.setDate(endDate.getDate() + plan.duration_days);
-
-          if (existingSub && new Date(existingSub.end_date) > startDate) {
-            // Extend existing subscription
-            await supabase
-              .from('subscriptions')
-              .update({
-                end_date: endDate.toISOString().split('T')[0],
-                plan_id: plan.id,
-                transaction_id: transactionId,
-              })
-              .eq('id', existingSub.id);
-          } else {
-            // Create new subscription
-            await supabase.from('subscriptions').insert({
-              user_id: transaction.user_id,
-              type: plan.slug,
-              status: 'active',
-              start_date: startDate.toISOString().split('T')[0],
-              end_date: endDate.toISOString().split('T')[0],
-              plan_id: plan.id,
-              transaction_id: transactionId,
-              auto_renew: false,
-            });
-          }
-
-          // Update recruiter verification if applicable
-          if (planRole === 'recruiter') {
-            let verificationStatus = 'verified';
-            if (plan.slug === 'recruiter_basic') {
-              verificationStatus = 'verified';
-            }
-            await supabase
-              .from('recruiter_profiles')
-              .update({ verification_status: verificationStatus })
-              .eq('user_id', transaction.user_id);
-          }
-        }
-
-        // --- One-time recruiter verification ---
-        if (planType === 'one_time' && planRole === 'recruiter') {
-          await supabase
-            .from('recruiter_profiles')
-            .update({ verification_status: 'verified' })
-            .eq('user_id', transaction.user_id);
-
-          // Create a subscription record for tracking (no expiry extension needed)
-          await supabase.from('subscriptions').insert({
-            user_id: transaction.user_id,
-            type: plan.slug,
-            status: 'active',
-            start_date: new Date().toISOString().split('T')[0],
-            end_date: null,
-            plan_id: plan.id,
-            transaction_id: transactionId,
-          });
-        }
-
-        // --- Per-job tier ---
-        if (planType === 'per_job' && transaction.job_id) {
-          const addOnSlugs = (meta.add_on_slugs as string[]) || [];
-          const isFeatured = addOnSlugs.includes('job_tier1_featured');
-          const socialPromo = addOnSlugs.includes('job_tier1_social');
-
-          let hiringTier = 'tier1_diy';
-          if (plan.slug === 'job_tier2_shortlist') {
-            hiringTier = 'tier2_shortlist';
-          }
-
-          await supabase
-            .from('jobs')
-            .update({
-              hiring_tier: hiringTier,
-              tier_transaction_id: transactionId,
-              is_featured: isFeatured,
-              social_promotion: socialPromo,
-            })
-            .eq('id', transaction.job_id);
-        }
-      }
-
-      // --- Promo code redemption ---
-      if (transaction.promo_code_id && transaction.discount_amount > 0) {
-        // Increment usage count
-        const { data: promoData } = await supabase
-          .from('promo_codes')
-          .select('current_uses')
-          .eq('id', transaction.promo_code_id)
-          .single();
-
-        await supabase
-          .from('promo_codes')
-          .update({ current_uses: (promoData?.current_uses ?? 0) + 1 })
-          .eq('id', transaction.promo_code_id);
-
-        // Insert redemption record
-        await supabase.from('promo_code_redemptions').insert({
-          promo_code_id: transaction.promo_code_id,
-          user_id: transaction.user_id,
-          transaction_id: transactionId,
-          discount_applied: transaction.discount_amount,
-        });
-      }
+      await finalizeSuccessfulPayment({
+        transactionId,
+        payunitTransactionId,
+        gateway,
+        amount: data.amount || body?.amount,
+        currency: data.currency || body?.currency,
+        tId: data.t_id,
+        paymentStatus: data.payment_status,
+        source: 'webhook',
+      });
 
       return NextResponse.json({ message: 'Payment processed successfully' }, { status: 200 });
     }
@@ -257,25 +94,14 @@ export async function POST(request: NextRequest) {
         (body?.reason as string) ||
         'Payment failed';
 
-      await supabase
-        .from('transactions')
-        .update({
-          status: 'failed',
-          callback_received_at: new Date().toISOString(),
-          provider_reference:
-            payunitTransactionId || transaction.provider_reference,
-          metadata: {
-            ...meta,
-            payunit: {
-              ...existingPayunit,
-              transaction_id: payunitTransactionId,
-              transaction_status: payunitStatus,
-              gateway,
-              failure_reason: failureReason,
-            },
-          },
-        })
-        .eq('id', transactionId);
+      await finalizeFailedPayment({
+        transactionId,
+        payunitTransactionId,
+        gateway,
+        reason: failureReason,
+        status: payunitStatus as 'FAILED' | 'CANCELLED',
+        source: 'webhook',
+      });
 
       return NextResponse.json({ message: 'Payment failure recorded' }, { status: 200 });
     }
