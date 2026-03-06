@@ -13,8 +13,8 @@ function parseFeePercent(raw: string | undefined): number {
 
 export function getProcessingFeePercentServer(): number {
   const raw =
-    process.env.PAYMENT_PROCESSING_FEE_PERCENT ||
-    process.env.NEXT_PUBLIC_PAYMENT_PROCESSING_FEE_PERCENT;
+    process.env.NEXT_PUBLIC_PAYMENT_PROCESSING_FEE_PERCENT ||
+    process.env.PAYMENT_PROCESSING_FEE_PERCENT;
   return parseFeePercent(raw);
 }
 
