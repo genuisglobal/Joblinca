@@ -70,6 +70,16 @@ export interface DiscountResult {
   finalAmount: number;
 }
 
+const RECRUITER_PER_JOB_BASE_PLAN_SLUGS = new Set([
+  'job_tier1_diy',
+  'job_tier2_shortlist',
+]);
+
+const ALLOWED_ADD_ONS_BY_BASE_PLAN: Record<string, string[]> = {
+  job_tier1_diy: ['job_tier1_featured'],
+  job_tier2_shortlist: [],
+};
+
 function logHostedCheckoutFallback(
   flow: 'subscription' | 'job_tier',
   internalTransactionId: string,
@@ -436,23 +446,48 @@ export async function initiateJobTierPayment(
   if (planError || !plan) {
     throw new Error('Plan not found or inactive');
   }
+  if (plan.role !== 'recruiter' || plan.plan_type !== 'per_job') {
+    throw new Error('Invalid recruiter job tier plan');
+  }
+  if (!RECRUITER_PER_JOB_BASE_PLAN_SLUGS.has(plan.slug)) {
+    throw new Error('This recruiter plan is not available');
+  }
+
+  const requestedAddOnSlugs = Array.from(
+    new Set(
+      (params.addOnSlugs || [])
+        .map((slug) => String(slug || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const allowedAddOnSlugs = new Set(ALLOWED_ADD_ONS_BY_BASE_PLAN[plan.slug] || []);
+  const invalidAddOns = requestedAddOnSlugs.filter(
+    (slug) => !allowedAddOnSlugs.has(slug)
+  );
+  if (invalidAddOns.length > 0) {
+    throw new Error('Selected add-ons are not available for this plan');
+  }
 
   // 2. Fetch add-on plans if any
   let totalAmount = plan.amount_xaf;
   const addOnIds: string[] = [];
 
-  if (params.addOnSlugs && params.addOnSlugs.length > 0) {
+  if (requestedAddOnSlugs.length > 0) {
     const { data: addOns } = await supabase
       .from('pricing_plans')
       .select('*')
-      .in('slug', params.addOnSlugs)
-      .eq('is_active', true);
+      .in('slug', requestedAddOnSlugs)
+      .eq('is_active', true)
+      .eq('role', 'recruiter')
+      .eq('plan_type', 'per_job');
 
-    if (addOns) {
-      for (const addOn of addOns) {
-        totalAmount += addOn.amount_xaf;
-        addOnIds.push(addOn.id);
-      }
+    if (!addOns || addOns.length !== requestedAddOnSlugs.length) {
+      throw new Error('One or more add-ons are no longer available');
+    }
+
+    for (const addOn of addOns) {
+      totalAmount += addOn.amount_xaf;
+      addOnIds.push(addOn.id);
     }
   }
 
@@ -490,7 +525,7 @@ export async function initiateJobTierPayment(
     plan_slug: params.planSlug,
     plan_type: plan.plan_type,
     role: plan.role,
-    add_on_slugs: params.addOnSlugs || [],
+    add_on_slugs: requestedAddOnSlugs,
     add_on_ids: addOnIds,
     billing: {
       subtotal_amount: charge.subtotalAmount,
