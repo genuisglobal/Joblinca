@@ -11,6 +11,9 @@ interface ProfilePhoneRow {
   phone: string | null;
 }
 
+const FUZZY_MIN_CONFIDENCE_SCORE = 85;
+const FUZZY_AMBIGUITY_GAP = 5;
+
 export function normalizePhoneDigits(value: string | null | undefined): string {
   if (!value) return '';
   return value.replace(/[^\d]/g, '');
@@ -74,18 +77,27 @@ export async function resolveProfileIdByPhone(
 ): Promise<string | null> {
   const e164 = toE164(phone);
   const candidates = buildPhoneLookupCandidates(e164);
+  const exactMatches = new Set<string>();
 
   for (const candidate of candidates) {
     const { data } = await db
       .from('profiles')
       .select('id')
       .eq('phone', candidate)
-      .limit(1)
-      .maybeSingle();
+      .limit(2);
 
-    if ((data as { id?: string } | null)?.id) {
-      return (data as { id: string }).id;
+    for (const row of ((data || []) as Array<{ id?: string | null }>)) {
+      if (!row.id) continue;
+      exactMatches.add(row.id);
     }
+
+    if (exactMatches.size > 1) {
+      return null;
+    }
+  }
+
+  if (exactMatches.size === 1) {
+    return Array.from(exactMatches)[0];
   }
 
   const digits = normalizePhoneDigits(e164);
@@ -97,8 +109,7 @@ export async function resolveProfileIdByPhone(
     ])
   ).filter((value) => value.length >= 7);
 
-  let bestMatch: { id: string; score: number } | null = null;
-  const seenIds = new Set<string>();
+  const scoreById = new Map<string, number>();
 
   for (const needle of fuzzyNeedles) {
     const { data } = await db
@@ -108,17 +119,34 @@ export async function resolveProfileIdByPhone(
       .limit(50);
 
     for (const row of ((data || []) as ProfilePhoneRow[])) {
-      if (!row.id || seenIds.has(row.id)) continue;
-      seenIds.add(row.id);
+      if (!row.id) continue;
 
       const score = scorePhoneDigitMatch(e164, row.phone);
       if (score <= 0) continue;
 
-      if (!bestMatch || score > bestMatch.score) {
-        bestMatch = { id: row.id, score };
+      const previous = scoreById.get(row.id) ?? 0;
+      if (score > previous) {
+        scoreById.set(row.id, score);
       }
     }
   }
 
-  return bestMatch?.id ?? null;
+  const ranked = Array.from(scoreById.entries())
+    .map(([id, score]) => ({ id, score }))
+    .sort((a, b) => b.score - a.score);
+
+  if (ranked.length === 0) return null;
+
+  const best = ranked[0];
+  const second = ranked[1];
+
+  if (best.score < FUZZY_MIN_CONFIDENCE_SCORE) {
+    return null;
+  }
+
+  if (second && second.score >= best.score - FUZZY_AMBIGUITY_GAP) {
+    return null;
+  }
+
+  return best.id;
 }

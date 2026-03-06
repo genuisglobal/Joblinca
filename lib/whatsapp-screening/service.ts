@@ -53,6 +53,9 @@ interface ScreeningSessionRow {
   ai_last_generated_at: string | null;
   ai_followup_generated: boolean;
   ai_followup_question: string | null;
+  last_inbound_at?: string | null;
+  started_at?: string | null;
+  updated_at?: string | null;
 }
 
 interface ScreeningAnswerRow {
@@ -101,6 +104,7 @@ interface InboundScreeningResult {
   reason:
     | 'not_text'
     | 'not_apply_intent'
+    | 'bypassed_session'
     | 'duplicate_message'
     | 'screening_handled'
     | 'screening_cancelled';
@@ -143,6 +147,9 @@ export interface NotificationRetryResult {
 const screeningDb = createServiceSupabaseClient();
 const UUID_REGEX =
   /[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i;
+const ACTIVE_SCREENING_IDLE_TIMEOUT_MINUTES = Number(
+  process.env.WA_SCREENING_IDLE_TIMEOUT_MINUTES || '45'
+);
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -167,6 +174,27 @@ function safeTextPreview(value: string | null, max = 80): string | null {
   const compact = value.replace(/\s+/g, ' ').trim();
   if (!compact) return null;
   return compact.length <= max ? compact : `${compact.slice(0, max)}...`;
+}
+
+function normalizeShortText(value: string | null | undefined): string {
+  return (value || '').trim().toLowerCase();
+}
+
+function isEscapeToMenuIntent(textBody: string): boolean {
+  const value = normalizeShortText(textBody);
+  return ['menu', 'help', 'aide', 'start', 'hi', 'hello', 'bonjour', 'salut', '++'].includes(value);
+}
+
+function getSessionLastActivityIso(session: ScreeningSessionRow): string | null {
+  return session.last_inbound_at || session.updated_at || session.started_at || null;
+}
+
+function getSessionIdleMinutes(session: ScreeningSessionRow): number | null {
+  const lastActivityIso = getSessionLastActivityIso(session);
+  if (!lastActivityIso) return null;
+  const parsed = Date.parse(lastActivityIso);
+  if (Number.isNaN(parsed)) return null;
+  return Math.max(0, (Date.now() - parsed) / 60000);
 }
 
 function isMissingColumnError(error: DbErrorLike | null | undefined): boolean {
@@ -1560,6 +1588,12 @@ export async function handleWhatsAppScreeningInbound(
     return { handled: false, reason: 'not_text' };
   }
 
+  const applyIntent = parseApplyIntent(
+    textBody,
+    input.message.referral?.source_url ?? null,
+    Boolean(input.message.context?.id)
+  );
+
   if (await findDuplicateInbound(input.message.id)) {
     logEvent('info', 'duplicate_inbound', {
       waMessageId: input.message.id,
@@ -1569,6 +1603,41 @@ export async function handleWhatsAppScreeningInbound(
   }
 
   const latestSession = await findLatestSession(input.conversationId);
+
+  if (latestSession && !TERMINAL_STATES.has(latestSession.state)) {
+    if (isEscapeToMenuIntent(textBody)) {
+      await recordInboundEvent(latestSession.id, input.message, textBody);
+      await updateSession(latestSession.id, {
+        state: 'cancelled',
+        cancelled_at: nowIso(),
+        last_inbound_message_id: input.message.id,
+        last_inbound_at: nowIso(),
+      });
+      logEvent('info', 'session_cancelled_for_menu_escape', {
+        sessionId: latestSession.id,
+        state: latestSession.state,
+        phone: maskPhone(input.waPhone),
+      });
+      return { handled: false, reason: 'bypassed_session' };
+    }
+
+    const idleMinutes = getSessionIdleMinutes(latestSession);
+    if (
+      idleMinutes !== null &&
+      idleMinutes > ACTIVE_SCREENING_IDLE_TIMEOUT_MINUTES &&
+      !applyIntent.isApplyIntent &&
+      !isCancelIntent(textBody)
+    ) {
+      logEvent('info', 'stale_active_session_bypassed', {
+        sessionId: latestSession.id,
+        state: latestSession.state,
+        idleMinutes: Math.round(idleMinutes),
+        timeoutMinutes: ACTIVE_SCREENING_IDLE_TIMEOUT_MINUTES,
+        waMessageId: input.message.id,
+      });
+      return { handled: false, reason: 'bypassed_session' };
+    }
+  }
 
   if (isCancelIntent(textBody) && latestSession && !TERMINAL_STATES.has(latestSession.state)) {
     await recordInboundEvent(latestSession.id, input.message, textBody);
@@ -1583,16 +1652,11 @@ export async function handleWhatsAppScreeningInbound(
   }
 
   if (!latestSession) {
-    const intent = parseApplyIntent(
-      textBody,
-      input.message.referral?.source_url ?? null,
-      Boolean(input.message.context?.id)
-    );
-    if (!intent.isApplyIntent) {
+    if (!applyIntent.isApplyIntent) {
       return { handled: false, reason: 'not_apply_intent' };
     }
 
-    const session = await createSessionForIntent(input, intent.entrySource);
+    const session = await createSessionForIntent(input, applyIntent.entrySource);
     if (!session) {
       return { handled: true, reason: 'screening_handled' };
     }
@@ -1602,12 +1666,7 @@ export async function handleWhatsAppScreeningInbound(
   }
 
   if (TERMINAL_STATES.has(latestSession.state)) {
-    const terminalIntent = parseApplyIntent(
-      textBody,
-      input.message.referral?.source_url ?? null,
-      Boolean(input.message.context?.id)
-    );
-    if (!terminalIntent.isApplyIntent && !isCancelIntent(textBody)) {
+    if (!applyIntent.isApplyIntent && !isCancelIntent(textBody)) {
       return { handled: false, reason: 'not_apply_intent' };
     }
   }
