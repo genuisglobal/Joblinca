@@ -42,10 +42,10 @@ export default function SubscriptionBadge() {
       <div className="bg-gray-800 rounded-lg p-3 border border-gray-700">
         <p className="text-sm text-gray-400">No active plan</p>
         <Link
-          href="/pricing"
+          href="/dashboard/subscription"
           className="text-xs text-blue-400 hover:text-blue-300 mt-1 inline-block"
         >
-          Upgrade now
+          Manage plan
         </Link>
       </div>
     );
@@ -84,7 +84,7 @@ export default function SubscriptionBadge() {
       )}
       <div className="flex gap-2 mt-2">
         <Link
-          href="/pricing"
+          href="/dashboard/subscription"
           className="text-xs text-blue-400 hover:text-blue-300"
         >
           {isExpiringSoon ? 'Renew' : 'Upgrade'}

@@ -28,6 +28,7 @@ export async function getUserSubscription(
   userId: string
 ): Promise<UserSubscription> {
   const supabase = createServiceSupabaseClient();
+  const today = new Date().toISOString().split('T')[0];
 
   const { data: sub } = await supabase
     .from('subscriptions')
@@ -49,7 +50,7 @@ export async function getUserSubscription(
     )
     .eq('user_id', userId)
     .eq('status', 'active')
-    .gte('end_date', new Date().toISOString().split('T')[0])
+    .or(`end_date.gte.${today},end_date.is.null`)
     .order('end_date', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -64,10 +65,13 @@ export async function getUserSubscription(
     };
   }
 
-  const endDate = new Date(sub.end_date);
-  const now = new Date();
-  const diffMs = endDate.getTime() - now.getTime();
-  const daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  let daysRemaining = 0;
+  if (sub.end_date) {
+    const endDate = new Date(sub.end_date);
+    const now = new Date();
+    const diffMs = endDate.getTime() - now.getTime();
+    daysRemaining = Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  }
 
   // pricing_plans comes back as an object (single FK join)
   const plan = sub.pricing_plans as unknown as {
