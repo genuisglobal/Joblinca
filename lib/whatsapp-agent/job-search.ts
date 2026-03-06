@@ -5,8 +5,9 @@ const jobSearchDb = createServiceSupabaseClient();
 export type TimeFilter = '24h' | '7d' | '30d';
 
 export interface SearchJobsInput {
-  location: string;
-  roleKeywords: string;
+  location?: string | null;
+  roleKeywords?: string | null;
+  jobType?: 'job' | 'internship' | null;
   timeFilter: TimeFilter;
   offset: number;
   limit: number;
@@ -28,6 +29,7 @@ export interface SearchJobRow {
   created_at: string;
   closes_at: string | null;
   recruiter_id: string;
+  job_type: string | null;
   hiring_tier: string | null;
   wa_ai_screening_enabled: boolean | null;
 }
@@ -69,20 +71,25 @@ export async function searchPublishedJobs(input: SearchJobsInput): Promise<{
   const limit = Math.max(1, Math.min(25, input.limit));
   const offset = Math.max(0, input.offset);
   const sinceIso = toSinceIso(input.timeFilter);
-  const roleTerm = safeSearchTerm(input.roleKeywords);
-  const locationTerm = safeSearchTerm(input.location);
+  const roleTerm = safeSearchTerm(input.roleKeywords || '');
+  const locationTerm = safeSearchTerm(input.location || '');
+  const jobType = input.jobType || null;
 
   let query = jobSearchDb
     .from('jobs')
     .select(
-      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, hiring_tier, wa_ai_screening_enabled',
+      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, job_type, hiring_tier, wa_ai_screening_enabled',
       { count: 'exact' }
     )
     .eq('published', true)
-    .eq('approval_status', 'approved')
+    .or('approval_status.eq.approved,approval_status.is.null')
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
+
+  if (jobType) {
+    query = query.eq('job_type', jobType);
+  }
 
   if (locationTerm) {
     query = query.ilike('location', `%${locationTerm}%`);
@@ -114,11 +121,11 @@ export async function getJobByPublicId(publicId: string): Promise<SearchJobRow |
   const { data, error } = await jobSearchDb
     .from('jobs')
     .select(
-      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, hiring_tier, wa_ai_screening_enabled'
+      'id, public_id, title, location, salary, company_name, description, apply_method, external_apply_url, apply_email, apply_phone, apply_whatsapp, created_at, closes_at, recruiter_id, job_type, hiring_tier, wa_ai_screening_enabled'
     )
     .eq('public_id', normalized)
     .eq('published', true)
-    .eq('approval_status', 'approved')
+    .or('approval_status.eq.approved,approval_status.is.null')
     .maybeSingle();
 
   if (error || !data) return null;
@@ -138,15 +145,17 @@ export function formatJobBatchMessage(params: {
   lockedCount: number;
   hasMore: boolean;
   subscribed: boolean;
+  headingLabel?: string;
 }): string {
   const lines: string[] = [];
   const visibleJobs = params.jobs.slice(0, params.visibleCount);
+  const headingLabel = params.headingLabel || 'Jobs';
 
   if (visibleJobs.length === 0) {
     return 'No jobs found for that filter. Reply MENU to try a new search.';
   }
 
-  lines.push(`Jobs (${visibleJobs.length}${params.lockedCount > 0 ? ` + ${params.lockedCount} locked` : ''})`);
+  lines.push(`${headingLabel} (${visibleJobs.length}${params.lockedCount > 0 ? ` + ${params.lockedCount} locked` : ''})`);
   lines.push('');
 
   for (const job of visibleJobs) {

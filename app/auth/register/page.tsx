@@ -13,6 +13,9 @@ function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialRole = (searchParams.get('role') as UserRole) || 'job_seeker';
+  const initialPhone = searchParams.get('phone') || '';
+  const whatsappSource = (searchParams.get('source') || '').toLowerCase() === 'whatsapp';
+  const isWhatsappPhoneLocked = whatsappSource && initialPhone.trim().length > 0;
   const { t } = useTranslation();
 
   const supabase = createClient();
@@ -21,7 +24,7 @@ function RegisterForm() {
   );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState(initialPhone);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -72,6 +75,11 @@ function RegisterForm() {
     setIsLoading(true);
 
     try {
+      if (isWhatsappPhoneLocked && phone.trim() !== initialPhone.trim()) {
+        setError('Use the same WhatsApp number to create your account.');
+        return;
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -235,6 +243,11 @@ function RegisterForm() {
               <label htmlFor="phone" className="block text-sm font-medium text-neutral-300 mb-2">
                 {t("auth.register.phone")}
               </label>
+              {isWhatsappPhoneLocked && (
+                <p className="text-xs text-primary-300 mb-2">
+                  This number is locked to match your WhatsApp account.
+                </p>
+              )}
               <div className="relative">
                 <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
                 <input
@@ -242,8 +255,9 @@ function RegisterForm() {
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors"
+                  className={`w-full pl-12 pr-4 py-3 bg-neutral-800 border border-neutral-700 rounded-lg text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500 transition-colors ${isWhatsappPhoneLocked ? 'opacity-80 cursor-not-allowed' : ''}`}
                   placeholder={t("auth.register.phonePlaceholder")}
+                  readOnly={isWhatsappPhoneLocked}
                   required
                 />
               </div>

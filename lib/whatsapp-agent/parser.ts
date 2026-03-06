@@ -1,4 +1,6 @@
 export type ParsedTimeFilter = '24h' | '7d' | '30d';
+export type ParsedLocationScope = 'nationwide' | 'town';
+export type ParsedRoleMode = 'all' | 'specific';
 
 export interface ParsedApplyCommand {
   isApply: boolean;
@@ -55,7 +57,7 @@ export function isGreeting(input: string): boolean {
 
 export function isHelpMenu(input: string): boolean {
   const value = normalize(input);
-  return ['help', 'menu', 'aide', '4'].includes(value);
+  return ['help', 'menu', 'aide'].includes(value);
 }
 
 export function isNextCommand(input: string): boolean {
@@ -147,6 +149,67 @@ export function parseTimeFilter(input: string): ParsedTimeFilter | null {
   return null;
 }
 
+export function parseLocationScope(input: string): ParsedLocationScope | null {
+  const value = normalize(input);
+  if (
+    value === '1' ||
+    value === 'nationwide' ||
+    value === 'national' ||
+    value === 'all cameroon' ||
+    value === 'countrywide' ||
+    value === 'anywhere'
+  ) {
+    return 'nationwide';
+  }
+
+  if (
+    value === '2' ||
+    value === 'town' ||
+    value === 'city' ||
+    value === 'local town' ||
+    value === 'specific town'
+  ) {
+    return 'town';
+  }
+
+  return null;
+}
+
+export function parseRoleMode(input: string): ParsedRoleMode | null {
+  const value = normalize(input);
+  if (
+    value === '1' ||
+    value === 'all' ||
+    value === 'all jobs' ||
+    value === 'any role'
+  ) {
+    return 'all';
+  }
+
+  if (
+    value === '2' ||
+    value === 'specific' ||
+    value === 'specific role' ||
+    value === 'role'
+  ) {
+    return 'specific';
+  }
+
+  return null;
+}
+
+export function isCreateAccountIntent(input: string): boolean {
+  const value = normalize(input);
+  return (
+    value === '4' ||
+    value === 'create account' ||
+    value === 'register' ||
+    value === 'signup' ||
+    value === 'sign up' ||
+    value === 'open account'
+  );
+}
+
 export function looksLikeJobIntent(input: string): boolean {
   const value = normalize(input);
   const keywords = [
@@ -170,6 +233,18 @@ export function looksLikeJobIntent(input: string): boolean {
   }
 
   return /\b(job|work|emploi|travail)\b/.test(value) && /\b(in|at|near|douala|yaounde|buea|bamenda)\b/.test(value);
+}
+
+export function looksLikeInternshipIntent(input: string): boolean {
+  const value = normalize(input);
+  const keywords = [
+    'internship',
+    'intern',
+    'stage',
+    'trainee',
+    'apprenticeship',
+  ];
+  return keywords.some((keyword) => value.includes(keyword));
 }
 
 export function extractLocationHint(input: string): string | null {
