@@ -129,7 +129,8 @@ export async function ensureLeadMonthlyReset(lead: WaLeadRow): Promise<WaLeadRow
 }
 
 export async function resolveWebsiteUserByPhone(phone: string): Promise<string | null> {
-  return resolveProfileIdByPhone(leadDb, phone);
+  // WhatsApp account linking must be strict to avoid mis-linking the wrong profile.
+  return resolveProfileIdByPhone(leadDb, phone, { allowFuzzy: false });
 }
 
 export async function syncLeadUserLink(lead: WaLeadRow, linkedUserId: string | null): Promise<WaLeadRow> {

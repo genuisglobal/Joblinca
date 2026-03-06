@@ -17,13 +17,7 @@ export type WaConversationState =
   | 'recruiter.awaiting_location'
   | 'recruiter.awaiting_salary'
   | 'recruiter.awaiting_description'
-  | 'recruiter.awaiting_application_method'
-  | 'talent.awaiting_name'
-  | 'talent.awaiting_institution'
-  | 'talent.awaiting_town'
-  | 'talent.awaiting_major'
-  | 'talent.awaiting_cv_projects'
-  | 'talent.completed';
+  | 'recruiter.awaiting_application_method';
 
 export interface JobSearchDraft {
   searchType?: 'job' | 'internship' | null;
@@ -42,18 +36,9 @@ export interface RecruiterDraft {
   applicationMethod?: string | null;
 }
 
-export interface TalentDraft {
-  fullName?: string | null;
-  institutionName?: string | null;
-  town?: string | null;
-  courseOrMajor?: string | null;
-  cvOrProjects?: string | null;
-}
-
 export interface WaStatePayload {
   jobSearch?: JobSearchDraft;
   recruiterDraft?: RecruiterDraft;
-  talentDraft?: TalentDraft;
 }
 
 export function isJobseekerState(state: string): boolean {
@@ -62,10 +47,6 @@ export function isJobseekerState(state: string): boolean {
 
 export function isRecruiterState(state: string): boolean {
   return state.startsWith('recruiter.');
-}
-
-export function isTalentState(state: string): boolean {
-  return state.startsWith('talent.');
 }
 
 export function isMenuRootState(state: WaConversationState): boolean {
@@ -89,13 +70,6 @@ export function defaultStatePayload(): WaStatePayload {
       description: null,
       applicationMethod: null,
     },
-    talentDraft: {
-      fullName: null,
-      institutionName: null,
-      town: null,
-      courseOrMajor: null,
-      cvOrProjects: null,
-    },
   };
 }
 
@@ -116,11 +90,6 @@ export function mergePayload(
       ...base.recruiterDraft,
       ...(current.recruiterDraft || {}),
       ...(partial.recruiterDraft || {}),
-    },
-    talentDraft: {
-      ...base.talentDraft,
-      ...(current.talentDraft || {}),
-      ...(partial.talentDraft || {}),
     },
   };
 }
