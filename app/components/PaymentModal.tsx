@@ -1,6 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  calculateChargeBreakdown,
+  getProcessingFeePercentClient,
+} from '@/lib/payments/fees';
 
 interface Plan {
   id: string;
@@ -43,6 +47,9 @@ export default function PaymentModal({
     valid: boolean;
     discount_amount: number;
     final_amount: number;
+    processing_fee_percent?: number;
+    processing_fee_amount?: number;
+    total_amount?: number;
     reason?: string;
   } | null>(null);
   const [promoLoading, setPromoLoading] = useState(false);
@@ -55,7 +62,24 @@ export default function PaymentModal({
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopPollingRef = useRef(false);
 
-  const finalAmount = promoResult?.valid ? promoResult.final_amount : plan.amount_xaf;
+  const subtotalAmount = promoResult?.valid ? promoResult.final_amount : plan.amount_xaf;
+  const configuredFeePercent = getProcessingFeePercentClient();
+  const activeFeePercent =
+    promoResult?.valid && typeof promoResult.processing_fee_percent === 'number'
+      ? promoResult.processing_fee_percent
+      : configuredFeePercent;
+  const computedCharge = calculateChargeBreakdown(subtotalAmount, activeFeePercent);
+  const processingFeeAmount =
+    promoResult?.valid && typeof promoResult.processing_fee_amount === 'number'
+      ? promoResult.processing_fee_amount
+      : computedCharge.processingFeeAmount;
+  const totalAmount =
+    promoResult?.valid && typeof promoResult.total_amount === 'number'
+      ? promoResult.total_amount
+      : computedCharge.totalAmount;
+  const feePercentLabel = Number.isInteger(activeFeePercent)
+    ? String(activeFeePercent)
+    : activeFeePercent.toFixed(2);
 
   const clearTimers = useCallback(() => {
     if (pollTimerRef.current) {
@@ -272,23 +296,33 @@ export default function PaymentModal({
             <p className="text-sm text-gray-400">Plan</p>
             <p className="text-white font-medium">{plan.name}</p>
             <div className="flex items-baseline gap-2 mt-1">
-              {promoResult?.valid && promoResult.discount_amount > 0 ? (
-                <>
-                  <span className="text-gray-500 line-through text-sm">
-                    {plan.amount_xaf.toLocaleString()} CFA
-                  </span>
-                  <span className="text-2xl font-bold text-green-400">
-                    {finalAmount.toLocaleString()} CFA
-                  </span>
-                  <span className="text-xs bg-green-900/50 text-green-400 px-2 py-0.5 rounded">
-                    -{promoResult.discount_amount.toLocaleString()} CFA
-                  </span>
-                </>
-              ) : (
-                <span className="text-2xl font-bold text-white">
-                  {plan.amount_xaf.toLocaleString()} CFA
-                </span>
+              <span className="text-2xl font-bold text-white">
+                {totalAmount.toLocaleString()} CFA
+              </span>
+            </div>
+            <div className="mt-3 space-y-1 text-sm">
+              <div className="flex items-center justify-between text-gray-400">
+                <span>Base price</span>
+                <span>{plan.amount_xaf.toLocaleString()} CFA</span>
+              </div>
+              {promoResult?.valid && promoResult.discount_amount > 0 && (
+                <div className="flex items-center justify-between text-green-400">
+                  <span>Discount</span>
+                  <span>-{promoResult.discount_amount.toLocaleString()} CFA</span>
+                </div>
               )}
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Subtotal</span>
+                <span>{subtotalAmount.toLocaleString()} CFA</span>
+              </div>
+              <div className="flex items-center justify-between text-gray-300">
+                <span>Processing fee ({feePercentLabel}%)</span>
+                <span>+{processingFeeAmount.toLocaleString()} CFA</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-gray-700 pt-2 text-white font-semibold">
+                <span>Total to pay</span>
+                <span>{totalAmount.toLocaleString()} CFA</span>
+              </div>
             </div>
           </div>
 
@@ -426,7 +460,7 @@ export default function PaymentModal({
                           className="h-4 w-4 object-contain"
                         />
                       </span>
-                      Pay {finalAmount.toLocaleString()} CFA with MTN
+                      Pay {totalAmount.toLocaleString()} CFA with MTN
                     </>
                   )}
                 </button>
@@ -452,7 +486,7 @@ export default function PaymentModal({
                           className="h-4 w-4 object-contain"
                         />
                       </span>
-                      Pay {finalAmount.toLocaleString()} CFA with Orange
+                      Pay {totalAmount.toLocaleString()} CFA with Orange
                     </>
                   )}
                 </button>
