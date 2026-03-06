@@ -15,7 +15,7 @@ import {
  *   - Update transaction status to completed
  *   - If subscription plan: create/extend subscription
  *   - If recruiter verification: update verification_status
- *   - If job tier: update job hiring_tier, is_featured, social_promotion
+ *   - If job tier: update job hiring_tier and featured status
  *   - If promo code: increment uses + insert redemption
  *
  * On FAILED payment:

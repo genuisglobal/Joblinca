@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import PaymentModal from '@/app/components/PaymentModal';
 
 interface Plan {
@@ -18,23 +19,45 @@ interface Plan {
 }
 
 type DurationFilter = 'monthly' | 'quarterly' | 'biannual';
+type RoleFilter = 'job_seeker' | 'talent' | 'recruiter' | null;
+
+const RECRUITER_BASE_PLAN_SLUGS = new Set(['job_tier1_diy', 'job_tier2_shortlist']);
+const RECRUITER_FEATURED_ADD_ON_SLUG = 'job_tier1_featured';
+
+function normalizeRoleFilter(raw: string | null): RoleFilter {
+  const normalized = (raw || '').trim().toLowerCase();
+  if (normalized === 'job_seeker' || normalized === 'talent' || normalized === 'recruiter') {
+    return normalized;
+  }
+  return null;
+}
 
 export default function PricingPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [plans, setPlans] = useState<Record<string, Plan[]>>({});
   const [loading, setLoading] = useState(true);
   const [duration, setDuration] = useState<DurationFilter>('monthly');
   const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const roleFilter = useMemo(
+    () => normalizeRoleFilter(searchParams.get('role')),
+    [searchParams]
+  );
 
   useEffect(() => {
-    fetch('/api/pricing-plans')
+    const endpoint = roleFilter
+      ? `/api/pricing-plans?role=${encodeURIComponent(roleFilter)}`
+      : '/api/pricing-plans';
+
+    fetch(endpoint)
       .then((res) => res.json())
       .then((data) => {
         setPlans(data.plans || {});
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, []);
+  }, [roleFilter]);
 
   const durationMap: Record<DurationFilter, number> = {
     monthly: 30,
@@ -49,6 +72,11 @@ export default function PricingPage() {
   }
 
   function handleSubscribe(plan: Plan) {
+    if (plan.plan_type === 'per_job') {
+      router.push('/jobs/new');
+      return;
+    }
+
     setSelectedPlan(plan);
     setShowPayment(true);
   }
@@ -63,12 +91,32 @@ export default function PricingPage() {
 
   const jobSeekerPlans = filterByDuration(plans.job_seeker || []);
   const talentPlans = filterByDuration(plans.talent || []);
-  const recruiterPlans = (plans.recruiter || []).filter(
-    (p) => p.plan_type !== 'per_job'
-  );
-  const jobTierPlans = (plans.recruiter || []).filter(
+  const recruiterPerJobPlans = (plans.recruiter || []).filter(
     (p) => p.plan_type === 'per_job'
   );
+  const featuredAddOn =
+    recruiterPerJobPlans.find((p) => p.slug === RECRUITER_FEATURED_ADD_ON_SLUG) || null;
+  const recruiterBasePlans = recruiterPerJobPlans
+    .filter((p) => RECRUITER_BASE_PLAN_SLUGS.has(p.slug))
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((plan) => {
+      if (!featuredAddOn || plan.slug !== 'job_tier1_diy') {
+        return plan;
+      }
+      const features = Array.isArray(plan.features) ? plan.features : [];
+      return {
+        ...plan,
+        features: [
+          ...features,
+          `Optional add-on: ${featuredAddOn.name} (+${featuredAddOn.amount_xaf.toLocaleString()} CFA)`,
+        ],
+      };
+    });
+
+  const showJobSeeker = roleFilter === null || roleFilter === 'job_seeker';
+  const showTalent = roleFilter === null || roleFilter === 'talent';
+  const showRecruiter = roleFilter === null || roleFilter === 'recruiter';
+  const showDurationToggle = showJobSeeker || showTalent;
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -92,104 +140,98 @@ export default function PricingPage() {
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">Simple, Transparent Pricing</h1>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-            Choose the plan that fits your needs. Pay securely with MTN MoMo or Orange Money.
+            {roleFilter
+              ? 'Role-specific plans from your account. Pay securely with MTN MoMo or Orange Money.'
+              : 'Choose the plan that fits your needs. Pay securely with MTN MoMo or Orange Money.'}
           </p>
         </div>
 
         {/* Duration Toggle */}
-        <div className="flex justify-center mb-12">
-          <div className="bg-gray-800 rounded-lg p-1 flex gap-1">
-            {(['monthly', 'quarterly', 'biannual'] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => setDuration(d)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  duration === d
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                {d === 'monthly' ? '1 Month' : d === 'quarterly' ? '3 Months' : '6 Months'}
-              </button>
-            ))}
+        {showDurationToggle && (
+          <div className="flex justify-center mb-12">
+            <div className="bg-gray-800 rounded-lg p-1 flex gap-1">
+              {(['monthly', 'quarterly', 'biannual'] as const).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDuration(d)}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    duration === d
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {d === 'monthly' ? '1 Month' : d === 'quarterly' ? '3 Months' : '6 Months'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Job Seekers Section */}
-        <section className="mb-16">
-          <h2 className="text-2xl font-bold mb-2">For Job Seekers</h2>
-          <p className="text-gray-400 mb-6">
-            Boost your job search with AI-powered tools and premium visibility.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {jobSeekerPlans.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                onSubscribe={() => handleSubscribe(plan)}
-              />
-            ))}
-            {jobSeekerPlans.length === 0 && (
-              <p className="text-gray-500 col-span-3">No plans available for this duration.</p>
-            )}
-          </div>
-        </section>
+        {showJobSeeker && (
+          <section className="mb-16">
+            <h2 className="text-2xl font-bold mb-2">For Job Seekers</h2>
+            <p className="text-gray-400 mb-6">
+              Boost your job search with AI-powered tools and premium visibility.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {jobSeekerPlans.map((plan) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  onSubscribe={() => handleSubscribe(plan)}
+                />
+              ))}
+              {jobSeekerPlans.length === 0 && (
+                <p className="text-gray-500 col-span-3">No plans available for this duration.</p>
+              )}
+            </div>
+          </section>
+        )}
 
         {/* Talents Section */}
-        <section className="mb-16">
-          <h2 className="text-2xl font-bold mb-2">For Talents</h2>
-          <p className="text-gray-400 mb-6">
-            Accelerate your skills and showcase your portfolio.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {talentPlans.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                onSubscribe={() => handleSubscribe(plan)}
-              />
-            ))}
-            {talentPlans.length === 0 && (
-              <p className="text-gray-500 col-span-3">No plans available for this duration.</p>
-            )}
-          </div>
-        </section>
+        {showTalent && (
+          <section className="mb-16">
+            <h2 className="text-2xl font-bold mb-2">For Talents</h2>
+            <p className="text-gray-400 mb-6">
+              Accelerate your skills and showcase your portfolio.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {talentPlans.map((plan) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  onSubscribe={() => handleSubscribe(plan)}
+                />
+              ))}
+              {talentPlans.length === 0 && (
+                <p className="text-gray-500 col-span-3">No plans available for this duration.</p>
+              )}
+            </div>
+          </section>
+        )}
 
-        {/* Recruiters Section */}
-        <section className="mb-16">
-          <h2 className="text-2xl font-bold mb-2">For Recruiters</h2>
-          <p className="text-gray-400 mb-6">
-            Verification tiers that unlock recruitment tools and trust.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {recruiterPlans.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                onSubscribe={() => handleSubscribe(plan)}
-                highlight={plan.slug === 'recruiter_trusted'}
-              />
-            ))}
-          </div>
-        </section>
-
-        {/* Per-Job Tiers */}
-        <section className="mb-16">
-          <h2 className="text-2xl font-bold mb-2">Per-Job Hiring Support</h2>
-          <p className="text-gray-400 mb-6">
-            Pay per job posting. Choose the level of support you need.
-          </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {jobTierPlans.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                onSubscribe={() => handleSubscribe(plan)}
-                compact
-              />
-            ))}
-          </div>
-        </section>
+        {showRecruiter && (
+          <section className="mb-16">
+            <h2 className="text-2xl font-bold mb-2">For Recruiters</h2>
+            <p className="text-gray-400 mb-6">
+              Pay per job posting with recruiter-specific plans. Select your tier when posting a job.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {recruiterBasePlans.map((plan) => (
+                <PlanCard
+                  key={plan.id}
+                  plan={plan}
+                  onSubscribe={() => handleSubscribe(plan)}
+                  ctaLabel="Choose at Job Posting"
+                />
+              ))}
+              {recruiterBasePlans.length === 0 && (
+                <p className="text-gray-500 col-span-2">No recruiter pay-per-job plans available.</p>
+              )}
+            </div>
+          </section>
+        )}
       </div>
 
       {/* Payment Modal */}
@@ -210,12 +252,12 @@ function PlanCard({
   plan,
   onSubscribe,
   highlight,
-  compact,
+  ctaLabel,
 }: {
   plan: Plan;
   onSubscribe: () => void;
   highlight?: boolean;
-  compact?: boolean;
+  ctaLabel?: string;
 }) {
   const features = Array.isArray(plan.features) ? plan.features : [];
 
@@ -225,7 +267,7 @@ function PlanCard({
         highlight
           ? 'border-blue-500 bg-blue-900/20 ring-1 ring-blue-500/30'
           : 'border-gray-700 bg-gray-800'
-      } ${compact ? '' : ''}`}
+      }`}
     >
       {highlight && (
         <span className="text-xs font-semibold text-blue-400 uppercase mb-2">
@@ -273,7 +315,7 @@ function PlanCard({
             : 'bg-gray-700 hover:bg-gray-600 text-white'
         }`}
       >
-        {plan.plan_type === 'per_job' ? 'Select' : 'Subscribe'}
+        {ctaLabel || (plan.plan_type === 'per_job' ? 'Choose at Job Posting' : 'Subscribe')}
       </button>
     </div>
   );

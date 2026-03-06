@@ -42,6 +42,23 @@ export default async function DashboardSubscriptionPage() {
     redirect('/auth/login');
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  const role =
+    profile?.role === 'recruiter' ||
+    profile?.role === 'job_seeker' ||
+    profile?.role === 'talent'
+      ? profile.role
+      : 'job_seeker';
+  const pricingHref = `/pricing?role=${encodeURIComponent(role)}&from=account`;
+  const upgradeLabel = role === 'recruiter' ? 'View Posting Plans' : 'Upgrade Plan';
+  const renewLabel = role === 'recruiter' ? 'Open Recruiter Pricing' : 'Renew';
+  const changePlanLabel = role === 'recruiter' ? 'Recruiter Plans' : 'Change Plan';
+
   const subscription = await getUserSubscription(user.id);
 
   const { data: transactions } = await supabase
@@ -66,16 +83,16 @@ export default async function DashboardSubscriptionPage() {
         </div>
         <div className="flex gap-2">
           <Link
-            href="/pricing"
+            href={pricingHref}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
           >
-            Upgrade Plan
+            {upgradeLabel}
           </Link>
           <Link
-            href="/pricing"
+            href={pricingHref}
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors"
           >
-            Renew
+            {renewLabel}
           </Link>
         </div>
       </div>
@@ -121,13 +138,15 @@ export default async function DashboardSubscriptionPage() {
           ) : (
             <div className="space-y-4">
               <p className="text-gray-400 text-sm">
-                You do not have an active subscription right now.
+                {role === 'recruiter'
+                  ? 'Recruiters use pay-per-job plans. Choose your posting tier from your account pricing view.'
+                  : 'You do not have an active subscription right now.'}
               </p>
               <Link
-                href="/pricing"
+                href={pricingHref}
                 className="inline-flex px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
               >
-                Activate Subscription
+                {role === 'recruiter' ? 'View Recruiter Plans' : 'Activate Subscription'}
               </Link>
             </div>
           )}
@@ -149,10 +168,10 @@ export default async function DashboardSubscriptionPage() {
               Go to Homepage
             </Link>
             <Link
-              href="/pricing"
+              href={pricingHref}
               className="block w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors text-center"
             >
-              Change Plan
+              {changePlanLabel}
             </Link>
           </div>
         </div>
