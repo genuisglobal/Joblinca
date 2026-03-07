@@ -54,6 +54,27 @@ export default function JobsTable({ jobs }: JobsTableProps) {
     }
   };
 
+  const handleTogglePublished = async (jobId: string, nextPublished: boolean) => {
+    setActionLoading(jobId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/jobs/${jobId}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ published: nextPublished }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update publish state');
+      }
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleReject = async (jobId: string) => {
     if (!rejectionReason.trim()) {
       setError('Rejection reason is required');
@@ -145,6 +166,9 @@ export default function JobsTable({ jobs }: JobsTableProps) {
                 </td>
                 <td className="p-4 text-center">
                   <StatusBadge status={job.approval_status} />
+                  <div className="mt-1">
+                    <ListingBadge published={job.published} />
+                  </div>
                   {job.rejection_reason && (
                     <p className="text-xs text-red-400 mt-1 max-w-32 truncate" title={job.rejection_reason}>
                       {job.rejection_reason}
@@ -186,6 +210,21 @@ export default function JobsTable({ jobs }: JobsTableProps) {
                         {actionLoading === job.id ? '...' : 'Approve'}
                       </button>
                     )}
+                    <button
+                      onClick={() => handleTogglePublished(job.id, !job.published)}
+                      disabled={actionLoading === job.id}
+                      className={`px-3 py-1 text-sm rounded transition-colors disabled:opacity-50 ${
+                        job.published
+                          ? 'bg-gray-600 text-white hover:bg-gray-500'
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      }`}
+                    >
+                      {actionLoading === job.id
+                        ? '...'
+                        : job.published
+                          ? 'Unpublish'
+                          : 'Publish'}
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -259,6 +298,22 @@ function StatusBadge({ status }: { status: 'pending' | 'approved' | 'rejected' }
   return (
     <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border ${bg} ${text}`}>
       {label}
+    </span>
+  );
+}
+
+function ListingBadge({ published }: { published: boolean }) {
+  if (published) {
+    return (
+      <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border bg-blue-900/50 border-blue-700 text-blue-300">
+        Live
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border bg-gray-700/60 border-gray-600 text-gray-300">
+      Unpublished
     </span>
   );
 }

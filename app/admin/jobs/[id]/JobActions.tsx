@@ -20,6 +20,27 @@ export default function JobActions({ job }: JobActionsProps) {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
+  const handleTogglePublished = async (nextPublished: boolean) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/jobs/${job.id}/publish`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ published: nextPublished }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update publish state');
+      }
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleApprove = async () => {
     setLoading(true);
     setError(null);
@@ -75,6 +96,35 @@ export default function JobActions({ job }: JobActionsProps) {
       )}
 
       <div className="space-y-3">
+        <button
+          onClick={() => handleTogglePublished(!job.published)}
+          disabled={loading}
+          className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors disabled:opacity-50 ${
+            job.published
+              ? 'bg-gray-600 hover:bg-gray-500 text-white'
+              : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {job.published ? (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.956 9.956 0 012.042-3.368m2.3-2.3A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.542 7a10.05 10.05 0 01-4.132 5.411M15 12a3 3 0 11-6 0 3 3 0 016 0zm6 9L3 3"
+              />
+            ) : (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0zm6 0s-3 7-9 7-9-7-9-7 3-7 9-7 9 7 9 7z"
+              />
+            )}
+          </svg>
+          {loading ? 'Processing...' : job.published ? 'Unpublish Job' : 'Publish Job'}
+        </button>
+
         {job.approval_status === 'pending' && (
           <>
             <button
@@ -106,7 +156,11 @@ export default function JobActions({ job }: JobActionsProps) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <p className="text-green-400 font-medium">Job is approved</p>
-            <p className="text-gray-400 text-sm mt-1">This job is visible to the public</p>
+            <p className="text-gray-400 text-sm mt-1">
+              {job.published
+                ? 'This job is currently visible to candidates'
+                : 'This job is approved but currently unpublished'}
+            </p>
           </div>
         )}
 

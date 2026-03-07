@@ -3,13 +3,14 @@ import Link from 'next/link';
 import JobsTable from './JobsTable';
 
 interface PageProps {
-  searchParams: Promise<{ status?: string; search?: string }>;
+  searchParams: Promise<{ status?: string; listing?: string; search?: string }>;
 }
 
 export default async function AdminJobsPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const supabase = createServerSupabaseClient();
   const status = params.status || 'all';
+  const listing = params.listing || 'all';
 
   // Build query based on status filter
   let query = supabase
@@ -41,6 +42,12 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
     query = query.eq('approval_status', status);
   }
 
+  if (listing === 'live') {
+    query = query.eq('published', true);
+  } else if (listing === 'unpublished') {
+    query = query.eq('published', false);
+  }
+
   const { data: rawJobs, error } = await query;
 
   // ✅ Normalize "profiles" to be a single object (not an array)
@@ -51,11 +58,20 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
     })) ?? [];
 
   // Get counts for tabs
-  const [pendingCount, approvedCount, rejectedCount, allCount] = await Promise.all([
+  const [
+    pendingCount,
+    approvedCount,
+    rejectedCount,
+    allCount,
+    liveCount,
+    unpublishedCount,
+  ] = await Promise.all([
     supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('approval_status', 'pending'),
     supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('approval_status', 'approved'),
     supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('approval_status', 'rejected'),
     supabase.from('jobs').select('id', { count: 'exact', head: true }),
+    supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('published', true),
+    supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('published', false),
   ]);
 
   const counts = {
@@ -63,6 +79,20 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
     approved: approvedCount.count ?? 0,
     rejected: rejectedCount.count ?? 0,
     all: allCount.count ?? 0,
+    live: liveCount.count ?? 0,
+    unpublished: unpublishedCount.count ?? 0,
+  };
+
+  const withFilters = (next: { status?: string; listing?: string }) => {
+    const query = new URLSearchParams();
+    const nextStatus = next.status ?? status;
+    const nextListing = next.listing ?? listing;
+
+    if (nextStatus !== 'all') query.set('status', nextStatus);
+    if (nextListing !== 'all') query.set('listing', nextListing);
+
+    const serialized = query.toString();
+    return serialized ? `/admin/jobs?${serialized}` : '/admin/jobs';
   };
 
   return (
@@ -85,27 +115,51 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
 
       {/* Status Tabs */}
       <div className="flex gap-2 mb-6">
-        <StatusTab href="/admin/jobs" label="All" count={counts.all} active={status === 'all'} />
+        <StatusTab href={withFilters({ status: 'all' })} label="All" count={counts.all} active={status === 'all'} />
         <StatusTab
-          href="/admin/jobs?status=pending"
+          href={withFilters({ status: 'pending' })}
           label="Pending"
           count={counts.pending}
           active={status === 'pending'}
           color="yellow"
         />
         <StatusTab
-          href="/admin/jobs?status=approved"
+          href={withFilters({ status: 'approved' })}
           label="Approved"
           count={counts.approved}
           active={status === 'approved'}
           color="green"
         />
         <StatusTab
-          href="/admin/jobs?status=rejected"
+          href={withFilters({ status: 'rejected' })}
           label="Rejected"
           count={counts.rejected}
           active={status === 'rejected'}
           color="red"
+        />
+      </div>
+
+      {/* Listing Tabs */}
+      <div className="flex gap-2 mb-6">
+        <StatusTab
+          href={withFilters({ listing: 'all' })}
+          label="All Listings"
+          count={counts.all}
+          active={listing === 'all'}
+        />
+        <StatusTab
+          href={withFilters({ listing: 'live' })}
+          label="Live"
+          count={counts.live}
+          active={listing === 'live'}
+          color="green"
+        />
+        <StatusTab
+          href={withFilters({ listing: 'unpublished' })}
+          label="Unpublished"
+          count={counts.unpublished}
+          active={listing === 'unpublished'}
+          color="yellow"
         />
       </div>
 
