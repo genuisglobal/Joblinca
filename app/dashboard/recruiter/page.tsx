@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
 import StatusBadge from '../components/StatusBadge';
+import PaymentModal from '@/app/components/PaymentModal';
 
 interface Job {
   id: string;
@@ -36,6 +37,26 @@ interface Verification {
   status: string;
 }
 
+interface RecruiterVerificationPlan {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  amount_xaf: number;
+  duration_days: number | null;
+  plan_type: string;
+  sort_order: number;
+}
+
+interface SubscriptionStatus {
+  isActive: boolean;
+  plan: {
+    role: string;
+    name: string;
+  } | null;
+  expiresAt: string | null;
+}
+
 export default function RecruiterDashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -43,6 +64,12 @@ export default function RecruiterDashboardPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [verification, setVerification] = useState<Verification | null>(null);
+  const [postingAccess, setPostingAccess] = useState(false);
+  const [activeRecruiterPlanName, setActiveRecruiterPlanName] = useState<string | null>(null);
+  const [activeRecruiterPlanExpiry, setActiveRecruiterPlanExpiry] = useState<string | null>(null);
+  const [verificationPlans, setVerificationPlans] = useState<RecruiterVerificationPlan[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<RecruiterVerificationPlan | null>(null);
+  const [showPayment, setShowPayment] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -111,6 +138,45 @@ export default function RecruiterDashboardPage() {
           .eq('user_id', user.id)
           .single();
 
+        // Fetch active recruiter subscription to gate posting access.
+        const subscriptionRes = await fetch('/api/subscriptions/me');
+        if (subscriptionRes.ok) {
+          const subscriptionData = (await subscriptionRes.json()) as SubscriptionStatus;
+          const hasRecruiterSubscription =
+            Boolean(subscriptionData?.isActive) &&
+            subscriptionData?.plan?.role === 'recruiter';
+          setPostingAccess(hasRecruiterSubscription);
+          setActiveRecruiterPlanName(
+            hasRecruiterSubscription ? subscriptionData.plan?.name || null : null
+          );
+          setActiveRecruiterPlanExpiry(subscriptionData?.expiresAt || null);
+        } else {
+          setPostingAccess(false);
+          setActiveRecruiterPlanName(null);
+          setActiveRecruiterPlanExpiry(null);
+        }
+
+        // Fetch recruiter verification tiers (basic/trusted/premium).
+        const plansRes = await fetch('/api/pricing-plans?role=recruiter');
+        if (plansRes.ok) {
+          const plansPayload = await plansRes.json();
+          const recruiterPlans = Array.isArray(plansPayload?.plans?.recruiter)
+            ? plansPayload.plans.recruiter
+            : [];
+          const verificationTierPlans = recruiterPlans
+            .filter(
+              (plan: RecruiterVerificationPlan) =>
+                plan.plan_type !== 'per_job' && !plan.slug.startsWith('job_')
+            )
+            .sort(
+              (a: RecruiterVerificationPlan, b: RecruiterVerificationPlan) =>
+                (a.sort_order || 0) - (b.sort_order || 0)
+            );
+          setVerificationPlans(verificationTierPlans);
+        } else {
+          setVerificationPlans([]);
+        }
+
         if (!mounted) return;
         setVerification(verificationData);
 
@@ -158,8 +224,97 @@ export default function RecruiterDashboardPage() {
     return profile.full_name || 'Anonymous';
   }
 
+  function openVerificationCheckout(plan: RecruiterVerificationPlan) {
+    setSelectedPlan(plan);
+    setShowPayment(true);
+  }
+
   return (
     <div className="space-y-8">
+      {/* Posting Access Gate */}
+      <div
+        className={`rounded-xl border p-6 ${
+          postingAccess
+            ? 'bg-emerald-900/20 border-emerald-700/40'
+            : 'bg-red-900/20 border-red-700/40'
+        }`}
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white">Job Posting Access</h2>
+            {postingAccess ? (
+              <>
+                <p className="mt-2 text-emerald-300">
+                  Posting is enabled with your recruiter plan:{' '}
+                  <span className="font-semibold">{activeRecruiterPlanName || 'Active Recruiter Plan'}</span>.
+                </p>
+                {activeRecruiterPlanExpiry && (
+                  <p className="text-sm text-emerald-200 mt-1">
+                    Expires on {new Date(activeRecruiterPlanExpiry).toLocaleDateString()}.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="mt-2 text-red-300">
+                  You cannot post jobs yet. Activate at least <span className="font-semibold">Basic Recruiter Verification</span> first.
+                </p>
+                <p className="text-sm text-red-200 mt-1">
+                  Without an active recruiter verification plan, job posting is locked.
+                </p>
+              </>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {postingAccess ? (
+              <Link
+                href="/jobs/new"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
+              >
+                Post New Job
+              </Link>
+            ) : (
+              <Link
+                href="/dashboard/subscription"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Activate Recruiter Plan
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {!postingAccess && verificationPlans.length > 0 && (
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+            {verificationPlans.map((plan) => (
+              <button
+                key={plan.id}
+                onClick={() => openVerificationCheckout(plan)}
+                className={`text-left rounded-lg border p-4 transition-colors ${
+                  plan.slug === 'recruiter_basic'
+                    ? 'border-blue-500/50 bg-blue-900/25 hover:bg-blue-900/35'
+                    : 'border-gray-700 bg-gray-800/70 hover:bg-gray-800'
+                }`}
+              >
+                <p className="text-sm text-gray-300">{plan.name}</p>
+                <p className="text-lg font-semibold text-white mt-1">
+                  {plan.amount_xaf.toLocaleString()} CFA
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {plan.duration_days ? `Valid for ${plan.duration_days} days` : 'One-time activation'}
+                </p>
+                {plan.slug === 'recruiter_basic' && (
+                  <p className="text-xs text-blue-300 mt-2 font-medium">
+                    Minimum required to unlock posting
+                  </p>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Stats Section */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
@@ -279,25 +434,43 @@ export default function RecruiterDashboardPage() {
 
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-4">
-        <Link
-          href="/jobs/new"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+        {postingAccess ? (
+          <Link
+            href="/jobs/new"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-          Post New Job
-        </Link>
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            Post New Job
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => router.push('/dashboard/subscription')}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 text-gray-200 rounded-lg hover:bg-gray-600 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 11c1.657 0 3-1.79 3-4s-1.343-4-3-4-3 1.79-3 4 1.343 4 3 4zm0 0v2m-6 8h12a2 2 0 002-2v-4a2 2 0 00-2-2H6a2 2 0 00-2 2v4a2 2 0 002 2z"
+              />
+            </svg>
+            Posting Locked (Activate Basic)
+          </button>
+        )}
         <Link
           href="/dashboard/recruiter/jobs"
           className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
@@ -441,6 +614,19 @@ export default function RecruiterDashboardPage() {
           </div>
         )}
       </div>
+
+      {showPayment && selectedPlan && (
+        <PaymentModal
+          plan={selectedPlan}
+          onClose={() => {
+            setShowPayment(false);
+            setSelectedPlan(null);
+          }}
+          onSuccess={() => {
+            window.location.reload();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
+import { requireActiveSubscription } from '@/lib/subscriptions';
 
 const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
 
@@ -59,6 +60,18 @@ export async function POST(request: NextRequest) {
     if (recruiterLookupError || !recruiterProfile) {
       return NextResponse.json(
         { error: 'Recruiter account profile required before posting jobs' },
+        { status: 403 }
+      );
+    }
+
+    try {
+      await requireActiveSubscription(user.id, 'recruiter');
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            'Basic recruiter verification is required before posting jobs. Activate a recruiter plan in Billing.',
+        },
         { status: 403 }
       );
     }
