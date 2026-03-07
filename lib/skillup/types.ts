@@ -100,6 +100,79 @@ export interface CourseRecommendation {
 }
 
 // ---------------------------------------------------------------------------
+// Talent Challenges
+// ---------------------------------------------------------------------------
+
+export interface TalentChallenge {
+  id: string;
+  slug: string;
+  title: string;
+  title_fr?: string | null;
+  description?: string | null;
+  description_fr?: string | null;
+  challenge_type: 'quiz' | 'project';
+  domain?: string | null;
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  status: 'draft' | 'active' | 'closed' | 'published';
+  max_ranked_attempts: number;
+  top_n: number;
+  config: Record<string, unknown>;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TalentChallengeSubmission {
+  id: string;
+  challenge_id: string;
+  user_id: string;
+  attempt_no: number;
+  answers: number[] | null;
+  project_submission: Record<string, unknown> | null;
+  auto_score: number | null;
+  manual_score: number | null;
+  final_score: number | null;
+  completion_seconds: number | null;
+  status: 'draft' | 'submitted' | 'graded' | 'disqualified';
+  graded_by: string | null;
+  graded_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TalentLeaderboardEntry {
+  id: string;
+  week_key: string;
+  week_start: string;
+  week_end: string;
+  challenge_id: string;
+  user_id: string;
+  rank: number;
+  score: number;
+  tie_breaker: number;
+  published_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface TalentAchievement {
+  id: string;
+  user_id: string;
+  source_type: string;
+  source_key: string;
+  title: string;
+  description: string | null;
+  issuer: string;
+  issued_at: string;
+  expires_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
 // Skill Mapping & Gap Analysis
 // ---------------------------------------------------------------------------
 

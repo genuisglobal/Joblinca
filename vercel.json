@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/whatsapp-matched-jobs",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/skillup-weekly-leaderboard",
+      "schedule": "0 6 * * 1"
     }
   ]
 }
