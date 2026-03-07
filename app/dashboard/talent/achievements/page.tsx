@@ -67,6 +67,20 @@ export default async function AchievementsPage() {
     .eq('candidate_id', user.id)
     .order('created_at', { ascending: false });
 
+  const { data: challengeAchievements } = await supabase
+    .from('talent_achievements')
+    .select('id, title, description, issuer, issued_at, metadata')
+    .eq('user_id', user.id)
+    .order('issued_at', { ascending: false })
+    .limit(20);
+
+  const { data: learningBadges } = await supabase
+    .from('user_badges')
+    .select('id, badge_type, badge_level, issued_at, metadata')
+    .eq('user_id', user.id)
+    .order('issued_at', { ascending: false })
+    .limit(20);
+
   return (
     <div className="space-y-8">
       <div>
@@ -74,6 +88,89 @@ export default async function AchievementsPage() {
         <p className="text-gray-400 mt-1">
           Your certifications and test results
         </p>
+      </div>
+
+      {/* Challenge Highlights */}
+      <div className="bg-gray-800 rounded-xl p-6">
+        <h2 className="text-xl font-semibold text-white mb-6">
+          Challenge Highlights
+        </h2>
+        {!challengeAchievements || challengeAchievements.length === 0 ? (
+          <p className="text-gray-400 text-sm">
+            No challenge achievements yet. Participate in weekly Talent
+            Challenges to appear in the Top 10.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {challengeAchievements.map((item) => {
+              const metadata =
+                item.metadata && typeof item.metadata === 'object'
+                  ? (item.metadata as Record<string, unknown>)
+                  : {};
+              const weekKey =
+                typeof metadata.week_key === 'string'
+                  ? metadata.week_key
+                  : null;
+              const rank =
+                typeof metadata.rank === 'number' ? metadata.rank : null;
+
+              return (
+                <div
+                  key={item.id}
+                  className="p-4 bg-gray-700/50 rounded-lg flex items-start justify-between gap-4"
+                >
+                  <div>
+                    <h3 className="text-white font-medium">{item.title}</h3>
+                    {item.description && (
+                      <p className="text-sm text-gray-400 mt-1">{item.description}</p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">
+                      {item.issuer || 'Joblinca'}
+                      {weekKey ? ` | ${weekKey}` : ''}
+                      {rank ? ` | Rank #${rank}` : ''}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-500">
+                    {new Date(item.issued_at).toLocaleDateString()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Learning + Challenge Badges */}
+      <div className="bg-gray-800 rounded-xl p-6">
+        <h2 className="text-xl font-semibold text-white mb-6">Badge Collection</h2>
+        {!learningBadges || learningBadges.length === 0 ? (
+          <p className="text-gray-400 text-sm">No badges yet.</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {learningBadges.map((badge) => {
+              const metadata =
+                badge.metadata && typeof badge.metadata === 'object'
+                  ? (badge.metadata as Record<string, unknown>)
+                  : {};
+              const badgeName =
+                typeof metadata.badge_name === 'string'
+                  ? metadata.badge_name
+                  : badge.badge_type.replace(/_/g, ' ');
+
+              return (
+                <div key={badge.id} className="p-4 bg-gray-700/50 rounded-lg">
+                  <p className="text-white font-medium capitalize">{badgeName}</p>
+                  <p className="text-sm text-blue-300 mt-1 capitalize">
+                    {badge.badge_level || 'standard'}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-2">
+                    {new Date(badge.issued_at).toLocaleDateString()}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Certifications */}

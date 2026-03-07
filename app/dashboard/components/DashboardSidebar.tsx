@@ -125,6 +125,34 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
+    label: 'Challenges',
+    href: '/dashboard/talent/challenges',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M9 12l2 2 4-4m5-3a9 9 0 11-18 0 9 9 0 0118 0z"
+        />
+      </svg>
+    ),
+  },
+  {
+    label: 'Leaderboard',
+    href: '/dashboard/talent/leaderboard',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M8 21h8M12 17v4m-7 0h14M7 3h10v4a5 5 0 11-10 0V3z"
+        />
+      </svg>
+    ),
+  },
+  {
     label: 'Billing',
     href: '/dashboard/subscription',
     icon: (

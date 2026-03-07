@@ -101,6 +101,7 @@ export default function ApplicationDetailPage({
   const [aiInsights, setAiInsights] = useState<AIInsights | null>(null);
 
   const [applicantBadges, setApplicantBadges] = useState<any[]>([]);
+  const [applicantAchievements, setApplicantAchievements] = useState<any[]>([]);
 
   const [newNote, setNewNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
@@ -207,6 +208,15 @@ export default function ApplicationDetailPage({
         .order('issued_at', { ascending: false });
 
       setApplicantBadges(badgesData || []);
+
+      const { data: achievementsData } = await supabase
+        .from('talent_achievements')
+        .select('id, title, description, issued_at, metadata')
+        .eq('user_id', appData.applicant_id)
+        .order('issued_at', { ascending: false })
+        .limit(8);
+
+      setApplicantAchievements(achievementsData || []);
 
       setLoading(false);
     } catch (err) {
@@ -497,6 +507,39 @@ export default function ApplicationDetailPage({
               <p className="text-xs text-gray-500 mt-3">
                 Badges earned through Joblinca&apos;s Skill Up learning hub.
               </p>
+            </div>
+          )}
+
+          {applicantAchievements.length > 0 && (
+            <div className="bg-gray-800 rounded-xl p-6">
+              <h2 className="text-lg font-semibold text-white mb-4">
+                Challenge Highlights
+              </h2>
+              <div className="space-y-3">
+                {applicantAchievements.map((item) => {
+                  const metadata =
+                    item.metadata && typeof item.metadata === 'object'
+                      ? (item.metadata as Record<string, unknown>)
+                      : {};
+                  const rank =
+                    typeof metadata.rank === 'number' ? `Rank #${metadata.rank}` : null;
+                  const week =
+                    typeof metadata.week_key === 'string'
+                      ? metadata.week_key
+                      : null;
+                  return (
+                    <div key={item.id} className="p-3 rounded-lg bg-gray-700/40">
+                      <p className="text-white text-sm font-medium">{item.title}</p>
+                      {item.description && (
+                        <p className="text-xs text-gray-400 mt-1">{item.description}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-2">
+                        {[rank, week].filter(Boolean).join(' | ') || 'Challenge achievement'}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
 
