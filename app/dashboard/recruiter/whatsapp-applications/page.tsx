@@ -247,9 +247,14 @@ export default function RecruiterWhatsAppApplicationsPage() {
                   {session.weighted_score !== null ? `${session.weighted_score}` : '-'}
                 </div>
                 <div className="col-span-1">
-                  <span className={`inline-flex px-2 py-0.5 rounded border text-xs ${aiBadgeColor(session.ai_summary_status)}`}>
-                    {session.ai_summary_status || 'n/a'}
-                  </span>
+                  <div className="space-y-1">
+                    <span className={`inline-flex px-2 py-0.5 rounded border text-xs ${aiBadgeColor(session.ai_summary_status)}`}>
+                      {session.ai_summary_status || 'n/a'}
+                    </span>
+                    {session.ai_recommendation && (
+                      <div className="text-[11px] text-gray-400">{session.ai_recommendation}</div>
+                    )}
+                  </div>
                 </div>
                 <div className="col-span-1 text-right">
                   <Link

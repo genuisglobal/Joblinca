@@ -55,6 +55,12 @@ interface NotificationRow {
   created_at: string;
 }
 
+interface AiSummaryMetadata {
+  confidence: 'high' | 'medium' | 'low' | null;
+  nextStep: string | null;
+  createdAt: string | null;
+}
+
 function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   if (digits.length <= 4) return `***${digits}`;
@@ -83,6 +89,7 @@ export default function WhatsAppScreeningDetailPage() {
   const [session, setSession] = useState<SessionDetail | null>(null);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [aiSummaryMetadata, setAiSummaryMetadata] = useState<AiSummaryMetadata | null>(null);
   const [regeneratingAi, setRegeneratingAi] = useState(false);
   const [aiActionError, setAiActionError] = useState<string | null>(null);
 
@@ -166,6 +173,39 @@ export default function WhatsAppScreeningDetailPage() {
     } as SessionDetail;
   }, [supabase, params.id]);
 
+  const fetchAiSummaryMetadata = useCallback(async (): Promise<AiSummaryMetadata | null> => {
+    const { data, error } = await supabase
+      .from('wa_screening_events')
+      .select('created_at, payload')
+      .eq('session_id', params.id)
+      .eq('event_type', 'ai_summary_generated')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const payload = (data as { payload?: Record<string, unknown> | null }).payload || {};
+    const confidence =
+      payload.confidence === 'high' || payload.confidence === 'medium' || payload.confidence === 'low'
+        ? payload.confidence
+        : null;
+    const nextStep =
+      typeof payload.nextStep === 'string' && payload.nextStep.trim().length > 0
+        ? payload.nextStep.trim()
+        : null;
+
+    return {
+      confidence,
+      nextStep,
+      createdAt: typeof (data as { created_at?: string | null }).created_at === 'string'
+        ? (data as { created_at?: string | null }).created_at || null
+        : null,
+    };
+  }, [supabase, params.id]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -180,7 +220,7 @@ export default function WhatsAppScreeningDetailPage() {
         return;
       }
 
-      const [sessionRecord, answersRes, notificationsRes] = await Promise.all([
+      const [sessionRecord, answersRes, notificationsRes, aiMetadata] = await Promise.all([
         fetchSessionRecord(),
         supabase
           .from('wa_screening_answers')
@@ -192,6 +232,7 @@ export default function WhatsAppScreeningDetailPage() {
           .select('id, channel, destination, status, attempt_count, last_error, created_at')
           .eq('session_id', params.id)
           .order('created_at', { ascending: true }),
+        fetchAiSummaryMetadata(),
       ]);
 
       if (!mounted) return;
@@ -211,6 +252,7 @@ export default function WhatsAppScreeningDetailPage() {
       setSession(sessionRecord);
       setAnswers((answersRes.data || []) as AnswerRow[]);
       setNotifications((notificationsRes.data || []) as NotificationRow[]);
+      setAiSummaryMetadata(aiMetadata);
       setLoading(false);
     }
 
@@ -218,7 +260,7 @@ export default function WhatsAppScreeningDetailPage() {
     return () => {
       mounted = false;
     };
-  }, [supabase, router, params.id, fetchSessionRecord]);
+  }, [supabase, router, params.id, fetchSessionRecord, fetchAiSummaryMetadata]);
 
   const handleRegenerateAiSummary = useCallback(async () => {
     if (!session || regeneratingAi) return;
@@ -240,15 +282,17 @@ export default function WhatsAppScreeningDetailPage() {
       }
 
       const refreshedSession = await fetchSessionRecord();
+      const refreshedMetadata = await fetchAiSummaryMetadata();
       if (refreshedSession) {
         setSession(refreshedSession);
       }
+      setAiSummaryMetadata(refreshedMetadata);
     } catch (error) {
       setAiActionError(error instanceof Error ? error.message : 'Failed to regenerate AI summary');
     } finally {
       setRegeneratingAi(false);
     }
-  }, [session, regeneratingAi, params.id, fetchSessionRecord]);
+  }, [session, regeneratingAi, params.id, fetchSessionRecord, fetchAiSummaryMetadata]);
 
   if (loading) {
     return (
@@ -323,6 +367,11 @@ export default function WhatsAppScreeningDetailPage() {
               recommendation: {session.ai_recommendation}
             </span>
           )}
+          {aiSummaryMetadata?.confidence && (
+            <span className="inline-flex px-2 py-0.5 rounded border border-gray-600 bg-gray-700/40 text-gray-300">
+              confidence: {aiSummaryMetadata.confidence}
+            </span>
+          )}
           {session.ai_last_generated_at && (
             <span className="text-gray-500">
               updated: {new Date(session.ai_last_generated_at).toLocaleString()}
@@ -340,12 +389,19 @@ export default function WhatsAppScreeningDetailPage() {
 
             {session.ai_key_strengths.length > 0 && (
               <div>
-                <h3 className="text-sm text-green-300 font-medium mb-1">Strengths</h3>
+                <h3 className="text-sm text-green-300 font-medium mb-1">Evidence</h3>
                 <ul className="space-y-1 text-sm text-gray-300">
                   {session.ai_key_strengths.map((item, index) => (
                     <li key={`${item}-${index}`}>- {item}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {aiSummaryMetadata?.nextStep && (
+              <div className="rounded border border-blue-500/30 bg-blue-500/10 p-3">
+                <p className="text-xs text-blue-300 mb-1">Recommended next step</p>
+                <p className="text-sm text-gray-100">{aiSummaryMetadata.nextStep}</p>
               </div>
             )}
 

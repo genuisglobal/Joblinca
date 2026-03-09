@@ -2,6 +2,24 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 import type { CourseRecommendation } from '@/lib/skillup/types';
 import { buildSkillProfile } from '@/lib/skillup/skill-mapping';
+import { z } from 'zod';
+import { callAiJson, isAiConfigured } from '@/lib/ai/client';
+import {
+  buildCourseRecommendationSystemPrompt,
+  buildCourseRecommendationUserPrompt,
+} from '@/lib/ai/policies';
+
+const courseRecommendationResponseSchema = z.object({
+  recommendations: z
+    .array(
+      z.object({
+        course_slug: z.string().trim().min(1),
+        course_title: z.string().trim().min(1),
+        reason: z.string().trim().min(1).max(220),
+      })
+    )
+    .default([]),
+});
 
 export async function GET() {
   const supabase = createServerSupabaseClient();
@@ -14,7 +32,6 @@ export async function GET() {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
   }
 
-  // Get user profile
   const { data: profile } = await supabase
     .from('profiles')
     .select('role, skills, career_goals')
@@ -23,7 +40,6 @@ export async function GET() {
 
   const userRole = profile?.role || 'talent';
 
-  // Build skill profile for gap analysis
   let skillProfile;
   try {
     skillProfile = await buildSkillProfile(user.id, supabase);
@@ -31,7 +47,6 @@ export async function GET() {
     skillProfile = null;
   }
 
-  // Get completed courses
   const { data: completedProgress } = await supabase
     .from('learning_progress')
     .select(`
@@ -48,19 +63,13 @@ export async function GET() {
     .eq('status', 'completed');
 
   const completedSlugs = new Set<string>();
-  const courseQuizScores: Record<string, number[]> = {};
-  for (const p of completedProgress || []) {
-    const slug = (p as any).learning_modules?.learning_courses?.slug;
+  for (const progress of completedProgress || []) {
+    const slug = (progress as any).learning_modules?.learning_courses?.slug;
     if (slug) {
       completedSlugs.add(slug);
-      if ((p as any).quiz_score != null) {
-        if (!courseQuizScores[slug]) courseQuizScores[slug] = [];
-        courseQuizScores[slug].push((p as any).quiz_score);
-      }
     }
   }
 
-  // Get all available courses for this role (with skill_categories)
   const { data: allCourses } = await supabase
     .from('learning_courses')
     .select(`
@@ -71,115 +80,119 @@ export async function GET() {
     `)
     .eq('published', true);
 
-  const availableCourses = (allCourses || []).filter((c: any) => {
-    const roles: string[] = c.learning_tracks?.target_roles || [];
-    return roles.includes(userRole) && !completedSlugs.has(c.slug);
+  const availableCourses = (allCourses || []).filter((course: any) => {
+    const roles: string[] = course.learning_tracks?.target_roles || [];
+    return roles.includes(userRole) && !completedSlugs.has(course.slug);
   });
 
-  // Get partner courses for hybrid recommendations
   const { data: partnerCourses } = await supabase
     .from('partner_courses')
     .select('id, title, category, level, partner_name, url')
     .limit(20);
 
-  // Gap categories (slugs sorted by gap desc)
   const gapCategories = skillProfile
     ? skillProfile.categories
-        .filter((c) => c.gap > 0)
+        .filter((category) => category.gap > 0)
         .sort((a, b) => b.gap - a.gap)
-        .map((c) => c.slug)
+        .map((category) => category.slug)
     : [];
 
-  // Try AI recommendations if OpenAI key available
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (openaiKey && availableCourses.length > 0) {
+  if (isAiConfigured() && availableCourses.length > 0) {
     try {
-      const gapInfo = gapCategories.length > 0
-        ? `\nUser skill gaps (prioritize courses matching these): ${gapCategories.join(', ')}`
-        : '';
-
-      const partnerInfo = (partnerCourses || []).length > 0
-        ? `\nPartner courses available: ${(partnerCourses || []).map((pc: any) => `${pc.title} (${pc.partner_name}, ${pc.level})`).join('; ')}`
-        : '';
-
-      const prompt = `You are a career advisor for Joblinca, a job platform focused on Cameroon.
-
-User role: ${userRole}
-User skills: ${JSON.stringify(profile?.skills || [])}
-Career goals: ${JSON.stringify(profile?.career_goals || [])}
-Completed courses: ${JSON.stringify([...completedSlugs])}${gapInfo}${partnerInfo}
-
-Available courses:
-${availableCourses.map((c: any) => `- ${c.slug}: ${c.title} (${c.difficulty}, categories: ${(c.skill_categories || []).join(',')}) - ${c.description}`).join('\n')}
-
-Recommend exactly 3 courses from the available list. Prioritize courses that address skill gaps. Return JSON array:
-[{"course_slug": "slug", "course_title": "Title", "reason": "Brief reason in 1 sentence referencing the skill gap if applicable"}]
-
-Only return the JSON array, no other text.`;
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.5,
-          max_tokens: 500,
-        }),
+      const { parsed } = await callAiJson({
+        schema: courseRecommendationResponseSchema,
+        temperature: 0.2,
+        maxTokens: 500,
+        timeoutMs: 12000,
+        messages: [
+          {
+            role: 'system',
+            content: buildCourseRecommendationSystemPrompt(),
+          },
+          {
+            role: 'user',
+            content: buildCourseRecommendationUserPrompt({
+              userRole,
+              skills: profile?.skills || [],
+              careerGoals: profile?.career_goals || [],
+              completedCourses: [...completedSlugs],
+              gapCategories,
+              partnerCourses: (partnerCourses || []).map(
+                (course: any) => `${course.title} (${course.partner_name}, ${course.level})`
+              ),
+              availableCourses: availableCourses.map((course: any) => ({
+                slug: course.slug,
+                title: course.title,
+                difficulty: course.difficulty,
+                description: course.description || null,
+                skillCategories: course.skill_categories || [],
+              })),
+            }),
+          },
+        ],
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content?.trim();
-        if (content) {
-          const recommendations: CourseRecommendation[] = JSON.parse(content);
-          return NextResponse.json(recommendations.slice(0, 3));
+      const availableBySlug = new Map(
+        availableCourses.map((course: any) => [course.slug, course])
+      );
+      const aiRecommendations: CourseRecommendation[] = [];
+      const seen = new Set<string>();
+
+      for (const recommendation of parsed.recommendations ?? []) {
+        const matchedCourse = availableBySlug.get(recommendation.course_slug);
+        if (!matchedCourse || seen.has(recommendation.course_slug)) {
+          continue;
         }
+
+        seen.add(recommendation.course_slug);
+        aiRecommendations.push({
+          course_slug: recommendation.course_slug,
+          course_title: matchedCourse.title || recommendation.course_title,
+          reason: recommendation.reason,
+        });
+      }
+
+      if (aiRecommendations.length > 0) {
+        return NextResponse.json(aiRecommendations.slice(0, 3));
       }
     } catch {
-      // Fall through to deterministic fallback
+      // Fall through to deterministic fallback.
     }
   }
 
-  // Enhanced deterministic fallback: score by gap relevance
-  const scored = availableCourses.map((c: any) => {
+  const scored = availableCourses.map((course: any) => {
     let score = 0;
-    const cats: string[] = c.skill_categories || [];
+    const categories: string[] = course.skill_categories || [];
 
-    // Gap relevance: courses matching top gap categories get bonus
-    for (let i = 0; i < gapCategories.length; i++) {
-      if (cats.includes(gapCategories[i])) {
-        score += (gapCategories.length - i) * 10; // higher gap = higher bonus
+    for (let index = 0; index < gapCategories.length; index += 1) {
+      if (categories.includes(gapCategories[index])) {
+        score += (gapCategories.length - index) * 10;
       }
     }
 
-    // Difficulty ordering (beginner first for new learners)
     const difficultyOrder: Record<string, number> = {
       beginner: 3,
       intermediate: 2,
       advanced: 1,
     };
-    score += difficultyOrder[c.difficulty] || 0;
+    score += difficultyOrder[course.difficulty] || 0;
 
-    return { course: c, score };
+    return { course, score };
   });
 
   scored.sort((a, b) => b.score - a.score);
   const top = scored.slice(0, 3);
 
-  const fallback: CourseRecommendation[] = top.map(({ course: c }) => {
-    const cats: string[] = c.skill_categories || [];
-    const matchingGap = gapCategories.find((g) => cats.includes(g));
+  const fallback: CourseRecommendation[] = top.map(({ course }) => {
+    const categories: string[] = course.skill_categories || [];
+    const matchingGap = gapCategories.find((gap) => categories.includes(gap));
     const reason = matchingGap
-      ? `Addresses your ${matchingGap.replace('-', ' ')} skill gap — a ${c.difficulty} course to build key competencies.`
-      : `Recommended ${c.difficulty} course to help you grow your skills.`;
+      ? `Addresses your ${matchingGap.replace(/-/g, ' ')} skill gap with a ${course.difficulty} learning path.`
+      : `Recommended ${course.difficulty} course to strengthen your current skill profile.`;
 
     return {
-      course_slug: c.slug,
-      course_title: c.title,
+      course_slug: course.slug,
+      course_title: course.title,
       reason,
     };
   });

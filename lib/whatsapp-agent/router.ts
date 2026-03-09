@@ -62,7 +62,8 @@ import {
   getWaLimitContext,
 } from '@/lib/whatsapp-agent/limits';
 import { getUserSubscription } from '@/lib/subscriptions';
-import OpenAI from 'openai';
+import { callAiText, isAiConfigured } from '@/lib/ai/client';
+import { buildRecruiterDescriptionSystemPrompt } from '@/lib/ai/policies';
 
 const agentDb = createServiceSupabaseClient();
 const SEARCH_PAGE_SIZE = 10;
@@ -75,9 +76,6 @@ const JOBS_URL = `${APP_URL}/jobs`;
 const WA_RECRUITER_POSTING_FEE_XAF = Number(process.env.WA_RECRUITER_POSTING_FEE_XAF || '0');
 const WA_RECRUITER_REQUIRE_SUBSCRIPTION =
   process.env.WA_RECRUITER_REQUIRE_SUBSCRIPTION !== '0';
-const RECRUITER_DESC_SYSTEM_PROMPT =
-  'You are an HR copywriter. Generate a concise and professional job description in markdown with sections: About the Role, Responsibilities, Requirements, Nice to Have. Keep it practical for Cameroon hiring.';
-
 interface InboundAgentInput {
   message: WAInboundMessage;
   textBody: string | null;
@@ -371,25 +369,25 @@ async function expandRecruiterDescriptionWithAi(input: {
 }): Promise<string> {
   const seed = input.seedDescription.trim();
   if (!seed) return seed;
-  if (!process.env.OPENAI_API_KEY) return seed;
+  if (!isAiConfigured()) return seed;
 
   try {
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const completionPromise = openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const completionPromise = callAiText({
+      temperature: 0.3,
+      maxTokens: 700,
+      timeoutMs: 8000,
       messages: [
-        { role: 'system', content: RECRUITER_DESC_SYSTEM_PROMPT },
+        { role: 'system', content: buildRecruiterDescriptionSystemPrompt() },
         {
           role: 'user',
           content: [
             `Job title: ${input.jobTitle}`,
             `Company: ${input.companyName || 'Not specified'}`,
             `Recruiter short brief: ${seed}`,
+            'Rewrite the brief into a practical markdown job description.',
           ].join('\n'),
         },
       ],
-      temperature: 0.5,
-      max_tokens: 800,
     });
 
     const timeoutPromise = new Promise<null>((resolve) =>
@@ -398,7 +396,7 @@ async function expandRecruiterDescriptionWithAi(input: {
     const completion = await Promise.race([completionPromise, timeoutPromise]);
     if (!completion) return seed;
 
-    const generated = completion.choices?.[0]?.message?.content?.trim();
+    const generated = completion.text?.trim();
     if (!generated) return seed;
     return generated;
   } catch (error) {

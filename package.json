@@ -11,6 +11,8 @@
     "uat:phase1:newman": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1",
     "uat:phase1:critical": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1 -CriticalPath",
     "uat:phase1:report": "node scripts/summarize-phase1-uat-report.mjs",
+    "test:ai-client": "node tests/ai-client.test.js",
+    "test:ai-hardening": "node tests/ai-hardening.test.js",
     "test:opportunities": "node tests/opportunities.test.js",
     "test:application-dashboard": "node tests/application-dashboard.test.js",
     "test:application-ranking": "node tests/application-ranking.test.js",

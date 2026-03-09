@@ -6,6 +6,7 @@ import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { getUserSubscription } from '@/lib/subscriptions';
 import { resolveProfileIdByPhone } from '@/lib/phone-match';
 import {
+  formatRecruiterSummaryText,
   generateOptionalFollowUpQuestion,
   generateRecruiterSummary,
   isAiFollowUpEnabled,
@@ -958,9 +959,9 @@ async function generateAiSummaryForSession(
 
     const completionUpdate = await updateAiSessionFields(sessionId, {
       ai_summary_status: 'completed',
-      ai_summary_text: summary.summary,
+      ai_summary_text: formatRecruiterSummaryText(summary),
       ai_recommendation: summary.recommendation,
-      ai_key_strengths: sanitizeTextArray(summary.strengths),
+      ai_key_strengths: sanitizeTextArray(summary.evidence),
       ai_key_risks: sanitizeTextArray(summary.risks),
       ai_model: summary.model,
       ai_tokens_used: summary.tokensUsed,
@@ -987,6 +988,8 @@ async function generateAiSummaryForSession(
       trigger,
       model: summary.model,
       tokensUsed: summary.tokensUsed,
+      confidence: summary.confidence,
+      nextStep: summary.nextStep,
     });
 
     return {
