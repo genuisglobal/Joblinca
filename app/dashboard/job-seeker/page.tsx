@@ -1,38 +1,41 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
-import StatusBadge from '../components/StatusBadge';
-
-interface Job {
-  id: string;
-  title: string;
-  company_name: string;
-  location: string;
-}
-
-interface Application {
-  id: string;
-  status: string;
-  created_at: string;
-  jobs: Job | null;
-}
+import ApplicationProgressCard from '@/components/applications/ApplicationProgressCard';
+import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterviewsPanel';
+import {
+  applyInterviewUpdateToApplications,
+  attachInterviewsToApplications,
+  attachInterviewSlotsToApplications,
+  countApplicationsAtStageTypes,
+  countUpcomingInterviews,
+  getApplicationDisplayStatus,
+  isApplicationActive,
+  normalizeInterviewSlotRow,
+  normalizeInterviewRow,
+  normalizeApplicationRow,
+  type CandidateApplicationRecord,
+} from '@/lib/applications/dashboard';
 
 export default function JobSeekerDashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [applications, setApplications] = useState<CandidateApplicationRecord[]>([]);
 
   useEffect(() => {
     let mounted = true;
 
     async function loadDashboardData() {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const {
+          data: { user },
+          error: authError,
+        } = await supabase.auth.getUser();
 
         if (!mounted) return;
 
@@ -41,24 +44,94 @@ export default function JobSeekerDashboardPage() {
           return;
         }
 
-        // Fetch user's applications
-        const { data: apps } = await supabase
-          .from('applications')
-          .select(`
-            *,
-            jobs:job_id (
+        const [applicationsResult, interviewsResult, slotsResult] = await Promise.all([
+          supabase
+            .from('applications')
+            .select(
+              `
               id,
-              title,
-              company_name,
-              location
+              status,
+              is_draft,
+              created_at,
+              stage_entered_at,
+              decision_status,
+              cover_letter,
+              current_stage:current_stage_id (
+                id,
+                stage_key,
+                label,
+                stage_type,
+                order_index,
+                is_terminal,
+                allows_feedback
+              ),
+              jobs:job_id (
+                id,
+                title,
+                company_name,
+                location,
+                work_type,
+                job_type,
+                internship_track
+              )
+            `
             )
-          `)
-          .eq('applicant_id', user.id)
-          .order('created_at', { ascending: false });
+            .eq('applicant_id', user.id)
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('application_interviews')
+            .select(
+              `
+              id,
+              application_id,
+              scheduled_at,
+              timezone,
+              mode,
+                location,
+                meeting_url,
+                notes,
+                status,
+                candidate_response_status,
+                candidate_responded_at,
+                candidate_response_note,
+                confirmation_sent_at,
+                reminder_sent_at
+              `
+            )
+            .eq('candidate_user_id', user.id)
+            .order('scheduled_at', { ascending: true }),
+          supabase
+            .from('application_interview_slots')
+            .select(
+              `
+              id,
+              application_id,
+              scheduled_at,
+              timezone,
+              mode,
+              location,
+              meeting_url,
+              notes,
+              status,
+              booked_interview_id,
+              invitation_sent_at
+            `
+            )
+            .eq('candidate_user_id', user.id)
+            .order('scheduled_at', { ascending: true }),
+        ]);
 
         if (!mounted) return;
 
-        setApplications(apps || []);
+        setApplications(
+          attachInterviewSlotsToApplications(
+            attachInterviewsToApplications(
+              (applicationsResult.data || []).map(normalizeApplicationRow),
+              (interviewsResult.data || []).map(normalizeInterviewRow)
+            ),
+            (slotsResult.data || []).map(normalizeInterviewSlotRow)
+          )
+        );
         setLoading(false);
       } catch (err) {
         console.error('Dashboard load error:', err);
@@ -77,37 +150,38 @@ export default function JobSeekerDashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <div className="flex min-h-[400px] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
           <p className="text-gray-400">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
-  // Calculate stats
-  const totalApplications = applications.length;
-  const interviewsCount = applications.filter((a) => a.status === 'interviewed').length;
-  const shortlistedCount = applications.filter((a) => a.status === 'shortlisted').length;
-  const offersCount = applications.filter((a) => a.status === 'hired').length;
-  const recentApplications = applications.slice(0, 5);
+  const liveApplications = applications.filter((application) => !application.isDraft);
+  const activeApplications = liveApplications.filter(isApplicationActive);
+  const inReviewCount = countApplicationsAtStageTypes(applications, [
+    'applied',
+    'screening',
+    'review',
+  ]);
+  const interviewsCount = countUpcomingInterviews(applications);
+  const offersCount = activeApplications.filter((application) => {
+    return application.currentStage?.stageType === 'offer' || application.decisionStatus === 'hired';
+  }).length;
+  const recentApplications = applications.slice(0, 3);
+  const draftCount = applications.filter((application) => getApplicationDisplayStatus(application) === 'draft').length;
 
   return (
     <div className="space-y-8">
-      {/* Stats Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
-          title="Applications Sent"
-          value={totalApplications}
+          title="Active Applications"
+          value={activeApplications.length}
           color="blue"
           icon={
-            <svg
-              className="w-6 h-6 text-blue-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -118,16 +192,11 @@ export default function JobSeekerDashboardPage() {
           }
         />
         <StatsCard
-          title="Shortlisted"
-          value={shortlistedCount}
+          title="In Review"
+          value={inReviewCount}
           color="yellow"
           icon={
-            <svg
-              className="w-6 h-6 text-yellow-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="h-6 w-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -142,12 +211,7 @@ export default function JobSeekerDashboardPage() {
           value={interviewsCount}
           color="purple"
           icon={
-            <svg
-              className="w-6 h-6 text-purple-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="h-6 w-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -158,16 +222,11 @@ export default function JobSeekerDashboardPage() {
           }
         />
         <StatsCard
-          title="Offers"
-          value={offersCount}
+          title="Offers / Drafts"
+          value={offersCount + draftCount}
           color="green"
           icon={
-            <svg
-              className="w-6 h-6 text-green-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
+            <svg className="h-6 w-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -179,18 +238,12 @@ export default function JobSeekerDashboardPage() {
         />
       </div>
 
-      {/* Quick Actions */}
       <div className="flex flex-wrap gap-4">
         <Link
           href="/dashboard/job-seeker/browse"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
         >
-          <svg
-            className="w-5 h-5"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
+          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -202,35 +255,33 @@ export default function JobSeekerDashboardPage() {
         </Link>
         <Link
           href="/dashboard/job-seeker/applications"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
         >
           View All Applications
         </Link>
         <Link
           href="/dashboard/job-seeker/profile"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
+          className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
         >
           Edit Profile
         </Link>
       </div>
 
-      {/* Recent Applications */}
-      <div className="bg-gray-800 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white">
-            Recent Applications
-          </h2>
+      <div className="rounded-xl bg-gray-800 p-6">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-white">Recent Applications</h2>
           <Link
             href="/dashboard/job-seeker/applications"
-            className="text-blue-400 hover:text-blue-300 text-sm"
+            className="text-sm text-blue-400 hover:text-blue-300"
           >
             View All
           </Link>
         </div>
+
         {recentApplications.length === 0 ? (
-          <div className="text-center py-8">
+          <div className="py-8 text-center">
             <svg
-              className="w-16 h-16 mx-auto text-gray-600 mb-4"
+              className="mx-auto mb-4 h-16 w-16 text-gray-600"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -242,77 +293,68 @@ export default function JobSeekerDashboardPage() {
                 d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
               />
             </svg>
-            <p className="text-gray-400 mb-4">No applications yet.</p>
+            <p className="mb-4 text-gray-400">No applications yet.</p>
             <Link
               href="/dashboard/job-seeker/browse"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
             >
               Start Exploring Jobs
             </Link>
           </div>
         ) : (
           <div className="space-y-4">
-            {recentApplications.map((app) => (
-              <div
-                key={app.id}
-                className="flex items-center justify-between p-4 bg-gray-700/50 rounded-lg"
-              >
-                <div>
-                  <h3 className="font-medium text-white">
-                    {app.jobs?.title || 'Job'}
-                  </h3>
-                  <p className="text-sm text-gray-400">
-                    {app.jobs?.company_name || 'Company'} •{' '}
-                    {app.jobs?.location || 'Location not specified'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Applied {new Date(app.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-                <StatusBadge status={app.status} />
-              </div>
+            {recentApplications.map((application) => (
+              <ApplicationProgressCard
+                key={application.id}
+                application={application}
+                compact
+              />
             ))}
           </div>
         )}
       </div>
 
-      {/* Skill Up Quick Action Card */}
-      <div className="bg-gradient-to-r from-blue-900/50 to-purple-900/50 rounded-xl p-6 border border-blue-700/30">
+      <UpcomingInterviewsPanel
+        applications={applications}
+        description="Stay on top of confirmed interviews, meeting links, and recruiter instructions."
+        emptyMessage="No interview has been scheduled for your applications yet."
+        onInterviewUpdated={(interview) =>
+          setApplications((current) =>
+            applyInterviewUpdateToApplications(current, interview)
+          )
+        }
+      />
+
+      <div className="rounded-xl border border-blue-700/30 bg-gradient-to-r from-blue-900/50 to-purple-900/50 p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-blue-500/20 rounded-xl">
-              <svg className="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="rounded-xl bg-blue-500/20 p-3">
+              <svg className="h-7 w-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
               </svg>
             </div>
             <div>
               <h3 className="text-lg font-semibold text-white">Skill Up</h3>
-              <p className="text-sm text-gray-300">Learn new skills with micro-courses to boost your career</p>
+              <p className="text-sm text-gray-300">
+                Learn new skills with micro-courses to improve your match quality.
+              </p>
             </div>
           </div>
           <Link
             href="/dashboard/skillup"
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+            className="whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700"
           >
             Start Learning
           </Link>
         </div>
       </div>
 
-      {/* Tips Section */}
-      <div className="bg-gray-800 rounded-xl p-6">
-        <h2 className="text-xl font-semibold text-white mb-4">
-          Tips for Success
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-gray-700/50 rounded-lg">
-            <div className="w-10 h-10 bg-blue-600/20 rounded-lg flex items-center justify-center mb-3">
-              <svg
-                className="w-6 h-6 text-blue-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+      <div className="rounded-xl bg-gray-800 p-6">
+        <h2 className="mb-4 text-xl font-semibold text-white">Tips for Success</h2>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="rounded-lg bg-gray-700/50 p-4">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600/20">
+              <svg className="h-6 w-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -321,21 +363,14 @@ export default function JobSeekerDashboardPage() {
                 />
               </svg>
             </div>
-            <h3 className="font-medium text-white mb-1">
-              Keep Resume Updated
-            </h3>
+            <h3 className="mb-1 font-medium text-white">Keep Resume Updated</h3>
             <p className="text-sm text-gray-400">
-              Make sure your resume reflects your latest experience and skills.
+              Your current stage and recruiter feedback are only as strong as the information you submit.
             </p>
           </div>
-          <div className="p-4 bg-gray-700/50 rounded-lg">
-            <div className="w-10 h-10 bg-green-600/20 rounded-lg flex items-center justify-center mb-3">
-              <svg
-                className="w-6 h-6 text-green-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+          <div className="rounded-lg bg-gray-700/50 p-4">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-green-600/20">
+              <svg className="h-6 w-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -344,21 +379,14 @@ export default function JobSeekerDashboardPage() {
                 />
               </svg>
             </div>
-            <h3 className="font-medium text-white mb-1">
-              Personalize Applications
-            </h3>
+            <h3 className="mb-1 font-medium text-white">Personalize Applications</h3>
             <p className="text-sm text-gray-400">
-              Tailor your cover letter to each job for better results.
+              Targeted cover letters and complete answers help you move faster through screening and review stages.
             </p>
           </div>
-          <div className="p-4 bg-gray-700/50 rounded-lg">
-            <div className="w-10 h-10 bg-purple-600/20 rounded-lg flex items-center justify-center mb-3">
-              <svg
-                className="w-6 h-6 text-purple-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+          <div className="rounded-lg bg-gray-700/50 p-4">
+            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-purple-600/20">
+              <svg className="h-6 w-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -367,9 +395,9 @@ export default function JobSeekerDashboardPage() {
                 />
               </svg>
             </div>
-            <h3 className="font-medium text-white mb-1">Stay Active</h3>
+            <h3 className="mb-1 font-medium text-white">Stay Active</h3>
             <p className="text-sm text-gray-400">
-              Check back regularly for new opportunities matching your profile.
+              Monitor stage changes and continue any saved draft before the job closes.
             </p>
           </div>
         </div>

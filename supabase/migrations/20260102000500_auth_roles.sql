@@ -9,58 +9,83 @@
 
 -- 1. Define enums for roles and other entities
 
-create type if not exists public.role_enum as enum (
-  'job_seeker',
-  'talent',
-  'recruiter',
-  'vetting_officer',
-  'verification_officer',
-  'admin',
-  'staff'
-);
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'role_enum') then
+    create type public.role_enum as enum (
+      'job_seeker',
+      'talent',
+      'recruiter',
+      'vetting_officer',
+      'verification_officer',
+      'admin',
+      'staff'
+    );
+  end if;
 
-create type if not exists public.recruiter_type_enum as enum (
-  'company_hr',
-  'agency',
-  'verified_individual',
-  'institution'
-);
+  if not exists (select 1 from pg_type where typname = 'recruiter_type_enum') then
+    create type public.recruiter_type_enum as enum (
+      'company_hr',
+      'agency',
+      'verified_individual',
+      'institution'
+    );
+  end if;
 
-create type if not exists public.verification_status_enum as enum (
-  'unverified',
-  'pending',
-  'verified',
-  'rejected'
-);
+  if not exists (select 1 from pg_type where typname = 'verification_status_enum') then
+    create type public.verification_status_enum as enum (
+      'unverified',
+      'pending',
+      'verified',
+      'rejected'
+    );
+  end if;
 
-create type if not exists public.tier_plan_enum as enum (
-  'pay_per_post',
-  'screened_shortlist',
-  'full_hiring',
-  'hr_partner_monthly'
-);
+  if not exists (select 1 from pg_type where typname = 'tier_plan_enum') then
+    create type public.tier_plan_enum as enum (
+      'pay_per_post',
+      'screened_shortlist',
+      'full_hiring',
+      'hr_partner_monthly'
+    );
+  end if;
 
-create type if not exists public.job_type_enum as enum (
-  'job',
-  'internship',
-  'gig'
-);
+  if not exists (select 1 from pg_type where typname = 'job_type_enum') then
+    create type public.job_type_enum as enum (
+      'job',
+      'internship',
+      'gig'
+    );
+  end if;
 
-create type if not exists public.visibility_enum as enum (
-  'public',
-  'talent_only'
-);
+  if not exists (select 1 from pg_type where typname = 'visibility_enum') then
+    create type public.visibility_enum as enum (
+      'public',
+      'talent_only'
+    );
+  end if;
+end;
+$$;
 
 -- 2. Alter profiles.role to use role_enum and backfill legacy roles
 
-alter table if exists public.profiles
-  alter column role type role_enum using (
-    case role
-      when 'candidate' then 'job_seeker'
-      when 'candidate'::text then 'job_seeker'
-      else role::role_enum
-    end
-  );
+do $$
+begin
+  begin
+    alter table if exists public.profiles
+      alter column role type role_enum using (
+        case role
+          when 'candidate' then 'job_seeker'
+          when 'candidate'::text then 'job_seeker'
+          else role::role_enum
+        end
+      );
+  exception
+    when feature_not_supported then
+      raise notice 'Skipping profiles.role type migration because dependent RLS policies exist in this database.';
+  end;
+end;
+$$;
 
 -- Ensure non‑null constraint still enforced
 alter table if exists public.profiles
@@ -163,16 +188,18 @@ alter table public.capability_tests enable row level security;
 alter table public.capability_results enable row level security;
 
 -- Policies for job_seeker_profiles
-drop policy if exists "job_seeker_self" on public.job_seeker_profiles;
+drop policy if exists "job_seeker_select" on public.job_seeker_profiles;
 create policy "job_seeker_select" on public.job_seeker_profiles
   for select
   using (auth.uid() = user_id or
     exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','staff')));
 
+drop policy if exists "job_seeker_insert" on public.job_seeker_profiles;
 create policy "job_seeker_insert" on public.job_seeker_profiles
   for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "job_seeker_update" on public.job_seeker_profiles;
 create policy "job_seeker_update" on public.job_seeker_profiles
   for update
   using (auth.uid() = user_id);
@@ -184,10 +211,12 @@ create policy "talent_select" on public.talent_profiles
   using (auth.uid() = user_id or
     exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','staff')));
 
+drop policy if exists "talent_insert" on public.talent_profiles;
 create policy "talent_insert" on public.talent_profiles
   for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "talent_update" on public.talent_profiles;
 create policy "talent_update" on public.talent_profiles
   for update
   using (auth.uid() = user_id);
@@ -199,48 +228,57 @@ create policy "recruiter_select" on public.recruiter_profiles
   using (auth.uid() = user_id or
     exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','staff')));
 
+drop policy if exists "recruiter_insert" on public.recruiter_profiles;
 create policy "recruiter_insert" on public.recruiter_profiles
   for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "recruiter_update" on public.recruiter_profiles;
 create policy "recruiter_update" on public.recruiter_profiles
   for update
   using (auth.uid() = user_id);
 
 -- Policies for user_badges
-create policy if not exists "user_badges_select" on public.user_badges
+drop policy if exists "user_badges_select" on public.user_badges;
+create policy "user_badges_select" on public.user_badges
   for select
   using (auth.uid() = user_id or
     exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','staff')));
 
-create policy if not exists "user_badges_insert" on public.user_badges
+drop policy if exists "user_badges_insert" on public.user_badges;
+create policy "user_badges_insert" on public.user_badges
   for insert
   with check (auth.uid() = user_id);
 
 -- Policies for capability_tests
-create policy if not exists "capability_tests_select" on public.capability_tests
+drop policy if exists "capability_tests_select" on public.capability_tests;
+create policy "capability_tests_select" on public.capability_tests
   for select
   using (true);
 
 -- Policies for capability_results
-create policy if not exists "capability_results_select" on public.capability_results
+drop policy if exists "capability_results_select" on public.capability_results;
+create policy "capability_results_select" on public.capability_results
   for select
   using (auth.uid() = user_id or
     exists (select 1 from public.profiles p where p.id = auth.uid() and p.role in ('admin','staff')));
 
-create policy if not exists "capability_results_insert" on public.capability_results
+drop policy if exists "capability_results_insert" on public.capability_results;
+create policy "capability_results_insert" on public.capability_results
   for insert
   with check (auth.uid() = user_id);
 
 -- 7. Policies for jobs visibility (talent_only)
 
 -- Anyone can see public jobs
-create policy if not exists "jobs_select_public" on public.jobs
+drop policy if exists "jobs_select_public" on public.jobs;
+create policy "jobs_select_public" on public.jobs
   for select
   using (visibility = 'public');
 
 -- Only talents can see talent_only jobs
-create policy if not exists "jobs_select_talent_only" on public.jobs
+drop policy if exists "jobs_select_talent_only" on public.jobs;
+create policy "jobs_select_talent_only" on public.jobs
   for select
   using (
     visibility = 'talent_only' and

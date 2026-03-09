@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { getOpportunityTypeLabel } from '@/lib/opportunities';
 
 interface Job {
   id: string;
@@ -12,6 +13,7 @@ interface Job {
   company_name: string | null;
   work_type: string | null;
   job_type: string | null;
+  internship_track: string | null;
   created_at: string;
 }
 
@@ -79,7 +81,7 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
             />
           </svg>
           <h3 className="text-xl font-semibold text-white mb-2">
-            No jobs found
+            No opportunities found
           </h3>
           <p className="text-gray-400">
             Try adjusting your search or filters.
@@ -101,7 +103,7 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
                     {job.company_name || 'Company'}
                   </p>
                 </div>
-                {job.work_type && (
+                    {job.work_type && (
                   <span className="px-3 py-1 bg-blue-600/20 text-blue-400 rounded-full text-sm capitalize">
                     {job.work_type}
                   </span>
@@ -151,9 +153,7 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
                     {job.salary.toLocaleString()} XAF
                   </span>
                 )}
-                {job.job_type && (
-                  <span className="capitalize">{job.job_type}</span>
-                )}
+                <span>{getOpportunityTypeLabel(job.job_type, job.internship_track)}</span>
               </div>
 
               <p className="text-gray-300 text-sm line-clamp-3 mb-4">

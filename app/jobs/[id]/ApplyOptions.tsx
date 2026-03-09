@@ -4,13 +4,23 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import {
+  applicationDashboardHrefForRole,
+  canRoleApplyToOpportunity,
+  describeEligibleRoles,
+  getOpportunityTypeLabel,
+} from '@/lib/opportunities';
 
 type ApplyMethod = 'joblinca' | 'external_url' | 'email' | 'phone' | 'whatsapp' | 'multiple';
 
 type Job = {
   id: string;
   title: string;
-  company_name: string;
+  company_name: string | null;
+  job_type: string | null;
+  internship_track: string | null;
+  visibility: string | null;
+  eligible_roles: string[] | null;
   apply_method: ApplyMethod;
   external_apply_url: string | null;
   apply_email: string | null;
@@ -49,9 +59,26 @@ export default function ApplyOptions({
   const [isSaving, setIsSaving] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  const canApply = isAuthenticated && userRole === 'job_seeker' && !isClosed;
+  const canApply = isAuthenticated &&
+    canRoleApplyToOpportunity(
+      userRole,
+      job.eligible_roles,
+      job.job_type,
+      job.internship_track,
+      job.visibility
+    ) &&
+    !isClosed;
   const hasApplied = existingApplication && !existingApplication.is_draft;
   const hasDraft = existingApplication?.is_draft;
+  const eligibleRoleSummary = describeEligibleRoles(
+    job.eligible_roles,
+    job.job_type,
+    job.internship_track,
+    job.visibility
+  );
+  const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track).toLowerCase();
+  const applicationsHref = applicationDashboardHrefForRole(userRole);
+  const companyName = job.company_name || 'the company';
 
   const trackExternalClick = async (method: string) => {
     try {
@@ -96,7 +123,7 @@ export default function ApplyOptions({
   const handleEmailApply = async () => {
     if (job.apply_email) {
       await trackExternalClick('email');
-      window.location.href = `mailto:${job.apply_email}?subject=Application for ${encodeURIComponent(job.title)} at ${encodeURIComponent(job.company_name)}`;
+      window.location.href = `mailto:${job.apply_email}?subject=Application for ${encodeURIComponent(job.title)} at ${encodeURIComponent(companyName)}`;
     }
   };
 
@@ -111,7 +138,7 @@ export default function ApplyOptions({
     if (job.apply_whatsapp) {
       await trackExternalClick('whatsapp');
       const message = encodeURIComponent(
-        `Hi, I'm interested in the ${job.title} position at ${job.company_name}. I found this job on JobLinca.`
+        `Hi, I'm interested in the ${job.title} position at ${companyName}. I found this job on JobLinca.`
       );
       window.open(
         `https://wa.me/${job.apply_whatsapp.replace(/[^0-9]/g, '')}?text=${message}`,
@@ -153,7 +180,7 @@ export default function ApplyOptions({
 
   return (
     <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-      <h3 className="text-lg font-semibold text-white mb-4">Apply for this job</h3>
+      <h3 className="text-lg font-semibold text-white mb-4">Apply for this {opportunityLabel}</h3>
 
       {/* Already Applied Status */}
       {hasApplied && (
@@ -172,7 +199,7 @@ export default function ApplyOptions({
             Status: {getStatusLabel(existingApplication!.status).text}
           </p>
           <Link
-            href="/dashboard/job-seeker/applications"
+            href={applicationsHref}
             className="text-blue-400 hover:text-blue-300 text-sm mt-2 inline-block"
           >
             View your applications
@@ -205,11 +232,16 @@ export default function ApplyOptions({
       {/* Apply Buttons */}
       {!hasApplied && !isClosed && (
         <div className="space-y-3">
+          {isAuthenticated && !canApply && (
+            <div className="p-3 bg-gray-700/50 rounded-lg text-center text-gray-300 text-sm">
+              This opportunity is currently open to {eligibleRoleSummary.toLowerCase()}.
+            </div>
+          )}
           {/* JobLinca Apply */}
           {showJobLincaApply && (
             <>
               {isAuthenticated ? (
-                userRole === 'job_seeker' ? (
+                canApply ? (
                   <Link
                     href={`/jobs/${job.id}/apply`}
                     className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -226,7 +258,7 @@ export default function ApplyOptions({
                   </Link>
                 ) : (
                   <div className="p-3 bg-gray-700/50 rounded-lg text-center text-gray-400 text-sm">
-                    Only job seekers can apply for jobs
+                    Switch to an eligible profile to apply here
                   </div>
                 )
               ) : (
@@ -241,7 +273,7 @@ export default function ApplyOptions({
           )}
 
           {/* External URL Apply */}
-          {showExternalUrl && (
+          {showExternalUrl && (!isAuthenticated || canApply) && (
             <button
               onClick={handleExternalApply}
               className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -259,7 +291,7 @@ export default function ApplyOptions({
           )}
 
           {/* Email Apply */}
-          {showEmail && (
+          {showEmail && (!isAuthenticated || canApply) && (
             <div className="bg-gray-700/50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">Email your application</span>
@@ -288,7 +320,7 @@ export default function ApplyOptions({
           )}
 
           {/* Phone Apply */}
-          {showPhone && (
+          {showPhone && (!isAuthenticated || canApply) && (
             <div className="bg-gray-700/50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-gray-400 text-sm">Call to apply</span>
@@ -317,7 +349,7 @@ export default function ApplyOptions({
           )}
 
           {/* WhatsApp Apply */}
-          {showWhatsApp && (
+          {showWhatsApp && (!isAuthenticated || canApply) && (
             <button
               onClick={handleWhatsAppApply}
               className="w-full px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"

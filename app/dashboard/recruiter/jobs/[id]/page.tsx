@@ -6,6 +6,20 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import StatusBadge from '../../../components/StatusBadge';
 import ApplicationsTable from './ApplicationsTable';
+import MatchInsightsPanel from '@/components/jobs/MatchInsightsPanel';
+import PipelineEditor from '@/components/hiring-pipeline/PipelineEditor';
+import InterviewAutomationEditor from '@/components/interview-scheduling/InterviewAutomationEditor';
+import InterviewSelfScheduleEditor from '@/components/interview-scheduling/InterviewSelfScheduleEditor';
+import type { ApplicationCurrentStage, HiringPipelineStage } from '@/lib/hiring-pipeline/types';
+import {
+  DEFAULT_JOB_INTERVIEW_AUTOMATION_SETTINGS,
+  type JobInterviewAutomationSettings,
+} from '@/lib/interview-scheduling/automation';
+import {
+  DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS,
+  type JobInterviewSelfScheduleSettings,
+} from '@/lib/interview-scheduling/self-schedule';
+import { describeEligibleRoles, getOpportunityTypeLabel } from '@/lib/opportunities';
 
 interface Job {
   id: string;
@@ -14,6 +28,8 @@ interface Job {
   location: string | null;
   work_type: string | null;
   job_type: string | null;
+  internship_track: string | null;
+  eligible_roles: string[] | null;
   salary: number | null;
   visibility: string | null;
   published: boolean;
@@ -41,6 +57,39 @@ interface Application {
   status: string;
   created_at: string;
   profiles: Profile;
+  current_stage_id: string | null;
+  stage_entered_at: string | null;
+  decision_status: string | null;
+  eligibility_status: 'eligible' | 'needs_review' | 'ineligible' | null;
+  overall_stage_score: number | null;
+  recruiter_rating: number | null;
+  ranking_score: number | null;
+  ranking_breakdown: Record<string, number> | null;
+  current_stage: ApplicationCurrentStage | null;
+}
+
+interface HiringPipelineResponse {
+  pipeline: {
+    id: string;
+    name: string;
+    stages: HiringPipelineStage[];
+  };
+}
+
+interface InterviewAutomationResponse {
+  settings: JobInterviewAutomationSettings;
+}
+
+interface InterviewSelfScheduleResponse {
+  settings: JobInterviewSelfScheduleSettings;
+}
+
+function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
 }
 
 export default function RecruiterJobDetailPage({
@@ -54,6 +103,18 @@ export default function RecruiterJobDetailPage({
   const [loading, setLoading] = useState(true);
   const [job, setJob] = useState<Job | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [pipelineName, setPipelineName] = useState('Structured Hiring');
+  const [pipelineStages, setPipelineStages] = useState<HiringPipelineStage[]>([]);
+  const [savingPipeline, setSavingPipeline] = useState(false);
+  const [automationSettings, setAutomationSettings] = useState<JobInterviewAutomationSettings>(
+    DEFAULT_JOB_INTERVIEW_AUTOMATION_SETTINGS
+  );
+  const [savingAutomation, setSavingAutomation] = useState(false);
+  const [selfScheduleSettings, setSelfScheduleSettings] =
+    useState<JobInterviewSelfScheduleSettings>(
+      DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS
+    );
+  const [savingSelfSchedule, setSavingSelfSchedule] = useState(false);
   const showCreatedNotice = searchParams.get('created') === '1';
 
   useEffect(() => {
@@ -90,12 +151,55 @@ export default function RecruiterJobDetailPage({
 
         setJob(jobData);
 
+        const pipelineResponse = await fetch(`/api/jobs/${params.id}/pipeline`, {
+          credentials: 'include',
+        });
+        if (pipelineResponse.ok) {
+          const pipelineData = (await pipelineResponse.json()) as HiringPipelineResponse;
+          setPipelineName(pipelineData.pipeline?.name || 'Structured Hiring');
+          setPipelineStages(pipelineData.pipeline?.stages || []);
+        }
+
+        const automationResponse = await fetch(`/api/jobs/${params.id}/interview-automation`, {
+          credentials: 'include',
+        });
+        if (automationResponse.ok) {
+          const automationData =
+            (await automationResponse.json()) as InterviewAutomationResponse;
+          setAutomationSettings(
+            automationData.settings || DEFAULT_JOB_INTERVIEW_AUTOMATION_SETTINGS
+          );
+        }
+
+        const selfScheduleResponse = await fetch(
+          `/api/jobs/${params.id}/interview-self-schedule`,
+          {
+            credentials: 'include',
+          }
+        );
+        if (selfScheduleResponse.ok) {
+          const selfScheduleData =
+            (await selfScheduleResponse.json()) as InterviewSelfScheduleResponse;
+          setSelfScheduleSettings(
+            selfScheduleData.settings || DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS
+          );
+        }
+
         // Fetch applications for this job
         const { data: appsData } = await supabase
           .from('applications')
           .select(
             `
             *,
+            current_stage:current_stage_id (
+              id,
+              stage_key,
+              label,
+              stage_type,
+              order_index,
+              is_terminal,
+              allows_feedback
+            ),
             profiles:applicant_id (
               id,
               full_name,
@@ -110,7 +214,26 @@ export default function RecruiterJobDetailPage({
 
         if (!mounted) return;
 
-        setApplications(appsData || []);
+        const normalizedApplications = (appsData || []).map((app: any) => ({
+          ...app,
+          profiles: normalizeRelation(app.profiles),
+          current_stage: (() => {
+            const stage = normalizeRelation(app.current_stage);
+            if (!stage) return null;
+
+            return {
+              id: stage.id,
+              stageKey: stage.stage_key,
+              label: stage.label,
+              stageType: stage.stage_type,
+              orderIndex: stage.order_index,
+              isTerminal: stage.is_terminal,
+              allowsFeedback: stage.allows_feedback,
+            };
+          })(),
+        }));
+
+        setApplications(normalizedApplications as Application[]);
         setLoading(false);
       } catch (err) {
         console.error('Job detail load error:', err);
@@ -142,6 +265,121 @@ export default function RecruiterJobDetailPage({
     return null;
   }
 
+  const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
+  const eligibleRoleSummary = describeEligibleRoles(
+    job.eligible_roles,
+    job.job_type,
+    job.internship_track,
+    job.visibility
+  );
+
+  const handlePipelineSave = async (payload: {
+    name: string;
+    stages: Array<{
+      id: string;
+      label: string;
+      orderIndex: number;
+      allowsFeedback: boolean;
+    }>;
+  }) => {
+    setSavingPipeline(true);
+    try {
+      const response = await fetch(`/api/jobs/${params.id}/pipeline`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || 'Failed to save hiring pipeline');
+      }
+
+      const data = (await response.json()) as HiringPipelineResponse;
+      setPipelineName(data.pipeline?.name || payload.name);
+      setPipelineStages(data.pipeline?.stages || []);
+      setApplications((currentApplications) =>
+        currentApplications.map((application) => {
+          const updatedStage = data.pipeline?.stages?.find(
+            (stage) => stage.id === application.current_stage_id
+          );
+
+          if (!updatedStage) {
+            return application;
+          }
+
+          return {
+            ...application,
+            current_stage: {
+              id: updatedStage.id,
+              stageKey: updatedStage.stageKey,
+              label: updatedStage.label,
+              stageType: updatedStage.stageType,
+              orderIndex: updatedStage.orderIndex,
+              isTerminal: updatedStage.isTerminal,
+              allowsFeedback: updatedStage.allowsFeedback,
+            },
+          };
+        })
+      );
+    } catch (error) {
+      console.error(error);
+      throw error;
+    } finally {
+      setSavingPipeline(false);
+    }
+  };
+
+  const handleAutomationSave = async (settings: JobInterviewAutomationSettings) => {
+    setSavingAutomation(true);
+    try {
+      const response = await fetch(`/api/jobs/${params.id}/interview-automation`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || 'Failed to save interview automation');
+      }
+
+      const data = (await response.json()) as InterviewAutomationResponse;
+      setAutomationSettings(data.settings || settings);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    } finally {
+      setSavingAutomation(false);
+    }
+  };
+
+  const handleSelfScheduleSave = async (
+    settings: JobInterviewSelfScheduleSettings
+  ) => {
+    setSavingSelfSchedule(true);
+    try {
+      const response = await fetch(`/api/jobs/${params.id}/interview-self-schedule`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings }),
+      });
+
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => null);
+        throw new Error(errorPayload?.error || 'Failed to save self-schedule settings');
+      }
+
+      const data = (await response.json()) as InterviewSelfScheduleResponse;
+      setSelfScheduleSettings(data.settings || settings);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    } finally {
+      setSavingSelfSchedule(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -170,6 +408,14 @@ export default function RecruiterJobDetailPage({
           {job.company_name && (
             <p className="text-gray-400">{job.company_name}</p>
           )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className="inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+              {opportunityLabel}
+            </span>
+            <span className="inline-flex rounded-full border border-gray-600 bg-gray-700/60 px-3 py-1 text-xs font-medium text-gray-200">
+              {eligibleRoleSummary}
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={job.approval_status || (job.published ? 'published' : 'pending')} />
@@ -261,8 +507,8 @@ export default function RecruiterJobDetailPage({
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Job Type</p>
-            <p className="text-white capitalize">{job.job_type || 'Job'}</p>
+            <p className="text-sm text-gray-400">Opportunity Type</p>
+            <p className="text-white">{opportunityLabel}</p>
           </div>
           <div>
             <p className="text-sm text-gray-400">Visibility</p>
@@ -276,12 +522,47 @@ export default function RecruiterJobDetailPage({
               {new Date(job.created_at).toLocaleDateString()}
             </p>
           </div>
+          <div>
+            <p className="text-sm text-gray-400">Eligible Profiles</p>
+            <p className="text-white">{eligibleRoleSummary}</p>
+          </div>
         </div>
         <div className="mt-6">
           <p className="text-sm text-gray-400 mb-2">Description</p>
           <p className="text-gray-300 whitespace-pre-wrap">{job.description}</p>
         </div>
       </div>
+
+      <MatchInsightsPanel jobId={job.id} />
+
+      {pipelineStages.length > 0 && (
+        <div className="bg-gray-800 rounded-xl p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-white">Hiring Pipeline</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              Edit stage labels, order, and feedback availability for this job.
+            </p>
+          </div>
+          <PipelineEditor
+            pipelineName={pipelineName}
+            stages={pipelineStages}
+            saving={savingPipeline}
+            onSave={handlePipelineSave}
+          />
+        </div>
+      )}
+
+      <InterviewAutomationEditor
+        settings={automationSettings}
+        saving={savingAutomation}
+        onSave={handleAutomationSave}
+      />
+
+      <InterviewSelfScheduleEditor
+        settings={selfScheduleSettings}
+        saving={savingSelfSchedule}
+        onSave={handleSelfScheduleSave}
+      />
 
       {/* Applications */}
       <div className="bg-gray-800 rounded-xl p-6">
@@ -293,6 +574,7 @@ export default function RecruiterJobDetailPage({
         <ApplicationsTable
           applications={applications as Parameters<typeof ApplicationsTable>[0]['applications']}
           jobId={params.id}
+          pipelineStages={pipelineStages}
           customQuestions={job.custom_questions as Parameters<typeof ApplicationsTable>[0]['customQuestions']}
         />
       </div>

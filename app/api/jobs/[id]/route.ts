@@ -1,6 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import { validateOpportunityConfiguration } from '@/lib/opportunities';
+import {
+  loadJobOpportunityMetadata,
+  persistJobOpportunityMetadata,
+} from '@/lib/opportunities-server';
+
+const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
 
 interface RouteContext {
   params: {
@@ -32,6 +39,15 @@ function sanitizeOptionalBoolean(
   return undefined;
 }
 
+function normalizeOptionalId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 async function getAuthorizedJobEditor(jobId: string) {
   const supabase = createServerSupabaseClient();
   const serviceClient = createServiceSupabaseClient();
@@ -55,7 +71,7 @@ async function getAuthorizedJobEditor(jobId: string) {
       .maybeSingle(),
     serviceClient
       .from('jobs')
-      .select('id, posted_by')
+      .select('id, posted_by, recruiter_id')
       .eq('id', jobId)
       .maybeSingle(),
   ]);
@@ -66,13 +82,20 @@ async function getAuthorizedJobEditor(jobId: string) {
     };
   }
 
+  const isActiveAdmin = Boolean(
+    profile?.admin_type && ACTIVE_ADMIN_TYPES.includes(profile.admin_type)
+  );
   const isSuperAdmin = profile?.admin_type === 'super';
   const isPoster = job.posted_by === user.id;
+  const isAssignedRecruiter = job.recruiter_id === user.id;
 
-  if (!isPoster && !isSuperAdmin) {
+  if (!isPoster && !isAssignedRecruiter && !isSuperAdmin) {
     return {
       error: NextResponse.json(
-        { error: 'Only the original poster or a super admin can edit this job.' },
+        {
+          error:
+            'Only the posting admin, the assigned recruiter, or a super admin can edit this job.',
+        },
         { status: 403 }
       ),
     };
@@ -81,7 +104,9 @@ async function getAuthorizedJobEditor(jobId: string) {
   return {
     serviceClient,
     userId: user.id,
+    isActiveAdmin,
     isPoster,
+    isAssignedRecruiter,
     isSuperAdmin,
   };
 }
@@ -99,6 +124,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       `
       id,
       posted_by,
+      recruiter_id,
       title,
       company_name,
       company_logo_url,
@@ -106,6 +132,9 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       salary,
       work_type,
       job_type,
+      internship_track,
+      eligible_roles,
+      apply_intake_mode,
       visibility,
       description,
       wa_ai_screening_enabled
@@ -118,7 +147,14 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ job });
+  const metadata = await loadJobOpportunityMetadata(access.serviceClient as any, params.id);
+
+  return NextResponse.json({
+    job: {
+      ...job,
+      internship_requirements: metadata.data,
+    },
+  });
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteContext) {
@@ -138,6 +174,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const jobType = sanitizeText(body.jobType) || 'job';
   const visibility = sanitizeText(body.visibility) || 'public';
   const waAiScreeningEnabled = sanitizeOptionalBoolean(body.waAiScreeningEnabled);
+  const recruiterIdInput = body.recruiterId;
+  let recruiterIdUpdate: string | undefined;
 
   if (!title || !companyName || !description) {
     return NextResponse.json(
@@ -151,6 +189,105 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       { error: 'waAiScreeningEnabled must be true, false, or null.' },
       { status: 400 }
     );
+  }
+
+  const [{ data: currentJob, error: currentJobError }, currentMetadata] = await Promise.all([
+    access.serviceClient
+      .from('jobs')
+      .select('id, apply_method, apply_intake_mode')
+      .eq('id', params.id)
+      .single(),
+    loadJobOpportunityMetadata(access.serviceClient as any, params.id),
+  ]);
+
+  if (currentJobError || !currentJob) {
+    return NextResponse.json({ error: 'Job not found.' }, { status: 404 });
+  }
+
+  const opportunityValidation = validateOpportunityConfiguration({
+    jobType,
+    visibility,
+    internshipTrack: body.internshipTrack,
+    eligibleRoles: body.eligibleRoles,
+    applyMethod: body.applyMethod || currentJob.apply_method,
+    applyIntakeMode: body.applyIntakeMode ?? currentJob.apply_intake_mode,
+    internshipRequirements:
+      body.internshipRequirements === undefined
+        ? currentMetadata.data
+        : body.internshipRequirements,
+  });
+
+  if (!opportunityValidation.valid) {
+    return NextResponse.json(
+      { error: opportunityValidation.errors.join(' ') },
+      { status: 400 }
+    );
+  }
+
+  if (recruiterIdInput !== undefined) {
+    if (!access.isActiveAdmin) {
+      return NextResponse.json(
+        { error: 'Only admins can reassign recruiter management for this job.' },
+        { status: 403 }
+      );
+    }
+
+    const requestedRecruiterId = normalizeOptionalId(recruiterIdInput);
+    if (!requestedRecruiterId) {
+      return NextResponse.json(
+        { error: 'recruiterId must be a valid user id when provided.' },
+        { status: 400 }
+      );
+    }
+
+    if (requestedRecruiterId !== access.userId) {
+      const { data: recruiterProfile, error: recruiterProfileError } = await access.serviceClient
+        .from('profiles')
+        .select('id, role')
+        .eq('id', requestedRecruiterId)
+        .maybeSingle();
+
+      if (
+        recruiterProfileError ||
+        !recruiterProfile ||
+        recruiterProfile.role !== 'recruiter'
+      ) {
+        return NextResponse.json(
+          { error: 'Selected recruiter is invalid or does not have recruiter role.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const { data: recruiterRecord, error: recruiterRecordError } = await access.serviceClient
+      .from('recruiters')
+      .select('id')
+      .eq('id', requestedRecruiterId)
+      .maybeSingle();
+
+    if (!recruiterRecord && requestedRecruiterId === access.userId) {
+      const { error: createRecruiterError } = await access.serviceClient
+        .from('recruiters')
+        .insert({
+          id: access.userId,
+          company_name: companyName || 'Joblinca',
+          verified: true,
+        });
+
+      if (createRecruiterError) {
+        return NextResponse.json(
+          { error: createRecruiterError.message || 'Unable to prepare admin recruiter profile.' },
+          { status: 500 }
+        );
+      }
+    } else if (recruiterRecordError || !recruiterRecord) {
+      return NextResponse.json(
+        { error: 'Selected recruiter must complete recruiter setup before assignment.' },
+        { status: 400 }
+      );
+    }
+
+    recruiterIdUpdate = requestedRecruiterId;
   }
 
   let salary: number | null = null;
@@ -176,9 +313,13 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       location,
       salary,
       work_type: workType,
-      job_type: jobType,
-      visibility,
+      job_type: opportunityValidation.normalized.jobType,
+      internship_track: opportunityValidation.normalized.internshipTrack,
+      visibility: opportunityValidation.normalized.visibility,
+      eligible_roles: opportunityValidation.normalized.eligibleRoles,
+      apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
       description,
+      recruiter_id: recruiterIdUpdate,
       wa_ai_screening_enabled:
         waAiScreeningEnabled === undefined ? undefined : waAiScreeningEnabled,
       updated_at: new Date().toISOString(),
@@ -188,6 +329,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       `
       id,
       posted_by,
+      recruiter_id,
       title,
       company_name,
       company_logo_url,
@@ -195,6 +337,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       salary,
       work_type,
       job_type,
+      internship_track,
+      eligible_roles,
+      apply_intake_mode,
       visibility,
       description,
       wa_ai_screening_enabled
@@ -207,5 +352,27 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     return NextResponse.json({ error: 'Failed to update job.' }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, job });
+  const metadataResult = await persistJobOpportunityMetadata(
+    access.serviceClient as any,
+    params.id,
+    opportunityValidation.normalized
+  );
+
+  if (metadataResult.error) {
+    console.error('Job internship metadata update error:', metadataResult.error);
+    return NextResponse.json(
+      { error: metadataResult.error.message || 'Failed to update internship configuration.' },
+      { status: 500 }
+    );
+  }
+
+  const refreshedMetadata = await loadJobOpportunityMetadata(access.serviceClient as any, params.id);
+
+  return NextResponse.json({
+    success: true,
+    job: {
+      ...job,
+      internship_requirements: refreshedMetadata.data,
+    },
+  });
 }

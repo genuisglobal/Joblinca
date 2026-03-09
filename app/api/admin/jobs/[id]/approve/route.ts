@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
+import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 
 export async function POST(
   request: Request,
@@ -29,6 +30,15 @@ export async function POST(
     if (error) {
       console.error('Error approving job:', error);
       return NextResponse.json({ error: 'Failed to approve job' }, { status: 500 });
+    }
+
+    try {
+      await dispatchJobMatchNotifications({
+        jobId: jobId,
+        trigger: 'admin_job_approve',
+      });
+    } catch (matchError) {
+      console.error('Job matching dispatch failed after approval', matchError);
     }
 
     return NextResponse.json({ success: true, job: data });

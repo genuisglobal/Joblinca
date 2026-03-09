@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
+import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 
 export async function POST(
   request: Request,
@@ -47,6 +48,20 @@ export async function POST(
     if (error) {
       console.error('Error updating publish state:', error);
       return NextResponse.json({ error: 'Failed to update job visibility' }, { status: 500 });
+    }
+
+    if (
+      data.published === true &&
+      (data.approval_status === 'approved' || data.approval_status === null)
+    ) {
+      try {
+        await dispatchJobMatchNotifications({
+          jobId,
+          trigger: 'admin_job_publish',
+        });
+      } catch (matchError) {
+        console.error('Job matching dispatch failed after publish', matchError);
+      }
     }
 
     return NextResponse.json({

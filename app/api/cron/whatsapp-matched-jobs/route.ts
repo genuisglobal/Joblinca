@@ -133,7 +133,7 @@ async function fetchLeadCandidates(limit: number): Promise<LeadCandidate[]> {
     .select(
       'id, phone_e164, linked_user_id, role_selected, last_search_location, last_search_role_keywords, last_search_time_filter, last_matched_jobs_sent_at, last_matched_jobs_week_key, wa_conversation_id'
     )
-    .eq('role_selected', 'jobseeker')
+    .in('role_selected', ['jobseeker', 'talent'])
     .not('last_search_location', 'is', null)
     .not('last_search_role_keywords', 'is', null)
     .not('last_search_time_filter', 'is', null)
@@ -172,6 +172,10 @@ async function processLead(
   subscriberFrequencyHours: number
 ): Promise<{ status: 'sent' | 'skipped' | 'failed' | 'duplicate'; reason?: string }> {
   const limits = await getWaLimitContext(lead.linked_user_id);
+  if (!limits.subscribed) {
+    return { status: 'skipped', reason: 'subscription_required' };
+  }
+
   const eligibility: MatchedJobsEligibilityResult = computeMatchedJobsEligibility(lead.id, {
     subscribed: limits.subscribed,
     lastMatchedJobsSentAt: lead.last_matched_jobs_sent_at,
@@ -198,9 +202,10 @@ async function processLead(
     const { jobs } = await searchPublishedJobs({
       location: lead.last_search_location || '',
       roleKeywords: lead.last_search_role_keywords || '',
+      jobType: lead.role_selected === 'talent' ? 'internship' : null,
       timeFilter: lead.last_search_time_filter || '7d',
       offset: 0,
-      limit: limits.subscribed ? 5 : 3,
+      limit: 5,
     });
 
     if (jobs.length === 0) {

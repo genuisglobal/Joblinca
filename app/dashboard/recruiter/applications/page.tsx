@@ -4,8 +4,11 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import StatusBadge from '../../components/StatusBadge';
 import StatsCard from '../../components/StatsCard';
+import StageBadge from '@/components/hiring-pipeline/StageBadge';
+import EligibilityBadge from '@/components/applications/EligibilityBadge';
+import RankingExplanation from '@/components/applications/RankingExplanation';
+import type { ApplicationCurrentStage } from '@/lib/hiring-pipeline/types';
 
 interface Job {
   id: string;
@@ -27,6 +30,11 @@ interface Application {
   applicant_id: string;
   cover_letter: string | null;
   status: string;
+  current_stage_id: string | null;
+  stage_entered_at: string | null;
+  decision_status: string | null;
+  eligibility_status: 'eligible' | 'needs_review' | 'ineligible' | null;
+  overall_stage_score: number | null;
   created_at: string;
   updated_at: string;
   resume_url: string | null;
@@ -35,19 +43,32 @@ interface Application {
   viewed_at: string | null;
   is_pinned: boolean;
   ranking_score: number;
+  ranking_breakdown: Record<string, number> | null;
   jobs: Job;
   profiles: Profile;
+  current_stage: ApplicationCurrentStage | null;
 }
 
 type SortOption = 'newest' | 'oldest' | 'ranking' | 'rating';
-type StatusFilter = 'all' | 'submitted' | 'shortlisted' | 'interviewed' | 'hired' | 'rejected';
+type EligibilityFilter = 'all' | 'eligible' | 'needs_review' | 'ineligible';
+type StageFilter =
+  | 'all'
+  | 'applied'
+  | 'screening'
+  | 'review'
+  | 'interview'
+  | 'offer'
+  | 'hire'
+  | 'rejected';
 
-const STATUS_OPTIONS: { value: StatusFilter; label: string; color: string }[] = [
+const STAGE_OPTIONS: { value: StageFilter; label: string; color: string }[] = [
   { value: 'all', label: 'All', color: 'gray' },
-  { value: 'submitted', label: 'New', color: 'blue' },
-  { value: 'shortlisted', label: 'Shortlisted', color: 'yellow' },
-  { value: 'interviewed', label: 'Interviewing', color: 'purple' },
-  { value: 'hired', label: 'Hired', color: 'green' },
+  { value: 'applied', label: 'Applied', color: 'blue' },
+  { value: 'screening', label: 'Screening', color: 'blue' },
+  { value: 'review', label: 'Review', color: 'yellow' },
+  { value: 'interview', label: 'Interview', color: 'purple' },
+  { value: 'offer', label: 'Offer', color: 'green' },
+  { value: 'hire', label: 'Hired', color: 'green' },
   { value: 'rejected', label: 'Rejected', color: 'red' },
 ];
 
@@ -56,6 +77,13 @@ const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'oldest', label: 'Oldest First' },
   { value: 'ranking', label: 'Best Match' },
   { value: 'rating', label: 'Highest Rated' },
+];
+
+const ELIGIBILITY_OPTIONS: { value: EligibilityFilter; label: string }[] = [
+  { value: 'all', label: 'All eligibility states' },
+  { value: 'eligible', label: 'Eligible' },
+  { value: 'needs_review', label: 'Needs review' },
+  { value: 'ineligible', label: 'Ineligible' },
 ];
 
 export default function RecruiterApplicationsPage() {
@@ -71,24 +99,28 @@ export default function RecruiterApplicationsPage() {
   const [bulkUpdating, setBulkUpdating] = useState(false);
 
   // Filters from URL params
-  const statusFilter = (searchParams.get('status') as StatusFilter) || 'all';
+  const stageFilter = (searchParams.get('stage') as StageFilter) || 'all';
   const jobFilter = searchParams.get('job') || 'all';
   const sortBy = (searchParams.get('sort') as SortOption) || 'newest';
+  const eligibilityFilter = (searchParams.get('eligibility') as EligibilityFilter) || 'all';
   const searchQuery = searchParams.get('q') || '';
 
   // Stats counts
-  const statusCounts = useMemo(() => {
+  const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {
       all: applications.length,
-      submitted: 0,
-      shortlisted: 0,
-      interviewed: 0,
-      hired: 0,
+      applied: 0,
+      screening: 0,
+      review: 0,
+      interview: 0,
+      offer: 0,
+      hire: 0,
       rejected: 0,
     };
     applications.forEach((app) => {
-      if (counts[app.status] !== undefined) {
-        counts[app.status]++;
+      const stageType = app.current_stage?.stageType;
+      if (stageType && counts[stageType] !== undefined) {
+        counts[stageType]++;
       }
     });
     return counts;
@@ -99,13 +131,17 @@ export default function RecruiterApplicationsPage() {
     let filtered = [...applications];
 
     // Status filter
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((app) => app.status === statusFilter);
+    if (stageFilter !== 'all') {
+      filtered = filtered.filter((app) => app.current_stage?.stageType === stageFilter);
     }
 
     // Job filter
     if (jobFilter !== 'all') {
       filtered = filtered.filter((app) => app.job_id === jobFilter);
+    }
+
+    if (eligibilityFilter !== 'all') {
+      filtered = filtered.filter((app) => app.eligibility_status === eligibilityFilter);
     }
 
     // Search query (search in applicant name, job title)
@@ -138,7 +174,7 @@ export default function RecruiterApplicationsPage() {
     });
 
     return filtered;
-  }, [applications, statusFilter, jobFilter, sortBy, searchQuery]);
+  }, [applications, stageFilter, jobFilter, eligibilityFilter, sortBy, searchQuery]);
 
   // Load data
   const loadData = useCallback(async () => {
@@ -180,6 +216,11 @@ export default function RecruiterApplicationsPage() {
           applicant_id,
           cover_letter,
           status,
+          current_stage_id,
+          stage_entered_at,
+          decision_status,
+          eligibility_status,
+          overall_stage_score,
           created_at,
           updated_at,
           resume_url,
@@ -188,6 +229,16 @@ export default function RecruiterApplicationsPage() {
           viewed_at,
           is_pinned,
           ranking_score,
+          ranking_breakdown,
+          current_stage:current_stage_id (
+            id,
+            stage_key,
+            label,
+            stage_type,
+            order_index,
+            is_terminal,
+            allows_feedback
+          ),
           jobs:job_id (
             id,
             title,
@@ -210,6 +261,32 @@ export default function RecruiterApplicationsPage() {
         ...app,
         jobs: Array.isArray(app.jobs) ? app.jobs[0] || null : app.jobs || null,
         profiles: Array.isArray(app.profiles) ? app.profiles[0] || null : app.profiles || null,
+        current_stage: Array.isArray(app.current_stage)
+          ? (() => {
+              const stage = app.current_stage[0] || null;
+              return stage
+                ? {
+                    id: stage.id,
+                    stageKey: stage.stage_key,
+                    label: stage.label,
+                    stageType: stage.stage_type,
+                    orderIndex: stage.order_index,
+                    isTerminal: stage.is_terminal,
+                    allowsFeedback: stage.allows_feedback,
+                  }
+                : null;
+            })()
+          : app.current_stage
+            ? {
+                id: app.current_stage.id,
+                stageKey: app.current_stage.stage_key,
+                label: app.current_stage.label,
+                stageType: app.current_stage.stage_type,
+                orderIndex: app.current_stage.order_index,
+                isTerminal: app.current_stage.is_terminal,
+                allowsFeedback: app.current_stage.allows_feedback,
+              }
+            : null,
       }));
 
       setApplications(normalizedApps as Application[]);
@@ -241,19 +318,18 @@ export default function RecruiterApplicationsPage() {
   );
 
   // Bulk status update
-  const handleBulkStatusUpdate = async (newStatus: string) => {
+  const handleBulkStageUpdate = async (stageKey: string) => {
     if (selectedIds.size === 0) return;
 
     setBulkUpdating(true);
     try {
       const ids = Array.from(selectedIds);
 
-      // Update each application
       for (const id of ids) {
-        await fetch(`/api/applications/${id}`, {
-          method: 'PUT',
+        await fetch(`/api/applications/${id}/stage`, {
+          method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: newStatus }),
+          body: JSON.stringify({ stageKey }),
         });
       }
 
@@ -321,17 +397,17 @@ export default function RecruiterApplicationsPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {STATUS_OPTIONS.map((opt) => (
+        {STAGE_OPTIONS.map((opt) => (
           <button
             key={opt.value}
-            onClick={() => updateFilters({ status: opt.value })}
+            onClick={() => updateFilters({ stage: opt.value })}
             className={`text-left transition-all ${
-              statusFilter === opt.value ? 'ring-2 ring-blue-500' : ''
+              stageFilter === opt.value ? 'ring-2 ring-blue-500' : ''
             }`}
           >
             <StatsCard
               title={opt.label}
-              value={statusCounts[opt.value] || 0}
+              value={stageCounts[opt.value] || 0}
               color={opt.color as 'blue' | 'green' | 'yellow' | 'red' | 'purple'}
             />
           </button>
@@ -393,6 +469,18 @@ export default function RecruiterApplicationsPage() {
               </option>
             ))}
           </select>
+
+          <select
+            value={eligibilityFilter}
+            onChange={(e) => updateFilters({ eligibility: e.target.value })}
+            className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+          >
+            {ELIGIBILITY_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         {/* Bulk Actions */}
@@ -403,21 +491,35 @@ export default function RecruiterApplicationsPage() {
             </span>
             <div className="flex gap-2">
               <button
-                onClick={() => handleBulkStatusUpdate('shortlisted')}
+                onClick={() => handleBulkStageUpdate('phone_screen')}
                 disabled={bulkUpdating}
-                className="px-3 py-1.5 bg-yellow-600 text-white text-sm rounded-lg hover:bg-yellow-700 disabled:opacity-50"
+                className="px-3 py-1.5 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700 disabled:opacity-50"
               >
-                Shortlist
+                Screen
               </button>
               <button
-                onClick={() => handleBulkStatusUpdate('interviewed')}
+                onClick={() => handleBulkStageUpdate('recruiter_review')}
+                disabled={bulkUpdating}
+                className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50"
+                >
+                Review
+              </button>
+              <button
+                onClick={() => handleBulkStageUpdate('interview')}
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50"
               >
                 Interview
               </button>
               <button
-                onClick={() => handleBulkStatusUpdate('rejected')}
+                onClick={() => handleBulkStageUpdate('hired')}
+                disabled={bulkUpdating}
+                className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                Hire
+              </button>
+              <button
+                onClick={() => handleBulkStageUpdate('rejected')}
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
@@ -484,7 +586,7 @@ export default function RecruiterApplicationsPage() {
             <div className="col-span-3">Applicant</div>
             <div className="col-span-3">Job</div>
             <div className="col-span-2">Applied</div>
-            <div className="col-span-2">Status</div>
+            <div className="col-span-2">Current Stage</div>
             <div className="col-span-1">Actions</div>
           </div>
 
@@ -554,6 +656,31 @@ export default function RecruiterApplicationsPage() {
                         ))}
                       </div>
                     )}
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                      <EligibilityBadge status={app.eligibility_status} compact />
+                      {typeof app.overall_stage_score === 'number' && app.overall_stage_score > 0 && (
+                        <span className="text-xs text-gray-500">
+                          Stage score {app.overall_stage_score.toFixed(1)}
+                        </span>
+                      )}
+                      {typeof app.ranking_score === 'number' && app.ranking_score > 0 && (
+                        <span className="text-xs text-gray-500">
+                          Rank {app.ranking_score.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1">
+                      <RankingExplanation
+                        compact
+                        rankingScore={app.ranking_score}
+                        rankingBreakdown={app.ranking_breakdown}
+                        recruiterRating={app.recruiter_rating}
+                        overallStageScore={app.overall_stage_score}
+                        eligibilityStatus={app.eligibility_status}
+                        decisionStatus={app.decision_status}
+                        currentStageType={app.current_stage?.stageType || null}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -572,9 +699,22 @@ export default function RecruiterApplicationsPage() {
                   {new Date(app.created_at).toLocaleDateString()}
                 </div>
 
-                {/* Status */}
+                {/* Current Stage */}
                 <div className="col-span-2 flex items-center">
-                  <StatusBadge status={app.status} />
+                  <div>
+                    <StageBadge
+                      label={app.current_stage?.label || 'Unassigned'}
+                      stageType={app.current_stage?.stageType || 'applied'}
+                    />
+                    <div className="mt-2">
+                      <EligibilityBadge status={app.eligibility_status} compact />
+                    </div>
+                    {app.stage_entered_at && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Since {new Date(app.stage_entered_at).toLocaleDateString()}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Actions */}

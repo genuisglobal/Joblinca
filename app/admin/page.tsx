@@ -1,8 +1,18 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import Link from 'next/link';
+import AdminRecruitingOverview from './AdminRecruitingOverview';
 
 export default async function AdminPage() {
   const supabase = createServerSupabaseClient();
+  const ninetyDaysAgo = new Date(Date.now() - 89 * 24 * 60 * 60 * 1000).toISOString();
+
+  function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
+    if (Array.isArray(value)) {
+      return value[0] || null;
+    }
+
+    return value || null;
+  }
 
   // Fetch all stats in parallel
   const [
@@ -19,6 +29,8 @@ export default async function AdminPage() {
     completedTransactionsResult,
     activeSubscriptionsResult,
     revenueResult,
+    recentApplicationsAnalyticsResult,
+    recentStageEventsResult,
   ] = await Promise.all([
     supabase.from('profiles').select('id', { count: 'exact', head: true }),
     supabase.from('jobs').select('id', { count: 'exact', head: true }),
@@ -33,6 +45,48 @@ export default async function AdminPage() {
     supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('status', 'completed'),
     supabase.from('subscriptions').select('id', { count: 'exact', head: true }).eq('status', 'active'),
     supabase.from('transactions').select('amount').eq('status', 'completed'),
+    supabase
+      .from('applications')
+      .select(
+        `
+        id,
+        created_at,
+        application_channel,
+        viewed_at,
+        decision_status,
+        eligibility_status,
+        ranking_score,
+        ranking_breakdown,
+        overall_stage_score,
+        job:job_id (
+          job_type,
+          internship_track
+        ),
+        current_stage:current_stage_id (
+          stage_type
+        )
+      `
+      )
+      .gte('created_at', ninetyDaysAgo),
+    supabase
+      .from('application_stage_events')
+      .select(
+        `
+        application_id,
+        created_at,
+        application:application_id (
+          application_channel,
+          job:job_id (
+            job_type,
+            internship_track
+          )
+        ),
+        to_stage:to_stage_id (
+          stage_type
+        )
+      `
+      )
+      .gte('created_at', ninetyDaysAgo),
   ]);
 
   const totalRevenue = (revenueResult.data || []).reduce(
@@ -130,6 +184,21 @@ export default async function AdminPage() {
           <StatusCard title="Rejected" value={stats.rejectedJobs} color="red" />
         </div>
       </div>
+
+      <AdminRecruitingOverview
+        applications={(recentApplicationsAnalyticsResult.data || []).map((row: any) => ({
+          ...row,
+          job: normalizeRelation(row.job),
+          current_stage: normalizeRelation(row.current_stage),
+        }))}
+        stageEvents={(recentStageEventsResult.data || []).map((row: any) => ({
+          application_id: row.application_id,
+          created_at: row.created_at,
+          application_channel: normalizeRelation(row.application)?.application_channel || null,
+          job: normalizeRelation(normalizeRelation(row.application)?.job),
+          to_stage: normalizeRelation(row.to_stage),
+        }))}
+      />
 
       {/* Finance Overview */}
       <div className="mb-8">

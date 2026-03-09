@@ -4,10 +4,22 @@ import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import InternshipConfigurationFields, {
+  applyInternshipTrackPreset,
+  buildInternshipRequirementsPayload,
+  createEmptyInternshipRequirementsFormState,
+  internshipRequirementsFormStateFromPayload,
+} from '@/components/jobs/InternshipConfigurationFields';
+import {
+  getInternshipTrackPostingPreset,
+  getOpportunityPostingLabel,
+} from '@/lib/internship-posting';
+import { type InternshipTrack } from '@/lib/opportunities';
 
 interface EditableJob {
   id: string;
   posted_by: string | null;
+  recruiter_id: string;
   title: string;
   company_name: string | null;
   company_logo_url: string | null;
@@ -15,14 +27,37 @@ interface EditableJob {
   salary: number | null;
   work_type: string | null;
   job_type: string | null;
+  internship_track?: string | null;
+  eligible_roles?: string[] | null;
+  apply_intake_mode?: string | null;
   visibility: string | null;
   description: string | null;
+  internship_requirements?: Record<string, unknown> | null;
 }
 
 interface ViewerState {
   backHref: string;
   isAdminUser: boolean;
   logoUploadEndpoint: string;
+}
+
+type RecruiterOption = {
+  id: string;
+  label: string;
+};
+
+function formatRecruiterLabel(profile: {
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+}, companyName?: string | null): string {
+  const name =
+    profile.first_name || profile.last_name
+      ? `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim()
+      : profile.full_name || profile.email || 'Unknown recruiter';
+
+  return companyName ? `${name} (${companyName})` : name;
 }
 
 export default function EditJobPage({ params }: { params: { id: string } }) {
@@ -35,6 +70,12 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
   const [error, setError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<ViewerState | null>(null);
   const [form, setForm] = useState<EditableJob | null>(null);
+  const [internshipTrack, setInternshipTrack] = useState('');
+  const [internshipRequirements, setInternshipRequirements] = useState(
+    createEmptyInternshipRequirementsFormState()
+  );
+  const [recruiterOptions, setRecruiterOptions] = useState<RecruiterOption[]>([]);
+  const [loadingRecruiters, setLoadingRecruiters] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -70,6 +111,49 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
           logoUploadEndpoint: isAdminUser ? '/api/admin/jobs/logo' : '/api/profile/logo',
         });
 
+        if (isAdminUser) {
+          setLoadingRecruiters(true);
+
+          const [{ data: recruiters, error: recruitersError }, { data: recruiterProfiles, error: recruiterProfilesError }] =
+            await Promise.all([
+              supabase
+                .from('profiles')
+                .select('id, full_name, first_name, last_name, email')
+                .eq('role', 'recruiter')
+                .order('created_at', { ascending: false }),
+              supabase
+                .from('recruiter_profiles')
+                .select('user_id, company_name'),
+            ]);
+
+          if (recruitersError || recruiterProfilesError) {
+            console.error('Recruiter list load error:', recruitersError || recruiterProfilesError);
+            setError('Unable to load recruiter delegation list.');
+          } else {
+            const companyByUserId = new Map<string, string | null>();
+            (recruiterProfiles || []).forEach((row: any) => {
+              companyByUserId.set(row.user_id, row.company_name || null);
+            });
+
+            const options: RecruiterOption[] = [
+              { id: user.id, label: 'Joblinca (managed by me)' },
+              ...(recruiters || [])
+                .filter((recruiter: any) => recruiter.id !== user.id)
+                .map((recruiter: any) => ({
+                  id: recruiter.id,
+                  label: formatRecruiterLabel(
+                    recruiter,
+                    companyByUserId.get(recruiter.id)
+                  ),
+                })),
+            ];
+
+            setRecruiterOptions(options);
+          }
+
+          setLoadingRecruiters(false);
+        }
+
         const res = await fetch(`/api/jobs/${params.id}`, {
           cache: 'no-store',
         });
@@ -91,7 +175,16 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
           return;
         }
 
-        setForm(data.job as EditableJob);
+        const loadedJob = data.job as EditableJob;
+        setForm(loadedJob);
+        setInternshipTrack(
+          loadedJob.job_type === 'internship' && loadedJob.internship_track !== 'unspecified'
+            ? loadedJob.internship_track || ''
+            : ''
+        );
+        setInternshipRequirements(
+          internshipRequirementsFormStateFromPayload(loadedJob.internship_requirements)
+        );
       } catch (err) {
         console.error('Edit job load error:', err);
         if (mounted) {
@@ -100,6 +193,7 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
       } finally {
         if (mounted) {
           setLoading(false);
+          setLoadingRecruiters(false);
         }
       }
     }
@@ -110,6 +204,33 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
       mounted = false;
     };
   }, [supabase, router, pathname, params.id]);
+
+  const internshipPreset = getInternshipTrackPostingPreset(internshipTrack as InternshipTrack | '');
+  const opportunityLabel = getOpportunityPostingLabel(
+    form?.job_type || 'job',
+    internshipTrack as InternshipTrack | ''
+  );
+
+  function handleJobTypeChange(nextJobType: string) {
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            job_type: nextJobType,
+          }
+        : current
+    );
+
+    if (nextJobType !== 'internship') {
+      setInternshipTrack('');
+      setInternshipRequirements(createEmptyInternshipRequirementsFormState());
+    }
+  }
+
+  function handleInternshipTrackChange(nextTrack: InternshipTrack | '') {
+    setInternshipTrack(nextTrack);
+    setInternshipRequirements((current) => applyInternshipTrackPreset(current, nextTrack));
+  }
 
   const handleLogoChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -163,6 +284,11 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
       return;
     }
 
+    if (form.job_type === 'internship' && !internshipTrack) {
+      setError('Select whether this internship is educational or professional.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -180,8 +306,14 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
           salary: form.salary,
           workType: form.work_type,
           jobType: form.job_type,
+          internshipTrack: form.job_type === 'internship' ? internshipTrack : undefined,
+          internshipRequirements:
+            form.job_type === 'internship'
+              ? buildInternshipRequirementsPayload(internshipRequirements)
+              : undefined,
           visibility: form.visibility,
           description: form.description,
+          recruiterId: viewer.isAdminUser ? form.recruiter_id : undefined,
         }),
       });
 
@@ -237,8 +369,8 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
         >
           &larr; Back to Job
         </Link>
-        <h1 className="text-2xl font-bold text-white">Edit Job</h1>
-        <p className="text-gray-400 mt-1">Update your job posting details</p>
+        <h1 className="text-2xl font-bold text-white">Edit {opportunityLabel}</h1>
+        <p className="text-gray-400 mt-1">Update your opportunity details and track-specific ATS setup</p>
       </div>
 
       {error && (
@@ -252,9 +384,9 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
           <h2 className="text-lg font-semibold text-white border-b border-gray-700 pb-2">Basic Information</h2>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
-              Job Title <span className="text-red-400">*</span>
-            </label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                {opportunityLabel} Title <span className="text-red-400">*</span>
+              </label>
             <input
               type="text"
               value={form.title}
@@ -276,6 +408,39 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
               className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          {viewer?.isAdminUser && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Recruiter Manager
+              </label>
+              <select
+                value={form.recruiter_id}
+                onChange={(e) => setForm({ ...form, recruiter_id: e.target.value })}
+                disabled={loadingRecruiters}
+                required
+                className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">
+                  {loadingRecruiters ? 'Loading recruiters...' : 'Select recruiter manager'}
+                </option>
+                {recruiterOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+                {form.recruiter_id &&
+                  !recruiterOptions.some((option) => option.id === form.recruiter_id) && (
+                    <option value={form.recruiter_id}>
+                      Current assignment ({form.recruiter_id})
+                    </option>
+                  )}
+              </select>
+              <p className="text-xs text-gray-400 mt-2">
+                The selected recruiter can manage this job and its applications.
+              </p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">Company Logo</label>
@@ -361,10 +526,10 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Job Type</label>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Opportunity Type</label>
               <select
                 value={form.job_type || 'job'}
-                onChange={(e) => setForm({ ...form, job_type: e.target.value })}
+                onChange={(e) => handleJobTypeChange(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-700 text-white border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="job">Job</option>
@@ -385,6 +550,20 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
               </select>
             </div>
           </div>
+
+          <InternshipConfigurationFields
+            jobType={form.job_type || 'job'}
+            visibility={form.visibility || 'public'}
+            internshipTrack={internshipTrack}
+            requirements={internshipRequirements}
+            onInternshipTrackChange={handleInternshipTrackChange}
+            onRequirementsChange={setInternshipRequirements}
+          />
+          {form.job_type === 'internship' && internshipPreset && (
+            <div className="rounded-lg border border-emerald-700/50 bg-emerald-900/20 p-4 text-sm text-emerald-100">
+              This job now follows the {internshipPreset.label.toLowerCase()} ATS path. Keep native apply enabled if you want structured screening, matching, and stage reporting.
+            </div>
+          )}
         </div>
 
         <div className="space-y-4">
@@ -392,7 +571,7 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
 
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
-              Job Description <span className="text-red-400">*</span>
+              {opportunityLabel} Description <span className="text-red-400">*</span>
             </label>
             <textarea
               value={form.description || ''}
