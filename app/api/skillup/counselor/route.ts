@@ -1,7 +1,23 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { buildSkillProfile } from '@/lib/skillup/skill-mapping';
-import { SKILL_CATEGORIES } from '@/lib/skillup/skill-categories';
+import { callAiText, isAiConfigured } from '@/lib/ai/client';
+import { buildCareerCounselorSystemPrompt } from '@/lib/ai/policies';
+
+interface CounselorContextSnapshot {
+  role: string;
+  skills: string[];
+  career_goals: string[];
+  education?: string | null;
+  location?: string | null;
+  completed_courses: string[];
+  badges: string[];
+  avg_quiz_score?: number | null;
+  top_gaps: string[];
+  top_strengths: string[];
+  top_demanded_categories: string[];
+  partner_courses: string[];
+}
 
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
@@ -24,7 +40,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Message is required' }, { status: 400 });
   }
 
-  // Fetch or create session
   let session: any = null;
   if (sessionId) {
     const { data } = await supabase
@@ -36,20 +51,17 @@ export async function POST(request: NextRequest) {
     session = data;
   }
 
-  // Build context if new session or first message
-  let contextSnapshot = session?.context_snapshot;
+  let contextSnapshot = session?.context_snapshot as CounselorContextSnapshot | undefined;
   if (!contextSnapshot) {
     try {
       const profile = await buildSkillProfile(user.id, supabase);
 
-      // Fetch additional context
       const { data: userProfile } = await supabase
         .from('profiles')
         .select('role, education, location, career_goals, skills')
         .eq('id', user.id)
         .single();
 
-      // Fetch user's quiz scores
       const { data: progress } = await supabase
         .from('learning_progress')
         .select('quiz_score')
@@ -63,13 +75,11 @@ export async function POST(request: NextRequest) {
           ? Math.round(quizScores.reduce((a: number, b: number) => a + b, 0) / quizScores.length)
           : null;
 
-      // Fetch user badges
       const { data: badges } = await supabase
         .from('user_badges')
         .select('badge_type, badge_name')
         .eq('user_id', user.id);
 
-      // Fetch partner courses for recommendations
       const { data: partnerCourses } = await supabase
         .from('partner_courses')
         .select('title, category, level, cost_type, partner_name')
@@ -90,14 +100,26 @@ export async function POST(request: NextRequest) {
           .sort((a, b) => b.marketDemand - a.marketDemand)
           .slice(0, 5)
           .map((c) => c.label),
-        partner_courses: (partnerCourses || []).map((pc: any) => `${pc.title} (${pc.partner_name}, ${pc.level}, ${pc.cost_type})`),
+        partner_courses: (partnerCourses || []).map(
+          (pc: any) => `${pc.title} (${pc.partner_name}, ${pc.level}, ${pc.cost_type})`
+        ),
       };
     } catch {
-      contextSnapshot = { role: 'talent', skills: [], career_goals: [] };
+      contextSnapshot = {
+        role: 'talent',
+        skills: [],
+        career_goals: [],
+        completed_courses: [],
+        badges: [],
+        avg_quiz_score: null,
+        top_gaps: [],
+        top_strengths: [],
+        top_demanded_categories: [],
+        partner_courses: [],
+      };
     }
   }
 
-  // Build messages array
   const existingMessages = session?.messages || [];
   const userMessage = {
     role: 'user' as const,
@@ -106,69 +128,44 @@ export async function POST(request: NextRequest) {
   };
   const updatedMessages = [...existingMessages, userMessage];
 
-  // Generate AI response
   let assistantContent: string;
-  const openaiKey = process.env.OPENAI_API_KEY;
-
-  if (openaiKey) {
+  if (isAiConfigured()) {
     try {
-      const ctx = contextSnapshot as any;
-      const systemPrompt = `You are an AI career counselor for Joblinca, a job platform focused on Cameroon and Africa.
-
-User Profile:
-- Role: ${ctx.role} | Skills: ${(ctx.skills || []).join(', ') || 'Not specified'}
-- Career Goals: ${(ctx.career_goals || []).join(', ') || 'Not specified'}
-- Education: ${ctx.education || 'Not specified'} | Location: ${ctx.location || 'Not specified'}
-- Completed Courses: ${(ctx.completed_courses || []).join(', ') || 'None yet'}
-- Badges: ${(ctx.badges || []).join(', ') || 'None yet'}
-- Average Quiz Score: ${ctx.avg_quiz_score !== null ? ctx.avg_quiz_score + '%' : 'No quizzes taken'}
-- Skill Strengths: ${(ctx.top_strengths || []).join(', ')}
-- Skill Gaps: ${(ctx.top_gaps || []).join(', ')}
-
-Market Data:
-- Top demanded skill areas: ${(ctx.top_demanded_categories || []).join(', ')}
-- Available partner courses: ${(ctx.partner_courses || []).join('; ')}
-
-Guidelines:
-- Suggest specific skills to learn, career paths, partner courses, and Joblinca jobs
-- Reference market demand data to justify recommendations
-- All suggestions are advisory only — state this clearly when giving career-altering advice
-- Do NOT reference protected characteristics (sex, religion, ethnicity, disability, age)
-- Respond in the same language the user writes in (English or French)
-- Keep responses under 300 words
-- Be encouraging but realistic about the job market in Cameroon and Africa`;
-
-      const chatMessages = [
-        { role: 'system', content: systemPrompt },
-        ...updatedMessages.map((m: any) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      ];
-
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${openaiKey}`,
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o-mini',
-          messages: chatMessages,
-          temperature: 0.7,
-          max_tokens: 600,
-        }),
+      const { text } = await callAiText({
+        temperature: 0.4,
+        maxTokens: 450,
+        timeoutMs: 12000,
+        messages: [
+          {
+            role: 'system',
+            content: buildCareerCounselorSystemPrompt({
+              role: contextSnapshot.role || 'talent',
+              skills: contextSnapshot.skills || [],
+              careerGoals: contextSnapshot.career_goals || [],
+              education: contextSnapshot.education || null,
+              location: contextSnapshot.location || null,
+              completedCourses: contextSnapshot.completed_courses || [],
+              badges: contextSnapshot.badges || [],
+              avgQuizScore:
+                contextSnapshot.avg_quiz_score === undefined
+                  ? null
+                  : contextSnapshot.avg_quiz_score,
+              topStrengths: contextSnapshot.top_strengths || [],
+              topGaps: contextSnapshot.top_gaps || [],
+              topDemandedCategories: contextSnapshot.top_demanded_categories || [],
+              partnerCourses: contextSnapshot.partner_courses || [],
+            }),
+          },
+          ...updatedMessages.map((entry: any) => ({
+            role: entry.role,
+            content: entry.content,
+          })),
+        ],
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        assistantContent =
-          data.choices?.[0]?.message?.content?.trim() ||
-          generateFallbackResponse(contextSnapshot);
-      } else {
-        assistantContent = generateFallbackResponse(contextSnapshot);
-      }
-    } catch {
+      assistantContent = text.trim() || generateFallbackResponse(contextSnapshot);
+    } catch (error) {
+      console.error('Career counselor AI error:', error);
       assistantContent = generateFallbackResponse(contextSnapshot);
     }
   } else {
@@ -182,13 +179,11 @@ Guidelines:
   };
   const finalMessages = [...updatedMessages, assistantMessage];
 
-  // Generate title from first user message
   const title =
     session?.title && session.title !== 'New Conversation'
       ? session.title
       : message.trim().slice(0, 60) + (message.length > 60 ? '...' : '');
 
-  // Save/update session
   let savedSessionId = session?.id;
   if (session) {
     await supabase
@@ -220,32 +215,31 @@ Guidelines:
   });
 }
 
-function generateFallbackResponse(context: any): string {
-  const ctx = context || {};
-  const gaps = ctx.top_gaps || [];
-  const strengths = ctx.top_strengths || [];
-  const courses = ctx.partner_courses || [];
+function generateFallbackResponse(context: CounselorContextSnapshot): string {
+  const gaps = context.top_gaps || [];
+  const strengths = context.top_strengths || [];
+  const courses = context.partner_courses || [];
 
-  let response = 'Based on your profile analysis:\n\n';
+  let response = 'AI guidance unavailable. Showing profile-based recommendations only.\n\n';
 
   if (strengths.length > 0) {
-    response += `**Your strengths:** ${strengths.join(', ')}. These are valuable skills in the current job market.\n\n`;
+    response += `Your strongest signals: ${strengths.join(', ')}. These are relevant in the current market.\n\n`;
   }
 
   if (gaps.length > 0) {
-    response += `**Areas to develop:** ${gaps.join(', ')}. These skills are in high demand and improving them could open new opportunities.\n\n`;
+    response += `Priority areas to improve: ${gaps.join(', ')}. Strengthening them should improve your options.\n\n`;
   }
 
   if (courses.length > 0) {
-    const suggested = courses.slice(0, 3);
-    response += `**Suggested courses:**\n`;
-    for (const c of suggested) {
-      response += `- ${c}\n`;
+    response += 'Suggested courses:\n';
+    for (const course of courses.slice(0, 3)) {
+      response += `- ${course}\n`;
     }
     response += '\n';
   }
 
-  response += '*Note: AI counseling is currently unavailable. This is an automated analysis based on your skill profile. All suggestions are advisory only.*';
+  response +=
+    'These suggestions are advisory only. Compare them against your goals, current market demand, and recruiter feedback.';
 
   return response;
 }
