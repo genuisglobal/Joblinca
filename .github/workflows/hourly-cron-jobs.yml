@@ -1,0 +1,54 @@
+name: Hourly Cron Jobs
+
+on:
+  schedule:
+    - cron: '5 * * * *'
+    - cron: '15 * * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which hourly cron target to run'
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - interview_reminders
+          - job_match_dispatch
+
+jobs:
+  interview-reminders:
+    if: |
+      github.event.schedule == '5 * * * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (inputs.target == 'both' || inputs.target == 'interview_reminders'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call interview reminders cron route
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$APP_BASE_URL"
+          test -n "$CRON_SECRET"
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/interview-reminders"
+
+  job-match-dispatch:
+    if: |
+      github.event.schedule == '15 * * * *' ||
+      (github.event_name == 'workflow_dispatch' &&
+        (inputs.target == 'both' || inputs.target == 'job_match_dispatch'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call hourly job match dispatch cron route
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$APP_BASE_URL"
+          test -n "$CRON_SECRET"
+          curl --fail --show-error --silent \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/job-match-dispatch"
