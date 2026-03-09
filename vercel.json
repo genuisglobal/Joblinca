@@ -9,16 +9,8 @@
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/cron/job-match-dispatch",
-      "schedule": "15 * * * *"
-    },
-    {
       "path": "/api/cron/job-match-dispatch-daily",
       "schedule": "45 2 * * *"
-    },
-    {
-      "path": "/api/cron/interview-reminders",
-      "schedule": "5 * * * *"
     },
     {
       "path": "/api/cron/skillup-weekly-leaderboard",
