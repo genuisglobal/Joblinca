@@ -1,0 +1,880 @@
+{
+  "info": {
+    "_postman_id": "9ec56c3f-7d12-4c5e-8af7-bd4f4d3a9c10",
+    "name": "Joblinca Phase 1 UAT",
+    "description": "Phase 1 ATS, opportunity, matching, and cron UAT collection.\\n\\nAuthenticated app routes use Supabase session cookies. Set the collection variable `cookie_header` to the browser cookie header containing the relevant `sb-*` auth cookies for the current test user.\\n\\nCron routes use `Authorization: Bearer {{cron_secret}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "cookie_header",
+      "value": ""
+    },
+    {
+      "key": "cron_secret",
+      "value": ""
+    },
+    {
+      "key": "recruiter_job_id",
+      "value": ""
+    },
+    {
+      "key": "admin_job_id",
+      "value": ""
+    },
+    {
+      "key": "application_id",
+      "value": ""
+    },
+    {
+      "key": "recruiter_id",
+      "value": ""
+    },
+    {
+      "key": "pipeline_stage_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Critical Path",
+      "description": "Minimal go-live execution path across posting, eligibility, apply, ATS, insights, and cron.",
+      "item": [
+        {
+          "name": "Recruiter Create Professional Internship",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Frontend Internship\",\n  \"description\": \"Build UI features and work with product design.\",\n  \"location\": \"Douala\",\n  \"salary\": 150000,\n  \"companyName\": \"Acme Labs\",\n  \"workType\": \"hybrid\",\n  \"jobType\": \"internship\",\n  \"visibility\": \"public\",\n  \"applyMethod\": \"joblinca\",\n  \"applyIntakeMode\": \"native\",\n  \"internshipTrack\": \"professional\",\n  \"eligibleRoles\": [\"job_seeker\", \"talent\"],\n  \"internshipRequirements\": {\n    \"portfolioRequired\": true,\n    \"minimumProjectCount\": 2,\n    \"conversionPossible\": true,\n    \"expectedWeeklyAvailability\": \"20 hours\"\n  },\n  \"customQuestions\": [\n    {\n      \"id\": \"why_join\",\n      \"question\": \"Why do you want this internship?\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/jobs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Recruiter create professional internship responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const jobId = payload?.job?.id || payload?.id || null;",
+                  "if (jobId) {",
+                  "  pm.environment.set(\"recruiter_job_id\", String(jobId));",
+                  "  pm.collectionVariables.set(\"recruiter_job_id\", String(jobId));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin Create Educational Internship For Recruiter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Campus Software Internship\",\n  \"companyName\": \"Joblinca\",\n  \"description\": \"Educational internship for software students.\",\n  \"location\": \"Yaounde\",\n  \"workType\": \"onsite\",\n  \"jobType\": \"internship\",\n  \"internshipTrack\": \"education\",\n  \"visibility\": \"public\",\n  \"eligibleRoles\": [\"talent\"],\n  \"applyIntakeMode\": \"native\",\n  \"recruiterId\": \"{{recruiter_id}}\",\n  \"autoApprove\": true,\n  \"published\": true,\n  \"internshipRequirements\": {\n    \"schoolRequired\": true,\n    \"allowedFieldsOfStudy\": [\"Computer Science\"],\n    \"allowedSchoolYears\": [\"Year 3\", \"Year 4\"],\n    \"requiresSchoolConvention\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/jobs/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "jobs",
+                "create"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Admin create educational internship responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const jobId = payload?.job?.id || payload?.id || null;",
+                  "if (jobId) {",
+                  "  pm.environment.set(\"admin_job_id\", String(jobId));",
+                  "  pm.collectionVariables.set(\"admin_job_id\", String(jobId));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Eligibility Preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contactInfo\": {\n    \"fullName\": \"Talent A\",\n    \"email\": \"talent@example.com\",\n    \"phone\": \"+237600000001\",\n    \"location\": \"Yaounde\"\n  },\n  \"educationDetails\": {\n    \"schoolName\": \"University of Yaounde I\",\n    \"fieldOfStudy\": \"Computer Science\",\n    \"schoolYear\": \"Year 3\",\n    \"graduationYear\": \"2027\",\n    \"needsCredit\": true,\n    \"hasSchoolConvention\": true,\n    \"academicSupervisor\": \"Dr. N.\"\n  },\n  \"profileReadiness\": {\n    \"projectCount\": 3,\n    \"badgeCount\": 2\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{admin_job_id}}/eligibility-preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{admin_job_id}}",
+                "eligibility-preview"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobId\": \"{{recruiter_job_id}}\",\n  \"contactInfo\": {\n    \"fullName\": \"Job Seeker A\",\n    \"email\": \"jobseeker@example.com\",\n    \"phone\": \"+237600000002\",\n    \"location\": \"Douala\"\n  },\n  \"professionalDetails\": {\n    \"portfolioUrl\": \"https://portfolio.example.com\",\n    \"projectHighlights\": \"Built 3 React apps\",\n    \"weeklyAvailability\": \"25 hours\",\n    \"experienceSummary\": \"Interned at a local startup\"\n  },\n  \"profileReadiness\": {\n    \"projectCount\": 4,\n    \"badgeCount\": 1,\n    \"portfolioUrl\": \"https://portfolio.example.com\"\n  },\n  \"resumeUrl\": \"https://files.example.com/resume.pdf\",\n  \"coverLetter\": \"I am a strong fit for this role.\",\n  \"answers\": [\n    {\n      \"questionId\": \"why_join\",\n      \"answer\": \"I want hands-on frontend experience.\"\n    }\n  ],\n  \"applicationChannel\": \"native_apply\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Submit application responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const applicationId = payload?.application?.id || payload?.id || null;",
+                  "if (applicationId) {",
+                  "  pm.environment.set(\"application_id\", String(applicationId));",
+                  "  pm.collectionVariables.set(\"application_id\", String(applicationId));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Pipeline",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{recruiter_job_id}}/pipeline",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{recruiter_job_id}}",
+                "pipeline"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Get pipeline responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const stages = payload?.pipeline?.stages || [];",
+                  "const interviewStage = stages.find((stage) => stage.stageKey === \"interview\") || stages[0] || null;",
+                  "if (interviewStage?.id) {",
+                  "  pm.environment.set(\"pipeline_stage_id\", String(interviewStage.id));",
+                  "  pm.collectionVariables.set(\"pipeline_stage_id\", String(interviewStage.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Move Application Stage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stageKey\": \"interview\",\n  \"note\": \"Passed initial screen\",\n  \"reason\": \"strong_portfolio\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications/{{application_id}}/stage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications",
+                "{{application_id}}",
+                "stage"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Stage Feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 84,\n  \"recommendation\": \"yes\",\n  \"summary\": \"Strong project depth and good communication.\",\n  \"feedback\": {\n    \"technical\": 4,\n    \"communication\": 4,\n    \"portfolio\": 5\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications/{{application_id}}/feedback",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications",
+                "{{application_id}}",
+                "feedback"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Record Hiring Decision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decisionStatus\": \"hired\",\n  \"dispositionReason\": \"accepted_offer\",\n  \"note\": \"Candidate accepted quickly.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications/{{application_id}}/decision",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications",
+                "{{application_id}}",
+                "decision"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Match Insights",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{recruiter_job_id}}/match-insights",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{recruiter_job_id}}",
+                "match-insights"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Hourly Match Dispatch",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cron_secret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/cron/job-match-dispatch?limit=10&lookbackHours=24",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cron",
+                "job-match-dispatch"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "lookbackHours",
+                  "value": "24"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Daily Match Dispatch",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cron_secret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/cron/job-match-dispatch-daily",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cron",
+                "job-match-dispatch-daily"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Posting",
+      "item": [
+        {
+          "name": "Recruiter Create Professional Internship",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Frontend Internship\",\n  \"description\": \"Build UI features and work with product design.\",\n  \"location\": \"Douala\",\n  \"salary\": 150000,\n  \"companyName\": \"Acme Labs\",\n  \"workType\": \"hybrid\",\n  \"jobType\": \"internship\",\n  \"visibility\": \"public\",\n  \"applyMethod\": \"joblinca\",\n  \"applyIntakeMode\": \"native\",\n  \"internshipTrack\": \"professional\",\n  \"eligibleRoles\": [\"job_seeker\", \"talent\"],\n  \"internshipRequirements\": {\n    \"portfolioRequired\": true,\n    \"minimumProjectCount\": 2,\n    \"conversionPossible\": true,\n    \"expectedWeeklyAvailability\": \"20 hours\"\n  },\n  \"customQuestions\": [\n    {\n      \"id\": \"why_join\",\n      \"question\": \"Why do you want this internship?\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/jobs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Recruiter create professional internship responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const jobId = payload?.job?.id || payload?.id || null;",
+                  "if (jobId) {",
+                  "  pm.environment.set(\"recruiter_job_id\", String(jobId));",
+                  "  pm.collectionVariables.set(\"recruiter_job_id\", String(jobId));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin Create Educational Internship For Recruiter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Campus Software Internship\",\n  \"companyName\": \"Joblinca\",\n  \"description\": \"Educational internship for software students.\",\n  \"location\": \"Yaounde\",\n  \"workType\": \"onsite\",\n  \"jobType\": \"internship\",\n  \"internshipTrack\": \"education\",\n  \"visibility\": \"public\",\n  \"eligibleRoles\": [\"talent\"],\n  \"applyIntakeMode\": \"native\",\n  \"recruiterId\": \"{{recruiter_id}}\",\n  \"autoApprove\": true,\n  \"published\": true,\n  \"internshipRequirements\": {\n    \"schoolRequired\": true,\n    \"allowedFieldsOfStudy\": [\"Computer Science\"],\n    \"allowedSchoolYears\": [\"Year 3\", \"Year 4\"],\n    \"requiresSchoolConvention\": true\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/admin/jobs/create",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "jobs",
+                "create"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Admin create educational internship responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const jobId = payload?.job?.id || payload?.id || null;",
+                  "if (jobId) {",
+                  "  pm.environment.set(\"admin_job_id\", String(jobId));",
+                  "  pm.collectionVariables.set(\"admin_job_id\", String(jobId));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Eligibility And Apply",
+      "item": [
+        {
+          "name": "Eligibility Preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"contactInfo\": {\n    \"fullName\": \"Talent A\",\n    \"email\": \"talent@example.com\",\n    \"phone\": \"+237600000001\",\n    \"location\": \"Yaounde\"\n  },\n  \"educationDetails\": {\n    \"schoolName\": \"University of Yaounde I\",\n    \"fieldOfStudy\": \"Computer Science\",\n    \"schoolYear\": \"Year 3\",\n    \"graduationYear\": \"2027\",\n    \"needsCredit\": true,\n    \"hasSchoolConvention\": true,\n    \"academicSupervisor\": \"Dr. N.\"\n  },\n  \"profileReadiness\": {\n    \"projectCount\": 3,\n    \"badgeCount\": 2\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{admin_job_id}}/eligibility-preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{admin_job_id}}",
+                "eligibility-preview"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jobId\": \"{{recruiter_job_id}}\",\n  \"contactInfo\": {\n    \"fullName\": \"Job Seeker A\",\n    \"email\": \"jobseeker@example.com\",\n    \"phone\": \"+237600000002\",\n    \"location\": \"Douala\"\n  },\n  \"professionalDetails\": {\n    \"portfolioUrl\": \"https://portfolio.example.com\",\n    \"projectHighlights\": \"Built 3 React apps\",\n    \"weeklyAvailability\": \"25 hours\",\n    \"experienceSummary\": \"Interned at a local startup\"\n  },\n  \"profileReadiness\": {\n    \"projectCount\": 4,\n    \"badgeCount\": 1,\n    \"portfolioUrl\": \"https://portfolio.example.com\"\n  },\n  \"resumeUrl\": \"https://files.example.com/resume.pdf\",\n  \"coverLetter\": \"I am a strong fit for this role.\",\n  \"answers\": [\n    {\n      \"questionId\": \"why_join\",\n      \"answer\": \"I want hands-on frontend experience.\"\n    }\n  ],\n  \"applicationChannel\": \"native_apply\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Submit application responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const applicationId = payload?.application?.id || payload?.id || null;",
+                  "if (applicationId) {",
+                  "  pm.environment.set(\"application_id\", String(applicationId));",
+                  "  pm.collectionVariables.set(\"application_id\", String(applicationId));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ATS",
+      "item": [
+        {
+          "name": "Get Pipeline",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{recruiter_job_id}}/pipeline",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{recruiter_job_id}}",
+                "pipeline"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Get pipeline responds with success\", function () {",
+                  "  pm.expect(pm.response.code).to.equal(200);",
+                  "});",
+                  "let payload = {};",
+                  "try { payload = pm.response.json(); } catch (error) {}",
+                  "const stages = payload?.pipeline?.stages || [];",
+                  "const interviewStage = stages.find((stage) => stage.stageKey === \"interview\") || stages[0] || null;",
+                  "if (interviewStage?.id) {",
+                  "  pm.environment.set(\"pipeline_stage_id\", String(interviewStage.id));",
+                  "  pm.collectionVariables.set(\"pipeline_stage_id\", String(interviewStage.id));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Move Application Stage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stageKey\": \"interview\",\n  \"note\": \"Passed initial screen\",\n  \"reason\": \"strong_portfolio\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications/{{application_id}}/stage",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications",
+                "{{application_id}}",
+                "stage"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Submit Stage Feedback",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"score\": 84,\n  \"recommendation\": \"yes\",\n  \"summary\": \"Strong project depth and good communication.\",\n  \"feedback\": {\n    \"technical\": 4,\n    \"communication\": 4,\n    \"portfolio\": 5\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications/{{application_id}}/feedback",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications",
+                "{{application_id}}",
+                "feedback"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Record Hiring Decision",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decisionStatus\": \"hired\",\n  \"dispositionReason\": \"accepted_offer\",\n  \"note\": \"Candidate accepted quickly.\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/applications/{{application_id}}/decision",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "applications",
+                "{{application_id}}",
+                "decision"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Match Insights",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "{{cookie_header}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/jobs/{{recruiter_job_id}}/match-insights",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "{{recruiter_job_id}}",
+                "match-insights"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cron",
+      "item": [
+        {
+          "name": "Hourly Match Dispatch",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cron_secret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/cron/job-match-dispatch?limit=10&lookbackHours=24",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cron",
+                "job-match-dispatch"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "lookbackHours",
+                  "value": "24"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Daily Match Dispatch",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{cron_secret}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/cron/job-match-dispatch-daily",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "cron",
+                "job-match-dispatch-daily"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

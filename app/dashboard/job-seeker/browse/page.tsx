@@ -13,11 +13,27 @@ export default async function BrowseJobsPage() {
     redirect('/auth/login');
   }
 
-  // Fetch published jobs
+  // Fetch only approved opportunities that job seekers are eligible to apply for.
   const { data: jobs } = await supabase
     .from('jobs')
-    .select('*')
+    .select(
+      `
+      id,
+      title,
+      description,
+      location,
+      salary,
+      company_name,
+      work_type,
+      job_type,
+      internship_track,
+      eligible_roles,
+      created_at
+    `
+    )
     .eq('published', true)
+    .eq('approval_status', 'approved')
+    .contains('eligible_roles', ['job_seeker'])
     .order('created_at', { ascending: false });
 
   // Get user's existing applications to mark which jobs they've applied to
@@ -31,9 +47,9 @@ export default async function BrowseJobsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Browse Jobs</h1>
+        <h1 className="text-2xl font-bold text-white">Browse Opportunities</h1>
         <p className="text-gray-400 mt-1">
-          Find your next opportunity from {jobs?.length || 0} available positions
+          Find jobs and professional internships available to your profile from {jobs?.length || 0} active listings
         </p>
       </div>
 

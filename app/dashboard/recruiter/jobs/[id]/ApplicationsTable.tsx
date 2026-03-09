@@ -1,8 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import StatusBadge from '../../../components/StatusBadge';
+import { useEffect, useMemo, useState } from 'react';
 import { CustomQuestion, QuestionAnswer } from '@/lib/questions';
+import StageBadge from '@/components/hiring-pipeline/StageBadge';
+import PipelineProgress from '@/components/hiring-pipeline/PipelineProgress';
+import EligibilityBadge from '@/components/applications/EligibilityBadge';
+import RankingExplanation from '@/components/applications/RankingExplanation';
+import type { ApplicationCurrentStage, HiringPipelineStage } from '@/lib/hiring-pipeline/types';
 
 interface Profile {
   id: string;
@@ -20,51 +24,144 @@ interface Application {
   answers: QuestionAnswer[] | null;
   status: string;
   created_at: string;
+  current_stage_id: string | null;
+  stage_entered_at: string | null;
+  decision_status: string | null;
+  eligibility_status: 'eligible' | 'needs_review' | 'ineligible' | null;
+  overall_stage_score: number | null;
+  recruiter_rating?: number | null;
+  ranking_score?: number | null;
+  ranking_breakdown?: Record<string, number> | null;
+  current_stage: ApplicationCurrentStage | null;
   profiles: Profile;
 }
 
 interface ApplicationsTableProps {
   applications: Application[];
   jobId: string;
+  pipelineStages: HiringPipelineStage[];
   customQuestions?: CustomQuestion[] | null;
 }
 
-const statusOptions = [
-  'submitted',
-  'shortlisted',
-  'interviewed',
-  'hired',
-  'rejected',
-];
-
 export default function ApplicationsTable({
   applications,
-  jobId,
+  pipelineStages,
   customQuestions,
 }: ApplicationsTableProps) {
-  const [appStatuses, setAppStatuses] = useState<Record<string, string>>(
-    Object.fromEntries(applications.map((app) => [app.id, app.status]))
+  const [appState, setAppState] = useState<
+    Record<
+      string,
+      {
+        status: string;
+        currentStage: ApplicationCurrentStage | null;
+        decisionStatus: string | null;
+      }
+    >
+  >(
+    Object.fromEntries(
+      applications.map((app) => [
+        app.id,
+        {
+          status: app.status,
+          currentStage: app.current_stage,
+          decisionStatus: app.decision_status,
+        },
+      ])
+    )
   );
   const [updating, setUpdating] = useState<string | null>(null);
   const [expandedApp, setExpandedApp] = useState<string | null>(null);
+  const [targetStageByApp, setTargetStageByApp] = useState<Record<string, string>>(
+    Object.fromEntries(
+      applications.map((app) => [app.id, app.current_stage?.id || pipelineStages[0]?.id || ''])
+    )
+  );
 
-  const updateStatus = async (appId: string, newStatus: string) => {
+  const stageOptions = useMemo(
+    () =>
+      pipelineStages.map((stage) => ({
+        value: stage.id,
+        label: stage.label,
+      })),
+    [pipelineStages]
+  );
+
+  useEffect(() => {
+    setAppState(
+      Object.fromEntries(
+        applications.map((app) => [
+          app.id,
+          {
+            status: app.status,
+            currentStage: app.current_stage,
+            decisionStatus: app.decision_status,
+          },
+        ])
+      )
+    );
+
+    setTargetStageByApp(
+      Object.fromEntries(
+        applications.map((app) => [
+          app.id,
+          app.current_stage?.id || pipelineStages[0]?.id || '',
+        ])
+      )
+    );
+  }, [applications, pipelineStages]);
+
+  const moveStage = async (appId: string, stageId: string) => {
     setUpdating(appId);
     try {
-      const response = await fetch(`/api/applications/${appId}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/applications/${appId}/stage`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ stageId }),
       });
 
       if (response.ok) {
-        setAppStatuses((prev) => ({ ...prev, [appId]: newStatus }));
+        const result = await response.json();
+        setAppState((prev) => ({
+          ...prev,
+          [appId]: {
+            ...prev[appId],
+            status: result.legacyStatus,
+            currentStage: result.toStage
+              ? {
+                  id: result.toStage.id,
+                  stageKey: result.toStage.stage_key,
+                  label: result.toStage.label,
+                  stageType: result.toStage.stage_type,
+                  orderIndex: result.toStage.order_index,
+                  isTerminal: result.toStage.is_terminal,
+                  allowsFeedback: result.toStage.allows_feedback,
+                }
+              : prev[appId]?.currentStage || null,
+          },
+        }));
+        setTargetStageByApp((prev) => ({
+          ...prev,
+          [appId]: result.toStage?.id || stageId,
+        }));
       }
     } catch (error) {
-      console.error('Failed to update status:', error);
+      console.error('Failed to move stage:', error);
     } finally {
       setUpdating(null);
     }
+  };
+
+  const getCurrentStage = (app: Application) => appState[app.id]?.currentStage || app.current_stage;
+
+  const getNextStage = (app: Application) => {
+    const currentStage = getCurrentStage(app);
+    if (!currentStage) {
+      return pipelineStages[0] || null;
+    }
+
+    return (
+      pipelineStages.find((stage) => stage.orderIndex > currentStage.orderIndex) || null
+    );
   };
 
   const getApplicantName = (profile: Profile) => {
@@ -125,17 +222,40 @@ export default function ApplicationsTable({
                   {getApplicantName(app.profiles).charAt(0).toUpperCase()}
                 </div>
               )}
-              <div>
-                <p className="font-medium text-white">
-                  {getApplicantName(app.profiles)}
-                </p>
-                <p className="text-sm text-gray-400">
-                  Applied {new Date(app.created_at).toLocaleDateString()}
-                </p>
+                <div>
+                  <p className="font-medium text-white">
+                    {getApplicantName(app.profiles)}
+                  </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <p className="text-sm text-gray-400">
+                    Applied {new Date(app.created_at).toLocaleDateString()}
+                  </p>
+                  <EligibilityBadge status={app.eligibility_status} compact />
+                  {typeof app.overall_stage_score === 'number' && app.overall_stage_score > 0 && (
+                    <span className="text-xs text-gray-500">
+                      Stage score {app.overall_stage_score.toFixed(1)}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1">
+                  <RankingExplanation
+                    compact
+                    rankingScore={app.ranking_score}
+                    rankingBreakdown={app.ranking_breakdown}
+                    recruiterRating={app.recruiter_rating}
+                    overallStageScore={app.overall_stage_score}
+                    eligibilityStatus={app.eligibility_status}
+                    decisionStatus={app.decision_status}
+                    currentStageType={getCurrentStage(app)?.stageType || null}
+                  />
+                </div>
               </div>
             </div>
             <div className="flex items-center gap-4">
-              <StatusBadge status={appStatuses[app.id]} />
+              <StageBadge
+                label={getCurrentStage(app)?.label || 'Unassigned'}
+                stageType={getCurrentStage(app)?.stageType || 'applied'}
+              />
               <svg
                 className={`w-5 h-5 text-gray-400 transition-transform ${
                   expandedApp === app.id ? 'rotate-180' : ''
@@ -208,34 +328,79 @@ export default function ApplicationsTable({
 
               {/* Status Update */}
               <div>
+                <h4 className="text-sm font-medium text-gray-400 mb-2">Stage Progress</h4>
+                <PipelineProgress stages={pipelineStages} currentStage={getCurrentStage(app)} />
+              </div>
+
+              <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
+                <h4 className="text-sm font-medium text-gray-400 mb-2">Eligibility Snapshot</h4>
+                <div className="flex flex-wrap items-center gap-3">
+                  <EligibilityBadge status={app.eligibility_status} />
+                  {typeof app.ranking_score === 'number' && app.ranking_score > 0 && (
+                    <span className="text-sm text-gray-400">
+                      Ranking {app.ranking_score.toFixed(1)}
+                    </span>
+                  )}
+                  {typeof app.overall_stage_score === 'number' && app.overall_stage_score > 0 && (
+                    <span className="text-sm text-gray-400">
+                      Stage score {app.overall_stage_score.toFixed(1)}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <RankingExplanation
+                    rankingScore={app.ranking_score}
+                    rankingBreakdown={app.ranking_breakdown}
+                    recruiterRating={app.recruiter_rating}
+                    overallStageScore={app.overall_stage_score}
+                    eligibilityStatus={app.eligibility_status}
+                    decisionStatus={app.decision_status}
+                    currentStageType={getCurrentStage(app)?.stageType || null}
+                  />
+                </div>
+              </div>
+
+              <div>
                 <h4 className="text-sm font-medium text-gray-400 mb-2">
-                  Update Status
+                  Move Candidate
                 </h4>
-                <div className="flex flex-wrap gap-2">
-                  {statusOptions.map((status) => (
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={targetStageByApp[app.id] || getCurrentStage(app)?.id || ''}
+                    onChange={(event) =>
+                      setTargetStageByApp((prev) => ({
+                        ...prev,
+                        [app.id]: event.target.value,
+                      }))
+                    }
+                    className="min-w-[220px] rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none"
+                  >
+                    {stageOptions.map((stage) => (
+                      <option key={stage.value} value={stage.value}>
+                        {stage.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => moveStage(app.id, targetStageByApp[app.id])}
+                    disabled={
+                      updating === app.id ||
+                      !targetStageByApp[app.id] ||
+                      targetStageByApp[app.id] === getCurrentStage(app)?.id
+                    }
+                    className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {updating === app.id ? 'Moving...' : 'Move to stage'}
+                  </button>
+                  {getNextStage(app) && (
                     <button
-                      key={status}
-                      onClick={() => updateStatus(app.id, status)}
-                      disabled={
-                        updating === app.id || appStatuses[app.id] === status
-                      }
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                        appStatuses[app.id] === status
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                      } ${
-                        updating === app.id
-                          ? 'opacity-50 cursor-not-allowed'
-                          : ''
-                      }`}
+                      onClick={() => moveStage(app.id, getNextStage(app)!.id)}
+                      disabled={updating === app.id}
+                      className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-medium text-gray-100 hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {status === 'submitted' && 'Submitted'}
-                      {status === 'shortlisted' && 'Shortlist'}
-                      {status === 'interviewed' && 'Interviewed'}
-                      {status === 'hired' && 'Hire'}
-                      {status === 'rejected' && 'Reject'}
+                      Next: {getNextStage(app)!.label}
                     </button>
-                  ))}
+                  )}
                 </div>
               </div>
             </div>

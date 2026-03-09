@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
+import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
+import { validateOpportunityConfiguration } from '@/lib/opportunities';
+import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
 
 export async function POST(request: Request) {
   try {
@@ -16,10 +19,15 @@ export async function POST(request: Request) {
       workType,
       jobType,
       visibility,
+      applyIntakeMode,
       description,
       autoApprove = true,
       published = true,
       customQuestions,
+      recruiterId,
+      internshipTrack,
+      eligibleRoles,
+      internshipRequirements,
     } = body;
 
     // Validate required fields
@@ -30,21 +38,68 @@ export async function POST(request: Request) {
       );
     }
 
+    const opportunityValidation = validateOpportunityConfiguration({
+      jobType,
+      visibility,
+      internshipTrack,
+      eligibleRoles,
+      applyIntakeMode,
+      internshipRequirements,
+    });
+
+    if (!opportunityValidation.valid) {
+      return NextResponse.json(
+        { error: opportunityValidation.errors.join(' ') },
+        { status: 400 }
+      );
+    }
+
     const supabase = createServerSupabaseClient();
+    const requestedRecruiterId =
+      typeof recruiterId === 'string' && recruiterId.trim().length > 0
+        ? recruiterId.trim()
+        : null;
+    let assignedRecruiterId = userId;
 
-    // Admin-created jobs need a recruiter_id, but admins may not be recruiters
-    // We'll use the admin's own ID as the recruiter_id, or create without it
-    // For now, we'll use the admin's ID and handle the constraint
+    if (requestedRecruiterId && requestedRecruiterId !== userId) {
+      const { data: recruiterProfile, error: recruiterProfileError } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('id', requestedRecruiterId)
+        .maybeSingle();
 
-    // First check if admin has a recruiter profile
+      if (recruiterProfileError || !recruiterProfile || recruiterProfile.role !== 'recruiter') {
+        return NextResponse.json(
+          { error: 'Selected recruiter is invalid or does not have recruiter role' },
+          { status: 400 }
+        );
+      }
+
+      const { data: recruiterRecord, error: recruiterRecordError } = await supabase
+        .from('recruiters')
+        .select('id')
+        .eq('id', requestedRecruiterId)
+        .maybeSingle();
+
+      if (recruiterRecordError || !recruiterRecord) {
+        return NextResponse.json(
+          { error: 'Selected recruiter must complete recruiter setup before assignment' },
+          { status: 400 }
+        );
+      }
+
+      assignedRecruiterId = requestedRecruiterId;
+    }
+
+    // First check if admin has a recruiter profile when posting for Joblinca/self
     const { data: recruiterProfile } = await supabase
       .from('recruiters')
       .select('id')
-      .eq('id', userId)
-      .single();
+      .eq('id', assignedRecruiterId)
+      .maybeSingle();
 
-    // If admin doesn't have a recruiter profile, create a minimal one
-    if (!recruiterProfile) {
+    // If posting as self and no recruiter profile exists, create a minimal one
+    if (!recruiterProfile && assignedRecruiterId === userId) {
       await supabase.from('recruiters').insert({
         id: userId,
         company_name: companyName,
@@ -56,7 +111,7 @@ export async function POST(request: Request) {
     const { data: job, error } = await supabase
       .from('jobs')
       .insert({
-        recruiter_id: userId,
+        recruiter_id: assignedRecruiterId,
         title,
         description,
         location: location || null,
@@ -64,8 +119,11 @@ export async function POST(request: Request) {
         company_name: companyName,
         company_logo_url: companyLogoUrl || null,
         work_type: workType || 'onsite',
-        job_type: jobType || 'job',
-        visibility: visibility || 'public',
+        job_type: opportunityValidation.normalized.jobType,
+        internship_track: opportunityValidation.normalized.internshipTrack,
+        visibility: opportunityValidation.normalized.visibility,
+        eligible_roles: opportunityValidation.normalized.eligibleRoles,
+        apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
         custom_questions: customQuestions || null,
         published: autoApprove ? published : false,
         approval_status: autoApprove ? 'approved' : 'pending',
@@ -80,6 +138,34 @@ export async function POST(request: Request) {
     if (error) {
       console.error('Error creating job:', error);
       return NextResponse.json({ error: 'Failed to create job' }, { status: 500 });
+    }
+
+    const metadataResult = await persistJobOpportunityMetadata(
+      supabase as any,
+      job.id,
+      opportunityValidation.normalized
+    );
+
+    if (metadataResult.error) {
+      console.error('Failed to persist admin job opportunity metadata:', metadataResult.error);
+      return NextResponse.json(
+        { error: metadataResult.error.message || 'Failed to save internship configuration' },
+        { status: 500 }
+      );
+    }
+
+    if (
+      job.published === true &&
+      (job.approval_status === 'approved' || job.approval_status === null)
+    ) {
+      try {
+        await dispatchJobMatchNotifications({
+          jobId: job.id,
+          trigger: 'admin_job_create',
+        });
+      } catch (matchError) {
+        console.error('Job matching dispatch failed after admin create', matchError);
+      }
     }
 
     return NextResponse.json({ success: true, id: job.id, job });

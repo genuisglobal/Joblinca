@@ -1,5 +1,15 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
+import {
+  moveApplicationToLegacyStatus,
+  type LegacyApplicationStatus,
+} from '@/lib/hiring-pipeline/transitions';
+
+function recruiterIdFromRelation(
+  jobs: { recruiter_id: string | null } | { recruiter_id: string | null }[] | null | undefined
+) {
+  return Array.isArray(jobs) ? jobs[0]?.recruiter_id ?? null : jobs?.recruiter_id ?? null;
+}
 
 // GET: Get a single application
 export async function GET(
@@ -45,7 +55,7 @@ export async function GET(
 
   // Check if user is the applicant or the job recruiter
   const isApplicant = application.applicant_id === user.id;
-  const isRecruiter = application.jobs?.recruiter_id === user.id;
+  const isRecruiter = recruiterIdFromRelation(application.jobs) === user.id;
 
   if (!isApplicant && !isRecruiter) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
@@ -88,7 +98,7 @@ export async function PUT(
   }
 
   // Only the job's recruiter can update the status
-  if (application.jobs?.recruiter_id !== user.id) {
+  if (recruiterIdFromRelation(application.jobs) !== user.id) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
   }
 
@@ -103,36 +113,47 @@ export async function PUT(
     );
   }
 
-  const oldStatus = application.status;
+  try {
+    const transition = await moveApplicationToLegacyStatus({
+      applicationId: params.id,
+      actorId: user.id,
+      status: status as LegacyApplicationStatus,
+      reason: 'legacy_status_update',
+      trigger: 'applications_put_route',
+    });
 
-  const { data: updated, error } = await supabase
-    .from('applications')
-    .update({
-      status,
-      updated_at: new Date().toISOString(),
-      reviewed_at: status !== 'submitted' && !application.reviewed_at ? new Date().toISOString() : undefined,
-    })
-    .eq('id', params.id)
-    .select('*')
-    .single();
+    const reviewedAt =
+      status !== 'submitted' && !application.reviewed_at
+        ? new Date().toISOString()
+        : application.reviewed_at || null;
 
-  if (error || !updated) {
+    if (reviewedAt !== application.reviewed_at) {
+      await supabase
+        .from('applications')
+        .update({
+          reviewed_at: reviewedAt,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', params.id);
+    }
+
+    return NextResponse.json({
+      ...transition.application,
+      reviewed_at: reviewedAt,
+      legacy_status: transition.legacyStatus,
+      current_stage_id: transition.toStage.id,
+      current_stage_label: transition.toStage.label,
+      current_stage_key: transition.toStage.stage_key,
+    });
+  } catch (transitionError) {
     return NextResponse.json(
-      { error: error?.message || 'Failed to update application' },
+      {
+        error:
+          transitionError instanceof Error
+            ? transitionError.message
+            : 'Failed to update application stage',
+      },
       { status: 500 }
     );
   }
-
-  // Log activity
-  if (oldStatus !== status) {
-    await supabase.from('application_activity').insert({
-      application_id: params.id,
-      actor_id: user.id,
-      action: 'status_changed',
-      old_value: oldStatus,
-      new_value: status,
-    });
-  }
-
-  return NextResponse.json(updated);
 }

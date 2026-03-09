@@ -1,7 +1,12 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
-
-const VALID_STATUSES = ['submitted', 'shortlisted', 'interviewed', 'hired', 'rejected'];
+import {
+  LEGACY_APPLICATION_STATUSES,
+  isLegacyApplicationStatus,
+  type LegacyApplicationStatus,
+} from '@/lib/hiring-pipeline/mapping';
+import { moveApplicationToLegacyStatus } from '@/lib/hiring-pipeline/transitions';
+const VALID_STATUSES = [...LEGACY_APPLICATION_STATUSES];
 
 // POST: Bulk update application statuses
 export async function POST(request: NextRequest) {
@@ -23,7 +28,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'applicationIds array is required' }, { status: 400 });
   }
 
-  if (!status || !VALID_STATUSES.includes(status)) {
+  if (!isLegacyApplicationStatus(status)) {
     return NextResponse.json(
       { error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` },
       { status: 400 }
@@ -33,7 +38,7 @@ export async function POST(request: NextRequest) {
   // Verify all applications belong to jobs owned by this recruiter
   const { data: applications, error: fetchError } = await supabase
     .from('applications')
-    .select('id, status, job_id, jobs:job_id(recruiter_id)')
+    .select('id, status, reviewed_at, job_id, jobs:job_id(recruiter_id)')
     .in('id', applicationIds);
 
   if (fetchError) {
@@ -49,39 +54,52 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No authorized applications found' }, { status: 403 });
   }
 
-  const ownedIds = ownedApplications.map((a) => a.id);
+  const transitionResults = await Promise.allSettled(
+    ownedApplications.map(async (app) => {
+      const transition = await moveApplicationToLegacyStatus({
+        applicationId: app.id,
+        actorId: user.id,
+        status: status as LegacyApplicationStatus,
+        reason: 'bulk_legacy_status_update',
+        trigger: 'applications_bulk_route',
+      });
 
-  // Update all owned applications
-  const { data: updated, error: updateError } = await supabase
-    .from('applications')
-    .update({
-      status,
-      updated_at: new Date().toISOString(),
-      reviewed_at: status !== 'submitted' ? new Date().toISOString() : null,
+      if (status !== 'submitted' && !app.reviewed_at) {
+        const { error: reviewError } = await supabase
+          .from('applications')
+          .update({
+            reviewed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', app.id);
+
+        if (reviewError) {
+          throw new Error(reviewError.message);
+        }
+      }
+
+      return transition;
     })
-    .in('id', ownedIds)
-    .select('id');
+  );
 
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
+  const failures = transitionResults.flatMap((result, index) =>
+    result.status === 'fulfilled'
+      ? []
+      : [
+          {
+            applicationId: ownedApplications[index]?.id,
+            error: result.reason instanceof Error ? result.reason.message : 'Unknown error',
+          },
+        ]
+  );
 
-  // Log activity for each updated application
-  const activityRecords = ownedApplications.map((app) => ({
-    application_id: app.id,
-    actor_id: user.id,
-    action: 'status_changed',
-    old_value: app.status,
-    new_value: status,
-    metadata: { bulk_action: true },
-  }));
-
-  await supabase.from('application_activity').insert(activityRecords);
+  const updatedCount = transitionResults.filter((result) => result.status === 'fulfilled').length;
 
   return NextResponse.json({
-    success: true,
-    updated: updated?.length || 0,
+    success: failures.length === 0,
+    updated: updatedCount,
     requested: applicationIds.length,
-    authorized: ownedIds.length,
+    authorized: ownedApplications.length,
+    failures,
   });
 }

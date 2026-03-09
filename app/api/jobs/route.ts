@@ -1,8 +1,20 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireActiveSubscription } from '@/lib/subscriptions';
+import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
+import { validateOpportunityConfiguration } from '@/lib/opportunities';
+import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
 
 const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
+
+function normalizeOptionalId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 // Handle GET /api/jobs and POST /api/jobs
 export async function GET() {
@@ -91,17 +103,82 @@ export async function POST(request: NextRequest) {
     visibility,
     customQuestions,
     applyMethod,
+    applyIntakeMode,
     externalApplyUrl,
     applyEmail,
     applyPhone,
     applyWhatsapp,
     closesAt,
     waAiScreeningEnabled,
+    recruiterId,
+    internshipTrack,
+    eligibleRoles,
+    internshipRequirements,
   } = body;
+
+  const requestedRecruiterId = normalizeOptionalId(recruiterId);
+
   if (!title || !description) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
-  if (isActiveAdmin) {
+
+  const opportunityValidation = validateOpportunityConfiguration({
+    jobType,
+    visibility,
+    internshipTrack,
+    eligibleRoles,
+    applyMethod,
+    applyIntakeMode,
+    internshipRequirements,
+  });
+
+  if (!opportunityValidation.valid) {
+    return NextResponse.json(
+      { error: opportunityValidation.errors.join(' ') },
+      { status: 400 }
+    );
+  }
+
+  if (!isActiveAdmin && requestedRecruiterId && requestedRecruiterId !== user.id) {
+    return NextResponse.json(
+      { error: 'Only admins can post jobs on behalf of another recruiter' },
+      { status: 403 }
+    );
+  }
+
+  let assignedRecruiterId = user.id;
+
+  if (isActiveAdmin && requestedRecruiterId && requestedRecruiterId !== user.id) {
+    const { data: recruiterUser, error: recruiterUserError } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('id', requestedRecruiterId)
+      .maybeSingle();
+
+    if (recruiterUserError || !recruiterUser || recruiterUser.role !== 'recruiter') {
+      return NextResponse.json(
+        { error: 'Selected recruiter is invalid or does not have a recruiter account' },
+        { status: 400 }
+      );
+    }
+
+    const { data: recruiterRecord, error: recruiterRecordError } = await supabase
+      .from('recruiters')
+      .select('id')
+      .eq('id', requestedRecruiterId)
+      .maybeSingle();
+
+    if (recruiterRecordError || !recruiterRecord) {
+      return NextResponse.json(
+        { error: 'Selected recruiter must complete recruiter setup before being assigned jobs' },
+        { status: 400 }
+      );
+    }
+
+    assignedRecruiterId = requestedRecruiterId;
+  }
+
+  if (isActiveAdmin && assignedRecruiterId === user.id) {
     const { data: recruiterProfile } = await supabase
       .from('recruiters')
       .select('id')
@@ -111,7 +188,7 @@ export async function POST(request: NextRequest) {
     if (!recruiterProfile) {
       const { error: recruiterError } = await supabase.from('recruiters').insert({
         id: user.id,
-        company_name: companyName || 'Admin Posted Job',
+        company_name: companyName || 'Joblinca',
         verified: true,
       });
 
@@ -134,7 +211,7 @@ export async function POST(request: NextRequest) {
       description,
       location,
       salary: salary ? Number(salary) : null,
-      recruiter_id: user.id,
+      recruiter_id: assignedRecruiterId,
       published: shouldPublishImmediately,
       approval_status: approvalStatus,
       approved_at: isActiveAdmin ? new Date().toISOString() : null,
@@ -144,10 +221,13 @@ export async function POST(request: NextRequest) {
       company_name: companyName || null,
       company_logo_url: companyLogoUrl || null,
       work_type: workType || 'onsite',
-      job_type: jobType || 'job',
-      visibility: visibility || 'public',
+      job_type: opportunityValidation.normalized.jobType,
+      internship_track: opportunityValidation.normalized.internshipTrack,
+      visibility: opportunityValidation.normalized.visibility,
+      eligible_roles: opportunityValidation.normalized.eligibleRoles,
       custom_questions: customQuestions || null,
       apply_method: applyMethod || 'joblinca',
+      apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
       external_apply_url: externalApplyUrl || null,
       apply_email: applyEmail || null,
       apply_phone: applyPhone || null,
@@ -160,6 +240,20 @@ export async function POST(request: NextRequest) {
     .single();
   if (error || !insertedJob) {
     return NextResponse.json({ error: error?.message || 'Failed to create job' }, { status: 500 });
+  }
+
+  const metadataResult = await persistJobOpportunityMetadata(
+    supabase as any,
+    insertedJob.id,
+    opportunityValidation.normalized
+  );
+
+  if (metadataResult.error) {
+    console.error('Failed to persist opportunity metadata', metadataResult.error);
+    return NextResponse.json(
+      { error: metadataResult.error.message || 'Failed to save internship configuration' },
+      { status: 500 }
+    );
   }
   // Generate a shareable image for the job.  We invoke our own API
   // route rather than duplicating image generation logic here.  If
@@ -195,5 +289,20 @@ export async function POST(request: NextRequest) {
       .update({ image_url: imageUrl })
       .eq('id', insertedJob.id);
   }
+
+  if (
+    insertedJob.published === true &&
+    (insertedJob.approval_status === 'approved' || insertedJob.approval_status === null)
+  ) {
+    try {
+      await dispatchJobMatchNotifications({
+        jobId: insertedJob.id,
+        trigger: 'job_posted',
+      });
+    } catch (matchError) {
+      console.error('Job matching dispatch failed after job create', matchError);
+    }
+  }
+
   return NextResponse.json({ id: insertedJob.id }, { status: 201 });
 }

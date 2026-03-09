@@ -141,6 +141,8 @@ export async function sendInterviewReminderWhatsapp(opts: {
   interviewTime: string;
   userId?: string | null;
 }): Promise<void> {
+  const templateName = process.env.WA_INTERVIEW_REMINDER_TEMPLATE || 'interview_reminder_v1';
+  const languageCode = process.env.WA_INTERVIEW_REMINDER_TEMPLATE_LANG || 'en';
   const components: WATemplateComponent[] = [
     {
       type: 'body',
@@ -154,11 +156,267 @@ export async function sendInterviewReminderWhatsapp(opts: {
   ];
   await sendWhatsappTemplate(
     opts.to,
-    'interview_reminder_v1',
-    'en',
+    templateName,
+    languageCode,
     components,
     opts.userId
   );
+}
+
+export async function sendInterviewScheduledWhatsapp(opts: {
+  to: string;
+  seekerName: string;
+  jobTitle: string;
+  company: string;
+  interviewTime: string;
+  modeLabel: string;
+  meetingUrl?: string | null;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  const templateName = process.env.WA_INTERVIEW_SCHEDULED_TEMPLATE || 'interview_scheduled_v1';
+  const languageCode = process.env.WA_INTERVIEW_SCHEDULED_TEMPLATE_LANG || 'en';
+  const components: WATemplateComponent[] = [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: opts.seekerName },
+        { type: 'text', text: opts.jobTitle },
+        { type: 'text', text: opts.company },
+        { type: 'text', text: opts.interviewTime },
+      ],
+    },
+  ];
+
+  try {
+    await sendWhatsappTemplate(
+      opts.to,
+      templateName,
+      languageCode,
+      components,
+      opts.userId
+    );
+    return 'template';
+  } catch (templateError) {
+    const fallback = [
+      `Interview scheduled: ${opts.jobTitle}`,
+      `Company: ${opts.company}`,
+      `Mode: ${opts.modeLabel}`,
+      `Time: ${opts.interviewTime}`,
+      opts.meetingUrl ? `Meeting link: ${opts.meetingUrl}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      await sendWhatsappMessage(opts.to, fallback, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Interview scheduled send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
+
+export async function sendInterviewReminderAlertWhatsapp(opts: {
+  to: string;
+  seekerName: string;
+  jobTitle: string;
+  company: string;
+  interviewTime: string;
+  modeLabel: string;
+  meetingUrl?: string | null;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  try {
+    await sendInterviewReminderWhatsapp({
+      to: opts.to,
+      seekerName: opts.seekerName,
+      jobTitle: opts.jobTitle,
+      company: opts.company,
+      interviewTime: opts.interviewTime,
+      userId: opts.userId,
+    });
+    return 'template';
+  } catch (templateError) {
+    const fallback = [
+      `Interview reminder: ${opts.jobTitle}`,
+      `Company: ${opts.company}`,
+      `Mode: ${opts.modeLabel}`,
+      `Time: ${opts.interviewTime}`,
+      opts.meetingUrl ? `Meeting link: ${opts.meetingUrl}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      await sendWhatsappMessage(opts.to, fallback, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Interview reminder send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
+
+export async function sendInterviewRescheduledWhatsapp(opts: {
+  to: string;
+  seekerName: string;
+  jobTitle: string;
+  company: string;
+  interviewTime: string;
+  modeLabel: string;
+  meetingUrl?: string | null;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  const templateName =
+    process.env.WA_INTERVIEW_RESCHEDULED_TEMPLATE || 'interview_rescheduled_v1';
+  const languageCode = process.env.WA_INTERVIEW_RESCHEDULED_TEMPLATE_LANG || 'en';
+  const components: WATemplateComponent[] = [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: opts.seekerName },
+        { type: 'text', text: opts.jobTitle },
+        { type: 'text', text: opts.company },
+        { type: 'text', text: opts.interviewTime },
+      ],
+    },
+  ];
+
+  try {
+    await sendWhatsappTemplate(
+      opts.to,
+      templateName,
+      languageCode,
+      components,
+      opts.userId
+    );
+    return 'template';
+  } catch (templateError) {
+    const fallback = [
+      `Interview rescheduled: ${opts.jobTitle}`,
+      `Company: ${opts.company}`,
+      `Mode: ${opts.modeLabel}`,
+      `New time: ${opts.interviewTime}`,
+      opts.meetingUrl ? `Meeting link: ${opts.meetingUrl}` : null,
+      'Please confirm whether you can still attend.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      await sendWhatsappMessage(opts.to, fallback, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Interview reschedule send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
+
+export async function sendInterviewCancelledWhatsapp(opts: {
+  to: string;
+  seekerName: string;
+  jobTitle: string;
+  company: string;
+  interviewTime: string;
+  modeLabel: string;
+  meetingUrl?: string | null;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  const templateName =
+    process.env.WA_INTERVIEW_CANCELLED_TEMPLATE || 'interview_cancelled_v1';
+  const languageCode = process.env.WA_INTERVIEW_CANCELLED_TEMPLATE_LANG || 'en';
+  const components: WATemplateComponent[] = [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: opts.seekerName },
+        { type: 'text', text: opts.jobTitle },
+        { type: 'text', text: opts.company },
+        { type: 'text', text: opts.interviewTime },
+      ],
+    },
+  ];
+
+  try {
+    await sendWhatsappTemplate(
+      opts.to,
+      templateName,
+      languageCode,
+      components,
+      opts.userId
+    );
+    return 'template';
+  } catch (templateError) {
+    const fallback = [
+      `Interview cancelled: ${opts.jobTitle}`,
+      `Company: ${opts.company}`,
+      `Mode: ${opts.modeLabel}`,
+      `Cancelled slot: ${opts.interviewTime}`,
+      opts.meetingUrl ? `Meeting link: ${opts.meetingUrl}` : null,
+      'The recruiter will contact you again if they want to reschedule.',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    try {
+      await sendWhatsappMessage(opts.to, fallback, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Interview cancellation send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
+
+export async function sendInterviewOutcomeFollowupWhatsapp(opts: {
+  to: string;
+  text: string;
+  userId?: string | null;
+}): Promise<'text'> {
+  await sendWhatsappMessage(opts.to, opts.text, opts.userId);
+  return 'text';
+}
+
+export async function sendInterviewSelfScheduleInviteWhatsapp(opts: {
+  to: string;
+  seekerName: string;
+  jobTitle: string;
+  company: string;
+  inviteUrl: string;
+  modeLabel: string;
+  userId?: string | null;
+}): Promise<'text'> {
+  const text = [
+    `Interview slots available: ${opts.jobTitle}`,
+    `Company: ${opts.company}`,
+    `Mode: ${opts.modeLabel}`,
+    `Choose your time: ${opts.inviteUrl}`,
+  ].join('\n');
+
+  await sendWhatsappMessage(opts.to, text, opts.userId);
+  return 'text';
 }
 
 export async function sendMatchedJobsDigestWhatsapp(opts: {
@@ -208,6 +466,51 @@ export async function sendMatchedJobsDigestWhatsapp(opts: {
         fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
       throw new Error(
         `Matched jobs send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
+
+export async function sendMatchedJobAlertWhatsapp(opts: {
+  to: string;
+  userName: string;
+  jobTitle: string;
+  company: string;
+  location: string;
+  jobPublicId: string | null;
+  jobUrl: string;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  try {
+    await sendJobAlertWhatsapp({
+      to: opts.to,
+      seekerName: opts.userName || 'there',
+      jobTitle: opts.jobTitle || 'New opportunity',
+      company: opts.company || 'Joblinca',
+      location: opts.location || 'N/A',
+      jobUrl: opts.jobUrl,
+      userId: opts.userId,
+    });
+    return 'template';
+  } catch (templateError) {
+    const fallback = [
+      `New job match for you: ${opts.jobTitle || 'New opportunity'}`,
+      `Company: ${opts.company || 'Joblinca'}`,
+      `Location: ${opts.location || 'N/A'}`,
+      `Job ID: ${opts.jobPublicId || 'N/A'}`,
+      `Apply: ${opts.jobUrl}`,
+    ].join('\n');
+
+    try {
+      await sendWhatsappMessage(opts.to, fallback, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Matched job alert send failed. template=${templateMsg}; fallback=${fallbackMsg}`
       );
     }
   }

@@ -4,8 +4,42 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import StatusBadge from '../../../components/StatusBadge';
 import BadgeGrid from '@/app/dashboard/skillup/components/BadgeGrid';
+import StageBadge from '@/components/hiring-pipeline/StageBadge';
+import PipelineProgress from '@/components/hiring-pipeline/PipelineProgress';
+import StageTimeline from '@/components/hiring-pipeline/StageTimeline';
+import RankingExplanation from '@/components/applications/RankingExplanation';
+import InterviewCalendarActions from '@/components/interview-scheduling/InterviewCalendarActions';
+import {
+  formatDecisionLabel,
+  getDecisionTone,
+  getRecommendationLabel,
+} from '@/lib/hiring-pipeline/presentation';
+import type {
+  ApplicationCurrentStage,
+  ApplicationStageEventView,
+  ApplicationStageFeedbackView,
+  FeedbackRecommendation,
+  HiringPipelineStage,
+} from '@/lib/hiring-pipeline/types';
+import type {
+  ApplicationInterviewSlotView,
+  ApplicationInterviewView,
+} from '@/lib/interview-scheduling/types';
+import {
+  DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS,
+  findInterviewSlotTemplate,
+  formatBlackoutDateSummary,
+  formatWeeklyAvailabilitySummary,
+  type JobInterviewSelfScheduleSettings,
+} from '@/lib/interview-scheduling/self-schedule';
+import {
+  formatInterviewDateTimeLabel,
+  getInterviewModeLabel,
+  getInterviewResponseStatusLabel,
+  getInterviewSlotStatusLabel,
+  getInterviewStatusLabel,
+} from '@/lib/interview-scheduling/utils';
 
 interface Job {
   id: string;
@@ -32,10 +66,22 @@ interface Application {
   cover_letter: string | null;
   answers: unknown[] | null;
   status: string;
+  current_stage_id: string | null;
+  stage_entered_at: string | null;
+  decision_status: string | null;
+  disposition_reason: string | null;
+  overall_stage_score: number | null;
   created_at: string;
   updated_at: string;
   resume_url: string | null;
   contact_info: { email?: string; phone?: string } | null;
+  eligibility_status: 'eligible' | 'needs_review' | 'ineligible' | null;
+  eligibility_reasons: {
+    blockingReasons?: string[];
+    missingProfileFields?: string[];
+    recommendedProfileUpdates?: string[];
+    matchedSignals?: string[];
+  } | null;
   recruiter_rating: number | null;
   tags: string[];
   viewed_at: string | null;
@@ -45,6 +91,7 @@ interface Application {
   ranking_breakdown: Record<string, number>;
   jobs: Job;
   profiles: Profile;
+  current_stage: ApplicationCurrentStage | null;
 }
 
 interface Note {
@@ -78,13 +125,141 @@ interface AIInsights {
   error_message: string | null;
 }
 
-const STATUS_OPTIONS = [
-  { value: 'submitted', label: 'Submitted', color: 'blue' },
-  { value: 'shortlisted', label: 'Shortlisted', color: 'yellow' },
-  { value: 'interviewed', label: 'Interviewed', color: 'purple' },
-  { value: 'hired', label: 'Hired', color: 'green' },
-  { value: 'rejected', label: 'Rejected', color: 'red' },
+interface InterviewSelfScheduleResponse {
+  settings: JobInterviewSelfScheduleSettings;
+}
+
+const FEEDBACK_RECOMMENDATION_OPTIONS: {
+  value: FeedbackRecommendation;
+  label: string;
+}[] = [
+  { value: 'strong_yes', label: 'Strong yes' },
+  { value: 'yes', label: 'Yes' },
+  { value: 'mixed', label: 'Mixed' },
+  { value: 'no', label: 'No' },
+  { value: 'strong_no', label: 'Strong no' },
 ];
+
+function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
+
+function mapCurrentStage(value: any): ApplicationCurrentStage | null {
+  const stage = normalizeRelation(value);
+  if (!stage) return null;
+
+  return {
+    id: stage.id,
+    stageKey: stage.stage_key,
+    label: stage.label,
+    stageType: stage.stage_type,
+    orderIndex: stage.order_index,
+    isTerminal: stage.is_terminal,
+    allowsFeedback: stage.allows_feedback,
+  };
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function normalizeEligibilityReasons(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {
+      blockingReasons: [] as string[],
+      missingProfileFields: [] as string[],
+      recommendedProfileUpdates: [] as string[],
+      matchedSignals: [] as string[],
+    };
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return {
+    blockingReasons: normalizeStringList(record.blockingReasons),
+    missingProfileFields: normalizeStringList(record.missingProfileFields),
+    recommendedProfileUpdates: normalizeStringList(record.recommendedProfileUpdates),
+    matchedSignals: normalizeStringList(record.matchedSignals),
+  };
+}
+
+function getEligibilityTone(status: Application['eligibility_status']) {
+  switch (status) {
+    case 'eligible':
+      return {
+        bg: 'bg-emerald-500/10',
+        border: 'border-emerald-500/30',
+        text: 'text-emerald-100',
+        label: 'Eligible at submission',
+      };
+    case 'needs_review':
+      return {
+        bg: 'bg-amber-500/10',
+        border: 'border-amber-500/30',
+        text: 'text-amber-100',
+        label: 'Eligible, but profile gaps were detected',
+      };
+    case 'ineligible':
+      return {
+        bg: 'bg-red-500/10',
+        border: 'border-red-500/30',
+        text: 'text-red-100',
+        label: 'Submitted against an ineligible profile',
+      };
+    default:
+      return {
+        bg: 'bg-gray-700/40',
+        border: 'border-gray-700',
+        text: 'text-gray-200',
+        label: 'No eligibility snapshot captured',
+      };
+  }
+}
+
+function getInterviewStatusTone(status: ApplicationInterviewView['status']) {
+  switch (status) {
+    case 'scheduled':
+      return 'border-blue-500/30 bg-blue-500/10 text-blue-100';
+    case 'completed':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100';
+    case 'cancelled':
+      return 'border-red-500/30 bg-red-500/10 text-red-100';
+    default:
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-100';
+  }
+}
+
+function getInterviewResponseTone(
+  status: ApplicationInterviewView['candidateResponseStatus']
+) {
+  switch (status) {
+    case 'confirmed':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100';
+    case 'declined':
+      return 'border-red-500/30 bg-red-500/10 text-red-100';
+    default:
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-100';
+  }
+}
+
+function getInterviewSlotStatusTone(status: ApplicationInterviewSlotView['status']) {
+  switch (status) {
+    case 'booked':
+      return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100';
+    case 'cancelled':
+      return 'border-red-500/30 bg-red-500/10 text-red-100';
+    default:
+      return 'border-indigo-500/30 bg-indigo-500/10 text-indigo-100';
+  }
+}
 
 export default function ApplicationDetailPage({
   params,
@@ -99,15 +274,58 @@ export default function ApplicationDetailPage({
   const [notes, setNotes] = useState<Note[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [aiInsights, setAiInsights] = useState<AIInsights | null>(null);
+  const [pipelineStages, setPipelineStages] = useState<HiringPipelineStage[]>([]);
+  const [stageEvents, setStageEvents] = useState<ApplicationStageEventView[]>([]);
+  const [stageFeedback, setStageFeedback] = useState<ApplicationStageFeedbackView[]>([]);
+  const [interviews, setInterviews] = useState<ApplicationInterviewView[]>([]);
+  const [interviewSlots, setInterviewSlots] = useState<ApplicationInterviewSlotView[]>([]);
+  const [selfScheduleSettings, setSelfScheduleSettings] =
+    useState<JobInterviewSelfScheduleSettings>(
+      DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS
+    );
 
   const [applicantBadges, setApplicantBadges] = useState<any[]>([]);
   const [applicantAchievements, setApplicantAchievements] = useState<any[]>([]);
 
   const [newNote, setNewNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [movingStage, setMovingStage] = useState(false);
   const [updatingRating, setUpdatingRating] = useState(false);
   const [analyzingAI, setAnalyzingAI] = useState(false);
+  const [selectedStageId, setSelectedStageId] = useState('');
+  const [feedbackScore, setFeedbackScore] = useState('');
+  const [feedbackSummary, setFeedbackSummary] = useState('');
+  const [feedbackRecommendation, setFeedbackRecommendation] = useState<
+    FeedbackRecommendation | ''
+  >('');
+  const [savingFeedback, setSavingFeedback] = useState(false);
+  const [decisionReason, setDecisionReason] = useState('');
+  const [savingDecision, setSavingDecision] = useState(false);
+  const [interviewDateTime, setInterviewDateTime] = useState('');
+  const [slotRangeStartDate, setSlotRangeStartDate] = useState('');
+  const [slotRangeEndDate, setSlotRangeEndDate] = useState('');
+  const [interviewMode, setInterviewMode] = useState<'video' | 'phone' | 'onsite' | 'other'>(
+    'video'
+  );
+  const [interviewLocation, setInterviewLocation] = useState('');
+  const [interviewMeetingUrl, setInterviewMeetingUrl] = useState('');
+  const [interviewNotes, setInterviewNotes] = useState('');
+  const [scheduleNotifications, setScheduleNotifications] = useState(true);
+  const [moveToInterviewStage, setMoveToInterviewStage] = useState(true);
+  const [schedulingInterview, setSchedulingInterview] = useState(false);
+  const [generatingSlots, setGeneratingSlots] = useState(false);
+  const [editingInterviewId, setEditingInterviewId] = useState<string | null>(null);
+  const [selectedSlotTemplateId, setSelectedSlotTemplateId] = useState('');
+  const [updatingInterviewId, setUpdatingInterviewId] = useState<string | null>(null);
+  const [updatingSlotId, setUpdatingSlotId] = useState<string | null>(null);
+  const [scheduleMessage, setScheduleMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const recruiterTimezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+    []
+  );
 
   // Load application data
   const loadData = useCallback(async () => {
@@ -128,6 +346,15 @@ export default function ApplicationDetailPage({
         .select(
           `
           *,
+          current_stage:current_stage_id (
+            id,
+            stage_key,
+            label,
+            stage_type,
+            order_index,
+            is_terminal,
+            allows_feedback
+          ),
           jobs:job_id (
             id,
             title,
@@ -156,13 +383,19 @@ export default function ApplicationDetailPage({
       }
 
       // Verify ownership
-      if (appData.jobs?.recruiter_id !== user.id) {
+      const job = normalizeRelation(appData.jobs);
+      if (!job || job.recruiter_id !== user.id) {
         console.error('Not authorized to view this application');
         router.replace('/dashboard/recruiter/applications');
         return;
       }
 
-      setApplication(appData as Application);
+      setApplication({
+        ...(appData as Application),
+        jobs: job,
+        profiles: normalizeRelation(appData.profiles) as Profile,
+        current_stage: mapCurrentStage((appData as any).current_stage),
+      });
 
       // Mark as viewed if not already
       if (!appData.viewed_at) {
@@ -200,6 +433,106 @@ export default function ApplicationDetailPage({
 
       setAiInsights(aiData);
 
+      const [
+        pipelineResponse,
+        feedbackResponse,
+        interviewsResponse,
+        slotsResponse,
+        selfScheduleResponse,
+        eventsResult,
+      ] =
+        await Promise.all([
+        fetch(`/api/jobs/${appData.job_id}/pipeline`, { credentials: 'include' }),
+        fetch(`/api/applications/${params.id}/feedback`, { credentials: 'include' }),
+        fetch(`/api/applications/${params.id}/interviews`, { credentials: 'include' }),
+        fetch(`/api/applications/${params.id}/interview-slots`, { credentials: 'include' }),
+        fetch(`/api/jobs/${appData.job_id}/interview-self-schedule`, {
+          credentials: 'include',
+        }),
+        supabase
+          .from('application_stage_events')
+          .select(
+            `
+            id,
+            application_id,
+            actor_id,
+            from_stage_id,
+            to_stage_id,
+            transition_reason,
+            note,
+            metadata,
+            created_at,
+            from_stage:from_stage_id (
+              id,
+              stage_key,
+              label,
+              stage_type,
+              order_index,
+              is_terminal,
+              allows_feedback
+            ),
+            to_stage:to_stage_id (
+              id,
+              stage_key,
+              label,
+              stage_type,
+              order_index,
+              is_terminal,
+              allows_feedback
+            )
+          `
+          )
+          .eq('application_id', params.id)
+          .order('created_at', { ascending: false }),
+        ]);
+
+      if (pipelineResponse.ok) {
+        const pipelineData = await pipelineResponse.json();
+        setPipelineStages(pipelineData.pipeline?.stages || []);
+        const currentStageId = (appData as any).current_stage_id as string | null;
+        setSelectedStageId(currentStageId || pipelineData.pipeline?.stages?.[0]?.id || '');
+      }
+
+      if (feedbackResponse.ok) {
+        const feedbackData = await feedbackResponse.json();
+        setStageFeedback(feedbackData.feedback || []);
+      }
+
+      if (interviewsResponse.ok) {
+        const interviewsData = await interviewsResponse.json();
+        setInterviews(interviewsData.interviews || []);
+      }
+
+      if (slotsResponse.ok) {
+        const slotsData = await slotsResponse.json();
+        setInterviewSlots(slotsData.slots || []);
+      }
+
+      if (selfScheduleResponse.ok) {
+        const selfScheduleData =
+          (await selfScheduleResponse.json()) as InterviewSelfScheduleResponse;
+        setSelfScheduleSettings(
+          selfScheduleData.settings || DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS
+        );
+      }
+
+      if (!eventsResult.error) {
+        const normalizedEvents = (eventsResult.data || []).map((event: any) => ({
+          id: event.id,
+          applicationId: event.application_id,
+          actorId: event.actor_id,
+          fromStageId: event.from_stage_id,
+          toStageId: event.to_stage_id,
+          transitionReason: event.transition_reason,
+          note: event.note,
+          metadata: event.metadata || {},
+          createdAt: event.created_at,
+          fromStage: mapCurrentStage(event.from_stage),
+          toStage: mapCurrentStage(event.to_stage),
+        }));
+        setStageEvents(normalizedEvents as ApplicationStageEventView[]);
+      }
+
       // Fetch applicant learning badges
       const { data: badgesData } = await supabase
         .from('user_badges')
@@ -229,33 +562,24 @@ export default function ApplicationDetailPage({
     loadData();
   }, [loadData]);
 
-  // Update status
-  const handleStatusUpdate = async (newStatus: string) => {
-    if (!application || updatingStatus) return;
+  const handleStageMove = async (stageId: string) => {
+    if (!application || movingStage || !stageId) return;
 
-    setUpdatingStatus(true);
+    setMovingStage(true);
     try {
-      const response = await fetch(`/api/applications/${params.id}`, {
-        method: 'PUT',
+      const response = await fetch(`/api/applications/${params.id}/stage`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ stageId }),
       });
 
       if (response.ok) {
-        setApplication({ ...application, status: newStatus });
-        // Reload activities
-        const { data: activityData } = await supabase
-          .from('application_activity')
-          .select('*')
-          .eq('application_id', params.id)
-          .order('created_at', { ascending: false })
-          .limit(20);
-        setActivities(activityData || []);
+        await loadData();
       }
     } catch (err) {
-      console.error('Failed to update status:', err);
+      console.error('Failed to move stage:', err);
     } finally {
-      setUpdatingStatus(false);
+      setMovingStage(false);
     }
   };
 
@@ -353,6 +677,415 @@ export default function ApplicationDetailPage({
     }
   };
 
+  const handleFeedbackSubmit = async () => {
+    if (!application || savingFeedback) return;
+
+    const parsedScore = feedbackScore.trim() ? Number(feedbackScore) : null;
+    if (
+      parsedScore !== null &&
+      (!Number.isFinite(parsedScore) || parsedScore < 0 || parsedScore > 100)
+    ) {
+      return;
+    }
+
+    setSavingFeedback(true);
+    try {
+      const response = await fetch(`/api/applications/${params.id}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stageId: application.current_stage?.id || null,
+          score: parsedScore,
+          recommendation: feedbackRecommendation || null,
+          summary: feedbackSummary.trim() || null,
+          feedback: {
+            source: 'recruiter_application_detail',
+          },
+        }),
+      });
+
+      if (response.ok) {
+        setFeedbackScore('');
+        setFeedbackRecommendation('');
+        setFeedbackSummary('');
+        await loadData();
+      }
+    } catch (err) {
+      console.error('Failed to save feedback:', err);
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
+  const handleDecision = async (decisionStatus: 'active' | 'hired' | 'rejected') => {
+    if (!application || savingDecision) return;
+
+    setSavingDecision(true);
+    try {
+      const response = await fetch(`/api/applications/${params.id}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          decisionStatus,
+          dispositionReason: decisionReason.trim() || null,
+          note: decisionReason.trim() || null,
+        }),
+      });
+
+      if (response.ok) {
+        if (decisionStatus === 'active') {
+          setDecisionReason('');
+        }
+        await loadData();
+      }
+    } catch (err) {
+      console.error('Failed to record decision:', err);
+    } finally {
+      setSavingDecision(false);
+    }
+  };
+
+  const handleScheduleInterview = async () => {
+    if (!application || schedulingInterview || !interviewDateTime) return;
+
+    setSchedulingInterview(true);
+    setScheduleMessage(null);
+
+    try {
+      const response = await fetch(`/api/applications/${params.id}/interviews`, {
+        method: editingInterviewId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewId: editingInterviewId,
+          action: editingInterviewId ? 'reschedule' : undefined,
+          scheduledAt: new Date(interviewDateTime).toISOString(),
+          timezone: recruiterTimezone,
+          mode: interviewMode,
+          location: interviewLocation.trim() || null,
+          meetingUrl: interviewMeetingUrl.trim() || null,
+          notes: interviewNotes.trim() || null,
+          sendNotifications: scheduleNotifications,
+          moveToInterviewStage,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setScheduleMessage({
+          type: 'error',
+          text:
+            typeof payload.error === 'string'
+              ? payload.error
+              : 'Failed to schedule interview',
+        });
+        return;
+      }
+
+      setInterviewDateTime('');
+      setInterviewMode('video');
+      setInterviewLocation('');
+      setInterviewMeetingUrl('');
+      setInterviewNotes('');
+      setSelectedSlotTemplateId('');
+      setEditingInterviewId(null);
+      setScheduleMessage({
+        type: 'success',
+        text: payload.notifications?.delivered
+          ? editingInterviewId
+            ? 'Interview rescheduled and candidate notifications sent.'
+            : 'Interview scheduled and candidate notifications sent.'
+          : editingInterviewId
+            ? 'Interview rescheduled. No delivery channel was available for the candidate yet.'
+            : 'Interview scheduled. No delivery channel was available for the candidate yet.',
+      });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to schedule interview:', err);
+      setScheduleMessage({
+        type: 'error',
+        text: 'Failed to schedule interview',
+      });
+    } finally {
+      setSchedulingInterview(false);
+    }
+  };
+
+  const handleEditInterview = (interview: ApplicationInterviewView) => {
+    const date = new Date(interview.scheduledAt);
+    const localDateTime = Number.isNaN(date.getTime())
+      ? ''
+      : new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+          .toISOString()
+          .slice(0, 16);
+
+    setEditingInterviewId(interview.id);
+    setInterviewDateTime(localDateTime);
+    setInterviewMode(interview.mode);
+    setInterviewLocation(interview.location || '');
+    setInterviewMeetingUrl(interview.meetingUrl || '');
+    setInterviewNotes(interview.notes || '');
+    setSelectedSlotTemplateId('');
+    setScheduleNotifications(true);
+    setScheduleMessage(null);
+  };
+
+  const handleTemplateSelect = (templateId: string) => {
+    setSelectedSlotTemplateId(templateId);
+    const template = findInterviewSlotTemplate(selfScheduleSettings, templateId);
+
+    if (!template) {
+      return;
+    }
+
+    setInterviewMode(template.mode);
+    setInterviewLocation(template.location || '');
+    setInterviewMeetingUrl(template.meetingUrl || '');
+    setInterviewNotes(template.notes || '');
+  };
+
+  const handleCreateInterviewSlot = async () => {
+    if (!interviewDateTime || schedulingInterview) return;
+
+    setSchedulingInterview(true);
+    setScheduleMessage(null);
+
+    try {
+      const slotPayload = {
+        scheduledAt: new Date(interviewDateTime).toISOString(),
+        timezone: recruiterTimezone,
+        mode: interviewMode,
+        location: interviewLocation.trim() || null,
+        meetingUrl: interviewMeetingUrl.trim() || null,
+        notes: interviewNotes.trim() || null,
+        sendInvitation: scheduleNotifications,
+      };
+
+      const response = await fetch(`/api/applications/${params.id}/interview-slots`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(slotPayload),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setScheduleMessage({
+          type: 'error',
+          text:
+            typeof payload.error === 'string'
+              ? payload.error
+              : 'Failed to create interview slot',
+        });
+        return;
+      }
+
+      setInterviewDateTime('');
+      setInterviewMode('video');
+      setInterviewLocation('');
+      setInterviewMeetingUrl('');
+      setInterviewNotes('');
+      setSelectedSlotTemplateId('');
+      setEditingInterviewId(null);
+      setScheduleMessage({
+        type: 'success',
+        text: payload.notifications?.delivered
+          ? 'Self-schedule slot created and candidate invitation sent.'
+          : 'Self-schedule slot created.',
+      });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to create interview slot:', err);
+      setScheduleMessage({
+        type: 'error',
+        text: 'Failed to create interview slot',
+      });
+    } finally {
+      setSchedulingInterview(false);
+    }
+  };
+
+  const handleGenerateInterviewSlots = async () => {
+    if (!selectedSlotTemplateId || !slotRangeStartDate || !slotRangeEndDate || generatingSlots) {
+      return;
+    }
+
+    setGeneratingSlots(true);
+    setScheduleMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/applications/${params.id}/interview-slots/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            templateId: selectedSlotTemplateId,
+            startDate: slotRangeStartDate,
+            endDate: slotRangeEndDate,
+            sendInvitation: scheduleNotifications,
+          }),
+        }
+      );
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setScheduleMessage({
+          type: 'error',
+          text:
+            typeof payload.error === 'string'
+              ? payload.error
+              : 'Failed to generate interview slots',
+        });
+        return;
+      }
+
+      const createdCount = Number(payload.createdCount || 0);
+      const skippedCount = Array.isArray(payload.skippedDates) ? payload.skippedDates.length : 0;
+      const deliveredCount = Number(payload.notificationDeliveries || 0);
+
+      setScheduleMessage({
+        type: 'success',
+        text: createdCount === 0
+          ? 'No new self-schedule slots were created.'
+          : `${createdCount} self-schedule slot${createdCount === 1 ? '' : 's'} created${scheduleNotifications ? `, ${deliveredCount} invitation${deliveredCount === 1 ? '' : 's'} sent` : ''}${skippedCount > 0 ? `, ${skippedCount} skipped because they were already occupied` : ''}.`,
+      });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to generate interview slots:', err);
+      setScheduleMessage({
+        type: 'error',
+        text: 'Failed to generate interview slots',
+      });
+    } finally {
+      setGeneratingSlots(false);
+    }
+  };
+
+  const resetInterviewForm = () => {
+    setEditingInterviewId(null);
+    setInterviewDateTime('');
+    setSlotRangeStartDate('');
+    setSlotRangeEndDate('');
+    setInterviewMode('video');
+    setInterviewLocation('');
+    setInterviewMeetingUrl('');
+    setInterviewNotes('');
+    setSelectedSlotTemplateId('');
+    setScheduleNotifications(true);
+    setScheduleMessage(null);
+  };
+
+  const handleInterviewLifecycleAction = async (
+    interviewId: string,
+    action: 'cancel' | 'complete' | 'no_show'
+  ) => {
+    if (updatingInterviewId) return;
+
+    setUpdatingInterviewId(interviewId);
+    setScheduleMessage(null);
+
+    try {
+      const response = await fetch(`/api/applications/${params.id}/interviews`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          interviewId,
+          action,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setScheduleMessage({
+          type: 'error',
+          text:
+            typeof payload.error === 'string'
+              ? payload.error
+              : 'Failed to update interview',
+        });
+        return;
+      }
+
+      if (editingInterviewId === interviewId) {
+        resetInterviewForm();
+      }
+
+      const actionLabel =
+        action === 'cancel'
+          ? 'cancelled'
+          : action === 'complete'
+            ? 'marked as completed'
+            : 'marked as no-show';
+
+      setScheduleMessage({
+        type: 'success',
+        text:
+          action === 'cancel' && payload.notifications?.delivered
+            ? 'Interview cancelled and candidate notifications sent.'
+            : action === 'complete' && payload.notifications?.delivered
+              ? 'Interview marked completed and follow-up sent.'
+              : action === 'no_show' && payload.notifications?.delivered
+                ? 'Interview marked as no-show and follow-up sent.'
+            : `Interview ${actionLabel}.`,
+      });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to update interview:', err);
+      setScheduleMessage({
+        type: 'error',
+        text: 'Failed to update interview',
+      });
+    } finally {
+      setUpdatingInterviewId(null);
+    }
+  };
+
+  const handleCancelInterviewSlot = async (slotId: string) => {
+    if (updatingSlotId) return;
+
+    setUpdatingSlotId(slotId);
+    setScheduleMessage(null);
+
+    try {
+      const response = await fetch(`/api/applications/${params.id}/interview-slots`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          slotId,
+          action: 'cancel',
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setScheduleMessage({
+          type: 'error',
+          text:
+            typeof payload.error === 'string'
+              ? payload.error
+              : 'Failed to update interview slot',
+        });
+        return;
+      }
+
+      setScheduleMessage({
+        type: 'success',
+        text: 'Interview slot cancelled.',
+      });
+      await loadData();
+    } catch (err) {
+      console.error('Failed to update interview slot:', err);
+      setScheduleMessage({
+        type: 'error',
+        text: 'Failed to update interview slot',
+      });
+    } finally {
+      setUpdatingSlotId(null);
+    }
+  };
+
   // Helper functions
   function getApplicantName(profile: Profile | null): string {
     if (!profile) return 'Unknown';
@@ -368,8 +1101,42 @@ export default function ApplicationDetailPage({
         return 'Application submitted';
       case 'status_changed':
         return `Status changed from ${activity.old_value} to ${activity.new_value}`;
+      case 'stage_changed':
+        return `Stage changed from ${activity.old_value || 'Unknown'} to ${activity.new_value}`;
       case 'note_added':
         return 'Note added';
+      case 'feedback_submitted':
+        return 'Structured stage feedback submitted';
+      case 'scorecard_completed':
+        return 'Scorecard completed';
+      case 'decision_recorded':
+        return `Decision updated to ${activity.new_value}`;
+      case 'interview_scheduled':
+        return `Interview scheduled for ${activity.new_value || 'candidate'}`;
+      case 'interview_rescheduled':
+        return `Interview rescheduled to ${activity.new_value || 'candidate'}`;
+      case 'interview_cancelled':
+        return 'Interview cancelled';
+      case 'interview_completed':
+        return 'Interview marked as completed';
+      case 'interview_no_show':
+        return 'Candidate marked as no-show';
+      case 'interview_confirmation_sent':
+        return 'Interview confirmation sent';
+      case 'interview_reschedule_sent':
+        return 'Interview reschedule notice sent';
+      case 'interview_cancel_notice_sent':
+        return 'Interview cancellation notice sent';
+      case 'interview_reminder_sent':
+        return 'Interview reminder sent';
+      case 'interview_candidate_confirmed':
+        return 'Candidate confirmed interview attendance';
+      case 'interview_candidate_declined':
+        return 'Candidate declined the interview slot';
+      case 'interview_completion_followup_sent':
+        return 'Completed interview follow-up sent';
+      case 'interview_no_show_followup_sent':
+        return 'No-show follow-up sent';
       case 'rating_changed':
         return `Rating changed to ${activity.new_value} stars`;
       case 'viewed':
@@ -400,6 +1167,15 @@ export default function ApplicationDetailPage({
     return null;
   }
 
+  const currentStage = application.current_stage;
+  const nextStage =
+    pipelineStages.find((stage) => stage.orderIndex > (currentStage?.orderIndex || 0)) || null;
+  const decisionTone = getDecisionTone(application.decision_status || 'active');
+  const eligibilityReasons = normalizeEligibilityReasons(application.eligibility_reasons);
+  const eligibilityTone = getEligibilityTone(application.eligibility_status);
+  const upcomingInterviews = interviews.filter((item) => item.status === 'scheduled');
+  const openInterviewSlots = interviewSlots.filter((slot) => slot.status === 'available');
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -414,16 +1190,29 @@ export default function ApplicationDetailPage({
             </svg>
             Back to Applications
           </Link>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold text-white">
               {getApplicantName(application.profiles)}
             </h1>
-            <StatusBadge status={application.status} />
+            <StageBadge
+              label={currentStage?.label || 'Unassigned'}
+              stageType={currentStage?.stageType || 'applied'}
+            />
+            <span
+              className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${decisionTone.bg} ${decisionTone.text} ${decisionTone.border}`}
+            >
+              Decision: {formatDecisionLabel(application.decision_status || 'active')}
+            </span>
           </div>
           <p className="text-gray-400 mt-1">
             Applied for {application.jobs?.title} on{' '}
             {new Date(application.created_at).toLocaleDateString()}
           </p>
+          {application.stage_entered_at && (
+            <p className="mt-1 text-xs text-gray-500">
+              Current stage since {new Date(application.stage_entered_at).toLocaleString()}
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -496,6 +1285,599 @@ export default function ApplicationDetailPage({
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Eligibility Snapshot</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  Stored from the candidate&apos;s submission so recruiters can see profile gaps and strong signals immediately.
+                </p>
+              </div>
+              <span
+                className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${eligibilityTone.bg} ${eligibilityTone.border} ${eligibilityTone.text}`}
+              >
+                {eligibilityTone.label}
+              </span>
+            </div>
+
+            <div
+              className={`mt-5 rounded-xl border p-4 ${eligibilityTone.bg} ${eligibilityTone.border} ${eligibilityTone.text}`}
+            >
+              <p className="text-sm">
+                {application.eligibility_status
+                  ? `Eligibility status recorded as ${application.eligibility_status.replace('_', ' ')} when the candidate submitted this application.`
+                  : 'This application predates the new eligibility capture flow or was submitted without eligibility diagnostics.'}
+              </p>
+            </div>
+
+            {(eligibilityReasons.blockingReasons.length > 0 ||
+              eligibilityReasons.missingProfileFields.length > 0 ||
+              eligibilityReasons.recommendedProfileUpdates.length > 0 ||
+              eligibilityReasons.matchedSignals.length > 0) ? (
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                {eligibilityReasons.blockingReasons.length > 0 && (
+                  <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+                    <h3 className="text-sm font-medium text-red-200">Blocking reasons</h3>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-red-100/90">
+                      {eligibilityReasons.blockingReasons.map((reason) => (
+                        <li key={reason}>{reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {eligibilityReasons.missingProfileFields.length > 0 && (
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+                    <h3 className="text-sm font-medium text-amber-200">Missing profile fields</h3>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-100/90">
+                      {eligibilityReasons.missingProfileFields.map((field) => (
+                        <li key={field}>{field}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {eligibilityReasons.recommendedProfileUpdates.length > 0 && (
+                  <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+                    <h3 className="text-sm font-medium text-blue-200">Recommended updates</h3>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-blue-100/90">
+                      {eligibilityReasons.recommendedProfileUpdates.map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {eligibilityReasons.matchedSignals.length > 0 && (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+                    <h3 className="text-sm font-medium text-emerald-200">Matched signals</h3>
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-emerald-100/90">
+                      {eligibilityReasons.matchedSignals.map((signal) => (
+                        <li key={signal}>{signal}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-5 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
+                No detailed eligibility reasons were stored for this application.
+              </div>
+            )}
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Hiring Pipeline</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  Current stage, pipeline progress, and movement history.
+                </p>
+              </div>
+              {currentStage && (
+                <StageBadge label={currentStage.label} stageType={currentStage.stageType} />
+              )}
+            </div>
+            <PipelineProgress
+              stages={pipelineStages}
+              currentStage={currentStage}
+              className="mt-5"
+            />
+            <div className="mt-6">
+              <h3 className="text-sm font-medium text-gray-300 mb-3">Stage Timeline</h3>
+              <StageTimeline events={stageEvents} />
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  {editingInterviewId ? 'Interview Reschedule' : 'Interview Scheduling'}
+                </h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  Schedule interviews, move candidates into the interview stage, and send confirmations from the ATS.
+                </p>
+              </div>
+              <div className="rounded-xl border border-gray-700 bg-gray-900/40 px-4 py-3 text-right">
+                <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+                  Recruiter timezone
+                </p>
+                <p className="mt-2 text-sm font-medium text-gray-200">{recruiterTimezone}</p>
+              </div>
+            </div>
+
+            {scheduleMessage && (
+              <div
+                className={`mt-5 rounded-xl border px-4 py-3 text-sm ${
+                  scheduleMessage.type === 'success'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                    : 'border-red-500/30 bg-red-500/10 text-red-100'
+                }`}
+              >
+                {scheduleMessage.text}
+              </div>
+            )}
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Interview date and time
+                </label>
+                <input
+                  type="datetime-local"
+                  value={interviewDateTime}
+                  onChange={(event) => setInterviewDateTime(event.target.value)}
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Slot template
+                </label>
+                <select
+                  value={selectedSlotTemplateId}
+                  onChange={(event) => handleTemplateSelect(event.target.value)}
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">No template</option>
+                  {selfScheduleSettings.slotTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-gray-500">
+                  Templates prefill mode, meeting link, and candidate instructions.
+                </p>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Interview mode
+                </label>
+                <select
+                  value={interviewMode}
+                  onChange={(event) =>
+                    setInterviewMode(
+                      event.target.value as 'video' | 'phone' | 'onsite' | 'other'
+                    )
+                  }
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="video">Video call</option>
+                  <option value="phone">Phone call</option>
+                  <option value="onsite">On-site</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Location or call notes
+                </label>
+                <input
+                  type="text"
+                  value={interviewLocation}
+                  onChange={(event) => setInterviewLocation(event.target.value)}
+                  placeholder="Office address, room, or call instructions"
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Meeting URL
+                </label>
+                <input
+                  type="url"
+                  value={interviewMeetingUrl}
+                  onChange={(event) => setInterviewMeetingUrl(event.target.value)}
+                  placeholder="https://meet.google.com/..."
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-gray-700 bg-gray-900/35 p-4 text-sm text-gray-300">
+              <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+                Self-schedule policy
+              </p>
+              <p className="mt-2">
+                Timezone:{' '}
+                <span className="font-medium text-white">
+                  {selfScheduleSettings.timezone}
+                </span>
+              </p>
+              <p className="mt-1">
+                Minimum notice:{' '}
+                <span className="font-medium text-white">
+                  {selfScheduleSettings.minimumNoticeHours} hours
+                </span>
+              </p>
+              <p className="mt-1">
+                Slot interval:{' '}
+                <span className="font-medium text-white">
+                  {selfScheduleSettings.slotIntervalMinutes} minutes
+                </span>
+              </p>
+              <p className="mt-1 text-gray-400">
+                {formatWeeklyAvailabilitySummary(selfScheduleSettings)}
+              </p>
+              <p className="mt-1 text-gray-400">
+                {formatBlackoutDateSummary(selfScheduleSettings)}
+              </p>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-medium text-indigo-100">
+                    Generate slots from range
+                  </h3>
+                  <p className="mt-1 text-sm text-indigo-100/80">
+                    Creates one slot per enabled day in the selected range using the template and weekly start times.
+                  </p>
+                </div>
+                <span className="rounded-full border border-indigo-400/30 px-3 py-1 text-xs font-medium text-indigo-100">
+                  Policy-driven
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">
+                    Range start
+                  </label>
+                  <input
+                    type="date"
+                    value={slotRangeStartDate}
+                    onChange={(event) => setSlotRangeStartDate(event.target.value)}
+                    className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">
+                    Range end
+                  </label>
+                  <input
+                    type="date"
+                    value={slotRangeEndDate}
+                    onChange={(event) => setSlotRangeEndDate(event.target.value)}
+                    className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleGenerateInterviewSlots}
+                  disabled={
+                    generatingSlots ||
+                    !selectedSlotTemplateId ||
+                    !slotRangeStartDate ||
+                    !slotRangeEndDate
+                  }
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {generatingSlots ? 'Generating...' : 'Generate range slots'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-medium text-gray-400">
+                Candidate instructions
+              </label>
+              <textarea
+                value={interviewNotes}
+                onChange={(event) => setInterviewNotes(event.target.value)}
+                rows={3}
+                placeholder="Anything the candidate should prepare or bring"
+                className="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="flex items-start gap-3 rounded-xl border border-gray-700 bg-gray-900/35 px-4 py-3 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={scheduleNotifications}
+                  onChange={(event) => setScheduleNotifications(event.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
+                />
+                <span>
+                  <span className="block font-medium text-white">Send confirmation now</span>
+                  Email and WhatsApp are sent when channels are available.
+                </span>
+              </label>
+              <label className="flex items-start gap-3 rounded-xl border border-gray-700 bg-gray-900/35 px-4 py-3 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={moveToInterviewStage}
+                  onChange={(event) => setMoveToInterviewStage(event.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
+                />
+                <span>
+                  <span className="block font-medium text-white">Move candidate to interview stage</span>
+                  Uses the first interview stage configured on this job.
+                </span>
+              </label>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <div className="flex gap-2">
+                {editingInterviewId && (
+                  <button
+                    onClick={resetInterviewForm}
+                    className="rounded-lg bg-gray-700 px-4 py-2 text-gray-100 hover:bg-gray-600"
+                  >
+                    Cancel edit
+                  </button>
+                )}
+                <button
+                  onClick={handleCreateInterviewSlot}
+                  disabled={!interviewDateTime || schedulingInterview || Boolean(editingInterviewId)}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {schedulingInterview ? 'Saving...' : 'Add self-schedule slot'}
+                </button>
+                <button
+                  onClick={handleScheduleInterview}
+                  disabled={!interviewDateTime || schedulingInterview}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {schedulingInterview
+                    ? editingInterviewId
+                      ? 'Saving...'
+                      : 'Scheduling...'
+                    : editingInterviewId
+                      ? 'Save interview changes'
+                      : 'Schedule interview'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-gray-300">Interview history</h3>
+                <span className="text-xs text-gray-500">
+                  {upcomingInterviews.length} upcoming
+                </span>
+              </div>
+              {interviews.length === 0 ? (
+                <div className="mt-3 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
+                  No interviews scheduled yet.
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {interviews.map((interview) => (
+                    <div
+                      key={interview.id}
+                      className="rounded-xl border border-gray-700 bg-gray-900/35 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {formatInterviewDateTimeLabel(
+                              interview.scheduledAt,
+                              interview.timezone
+                            )}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-400">
+                            {getInterviewModeLabel(interview.mode)}
+                            {interview.location ? ` · ${interview.location}` : ''}
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getInterviewStatusTone(interview.status)}`}
+                        >
+                          {getInterviewStatusLabel(interview.status)}
+                        </span>
+                      </div>
+                      {interview.meetingUrl && (
+                        <a
+                          href={interview.meetingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex text-sm text-blue-400 hover:text-blue-300"
+                        >
+                          Open meeting link
+                        </a>
+                      )}
+                      {interview.status === 'scheduled' && (
+                        <InterviewCalendarActions
+                          interviewId={interview.id}
+                          scheduledAt={interview.scheduledAt}
+                          jobTitle={application?.jobs?.title}
+                          companyName={application?.jobs?.company_name}
+                          modeLabel={getInterviewModeLabel(interview.mode)}
+                          location={interview.location}
+                          meetingUrl={interview.meetingUrl}
+                          notes={interview.notes}
+                        />
+                      )}
+                      {interview.notes && (
+                        <p className="mt-3 whitespace-pre-wrap text-sm text-gray-300">
+                          {interview.notes}
+                        </p>
+                      )}
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
+                        <span>
+                          Last notice:{' '}
+                          {interview.confirmationSentAt
+                            ? new Date(interview.confirmationSentAt).toLocaleString()
+                            : 'pending'}
+                        </span>
+                        <span>
+                          Reminder:{' '}
+                          {interview.reminderSentAt
+                            ? new Date(interview.reminderSentAt).toLocaleString()
+                            : 'pending'}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getInterviewResponseTone(interview.candidateResponseStatus)}`}
+                        >
+                          Candidate: {getInterviewResponseStatusLabel(interview.candidateResponseStatus)}
+                        </span>
+                        {interview.candidateRespondedAt && (
+                          <span className="text-xs text-gray-500">
+                            Updated {new Date(interview.candidateRespondedAt).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      {interview.candidateResponseNote && (
+                        <p className="mt-3 rounded-lg bg-gray-950/50 p-3 text-sm text-gray-300">
+                          {interview.candidateResponseNote}
+                        </p>
+                      )}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {interview.status === 'scheduled' && (
+                          <>
+                            <button
+                              onClick={() => handleEditInterview(interview)}
+                              className="rounded-lg bg-gray-700 px-3 py-1.5 text-xs text-gray-100 hover:bg-gray-600"
+                            >
+                              Edit / reschedule
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleInterviewLifecycleAction(interview.id, 'complete')
+                              }
+                              disabled={updatingInterviewId === interview.id}
+                              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              Mark completed
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleInterviewLifecycleAction(interview.id, 'no_show')
+                              }
+                              disabled={updatingInterviewId === interview.id}
+                              className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs text-white hover:bg-amber-700 disabled:opacity-50"
+                            >
+                              Mark no-show
+                            </button>
+                            <button
+                              onClick={() =>
+                                handleInterviewLifecycleAction(interview.id, 'cancel')
+                              }
+                              disabled={updatingInterviewId === interview.id}
+                              className="rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+                            >
+                              Cancel interview
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-medium text-gray-300">Self-schedule slots</h3>
+                <span className="text-xs text-gray-500">
+                  {openInterviewSlots.length} open
+                </span>
+              </div>
+              {interviewSlots.length === 0 ? (
+                <div className="mt-3 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
+                  No self-schedule slots created yet.
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {interviewSlots.map((slot) => (
+                    <div
+                      key={slot.id}
+                      className="rounded-xl border border-gray-700 bg-gray-900/35 p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {formatInterviewDateTimeLabel(slot.scheduledAt, slot.timezone)}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-400">
+                            {getInterviewModeLabel(slot.mode)}
+                            {slot.location ? ` | ${slot.location}` : ''}
+                          </p>
+                        </div>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getInterviewSlotStatusTone(slot.status)}`}
+                        >
+                          {getInterviewSlotStatusLabel(slot.status)}
+                        </span>
+                      </div>
+
+                      {slot.meetingUrl && (
+                        <a
+                          href={slot.meetingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex text-sm text-blue-400 hover:text-blue-300"
+                        >
+                          Open meeting link
+                        </a>
+                      )}
+
+                      {slot.notes && (
+                        <p className="mt-3 whitespace-pre-wrap text-sm text-gray-300">
+                          {slot.notes}
+                        </p>
+                      )}
+
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
+                        <span>
+                          Invitation:{' '}
+                          {slot.invitationSentAt
+                            ? new Date(slot.invitationSentAt).toLocaleString()
+                            : 'pending'}
+                        </span>
+                        {slot.bookedInterviewId && (
+                          <span>Interview created</span>
+                        )}
+                      </div>
+
+                      {slot.status === 'available' && (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            onClick={() => handleCancelInterviewSlot(slot.id)}
+                            disabled={updatingSlotId === slot.id}
+                            className="rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700 disabled:opacity-50"
+                          >
+                            {updatingSlotId === slot.id ? 'Cancelling...' : 'Cancel slot'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -573,6 +1955,134 @@ export default function ApplicationDetailPage({
               </div>
             </div>
           )}
+
+          <div className="bg-gray-800 rounded-xl p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Stage Feedback</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  Capture structured recruiter feedback for the current stage.
+                </p>
+              </div>
+              {currentStage && (
+                <StageBadge label={currentStage.label} stageType={currentStage.stageType} />
+              )}
+            </div>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Stage Score
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={feedbackScore}
+                  onChange={(event) => setFeedbackScore(event.target.value)}
+                  placeholder="0 - 100"
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Recommendation
+                </label>
+                <select
+                  value={feedbackRecommendation}
+                  onChange={(event) =>
+                    setFeedbackRecommendation(
+                      event.target.value as FeedbackRecommendation | ''
+                    )
+                  }
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">Select recommendation</option>
+                  {FEEDBACK_RECOMMENDATION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="rounded-xl border border-gray-700 bg-gray-900/35 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+                  Overall stage score
+                </p>
+                <p className="mt-2 text-3xl font-bold text-blue-300">
+                  {application.overall_stage_score?.toFixed(1) || '0.0'}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <label className="mb-2 block text-sm font-medium text-gray-400">
+                Feedback Summary
+              </label>
+              <textarea
+                value={feedbackSummary}
+                onChange={(event) => setFeedbackSummary(event.target.value)}
+                rows={4}
+                placeholder="What did you observe at this stage?"
+                className="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={handleFeedbackSubmit}
+                disabled={savingFeedback}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingFeedback ? 'Saving...' : 'Save Stage Feedback'}
+              </button>
+            </div>
+
+            <div className="mt-6">
+              <h3 className="text-sm font-medium text-gray-300 mb-3">Feedback History</h3>
+              {stageFeedback.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
+                  No structured feedback submitted yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {stageFeedback.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-xl border border-gray-700 bg-gray-900/35 p-4"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        {item.stage && (
+                          <StageBadge
+                            label={item.stage.label}
+                            stageType={item.stage.stageType}
+                          />
+                        )}
+                        {typeof item.score === 'number' && (
+                          <span className="text-sm font-semibold text-blue-300">
+                            Score {item.score.toFixed(1)}
+                          </span>
+                        )}
+                        {item.recommendation && (
+                          <span className="text-sm text-gray-300">
+                            {getRecommendationLabel(item.recommendation)}
+                          </span>
+                        )}
+                      </div>
+                      {item.summary && (
+                        <p className="mt-3 whitespace-pre-wrap text-sm text-gray-300">
+                          {item.summary}
+                        </p>
+                      )}
+                      <p className="mt-3 text-xs text-gray-500">
+                        {new Date(item.createdAt).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
           {/* AI Insights */}
           <div className="bg-gray-800 rounded-xl p-6">
@@ -724,24 +2234,101 @@ export default function ApplicationDetailPage({
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Quick Actions */}
+          {/* Stage Controls */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Update Status</h2>
-            <div className="space-y-2">
-              {STATUS_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => handleStatusUpdate(opt.value)}
-                  disabled={updatingStatus || application.status === opt.value}
-                  className={`w-full px-4 py-2 rounded-lg text-left transition-colors ${
-                    application.status === opt.value
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  } ${updatingStatus ? 'opacity-50' : ''}`}
+            <h2 className="text-lg font-semibold text-white mb-4">Stage Controls</h2>
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+                  Current Stage
+                </p>
+                <div className="mt-2">
+                  <StageBadge
+                    label={currentStage?.label || 'Unassigned'}
+                    stageType={currentStage?.stageType || 'applied'}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-400">
+                  Move to stage
+                </label>
+                <select
+                  value={selectedStageId}
+                  onChange={(event) => setSelectedStageId(event.target.value)}
+                  className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
                 >
-                  {opt.label}
+                  {pipelineStages.map((stage) => (
+                    <option key={stage.id} value={stage.id}>
+                      {stage.orderIndex}. {stage.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                onClick={() => handleStageMove(selectedStageId)}
+                disabled={
+                  movingStage ||
+                  !selectedStageId ||
+                  selectedStageId === currentStage?.id
+                }
+                className="w-full rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {movingStage ? 'Moving...' : 'Move Candidate'}
+              </button>
+              {nextStage && (
+                <button
+                  onClick={() => handleStageMove(nextStage.id)}
+                  disabled={movingStage}
+                  className="w-full rounded-lg bg-gray-700 px-4 py-2 text-gray-100 hover:bg-gray-600 disabled:opacity-50"
+                >
+                  Quick advance to {nextStage.label}
                 </button>
-              ))}
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-white mb-4">Decision</h2>
+            <div
+              className={`rounded-xl border p-3 ${decisionTone.bg} ${decisionTone.text} ${decisionTone.border}`}
+            >
+              {formatDecisionLabel(application.decision_status || 'active')}
+            </div>
+            <textarea
+              value={decisionReason}
+              onChange={(event) => setDecisionReason(event.target.value)}
+              rows={3}
+              placeholder="Optional decision note or reason"
+              className="mt-4 w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
+            />
+            {application.disposition_reason && (
+              <p className="mt-3 text-sm text-gray-400">
+                Current reason: {application.disposition_reason}
+              </p>
+            )}
+            <div className="mt-4 grid gap-2">
+              <button
+                onClick={() => handleDecision('hired')}
+                disabled={savingDecision}
+                className="rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                Mark as hired
+              </button>
+              <button
+                onClick={() => handleDecision('rejected')}
+                disabled={savingDecision}
+                className="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Mark as rejected
+              </button>
+              <button
+                onClick={() => handleDecision('active')}
+                disabled={savingDecision}
+                className="rounded-lg bg-gray-700 px-4 py-2 text-gray-100 hover:bg-gray-600 disabled:opacity-50"
+              >
+                Reopen decision
+              </button>
             </div>
           </div>
 
@@ -777,6 +2364,17 @@ export default function ApplicationDetailPage({
             <h2 className="text-lg font-semibold text-white mb-4">Ranking Score</h2>
             <div className="text-3xl font-bold text-blue-400 mb-4">
               {application.ranking_score?.toFixed(1) || 0}
+            </div>
+            <div className="mb-4">
+              <RankingExplanation
+                rankingScore={application.ranking_score}
+                rankingBreakdown={application.ranking_breakdown}
+                recruiterRating={application.recruiter_rating}
+                overallStageScore={application.overall_stage_score}
+                eligibilityStatus={application.eligibility_status}
+                decisionStatus={application.decision_status}
+                currentStageType={application.current_stage?.stageType || null}
+              />
             </div>
             {application.ranking_breakdown && Object.keys(application.ranking_breakdown).length > 0 && (
               <div className="space-y-2 text-sm">

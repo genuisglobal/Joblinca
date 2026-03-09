@@ -7,6 +7,24 @@ import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
 import StatusBadge from '../components/StatusBadge';
 import PaymentModal from '@/app/components/PaymentModal';
+import StageBadge from '@/components/hiring-pipeline/StageBadge';
+import EligibilityBadge from '@/components/applications/EligibilityBadge';
+import RankingExplanation from '@/components/applications/RankingExplanation';
+import RecruiterAnalyticsChart from '@/components/applications/RecruiterAnalyticsChart';
+import SegmentedFunnelComparison from '@/components/applications/SegmentedFunnelComparison';
+import {
+  buildRecruiterAnalyticsTimeline,
+  buildRecruiterFunnelTimeline,
+  summarizeSegmentedFunnel,
+  summarizeRecruiterAnalytics,
+  summarizeFunnelConversions,
+  type RecruiterAnalyticsInput,
+  type RecruiterFunnelEvent,
+  type RecruiterAnalyticsWindow,
+  type SegmentedFunnelEvent,
+} from '@/lib/applications/ranking';
+import { getApplicationChannelSegment } from '@/lib/applications/segments';
+import type { ApplicationCurrentStage } from '@/lib/hiring-pipeline/types';
 
 interface Job {
   id: string;
@@ -28,13 +46,28 @@ interface Application {
   status: string;
   created_at: string;
   job_id: string;
+  application_channel: string | null;
   viewed_at: string | null;
+  decision_status: string | null;
+  eligibility_status: 'eligible' | 'needs_review' | 'ineligible' | null;
+  overall_stage_score: number | null;
+  ranking_score: number | null;
+  ranking_breakdown: Record<string, number> | null;
   profiles: Profile | null;
   jobs: { title: string } | null;
+  current_stage: ApplicationCurrentStage | null;
 }
 
 interface Verification {
   status: string;
+}
+
+interface ApplicationStageEventRow {
+  application_id: string;
+  created_at: string;
+  to_stage: {
+    stage_type: string | null;
+  } | null;
 }
 
 interface RecruiterVerificationPlan {
@@ -57,12 +90,19 @@ interface SubscriptionStatus {
   expiresAt: string | null;
 }
 
+const ANALYTICS_WINDOWS: { value: RecruiterAnalyticsWindow; label: string }[] = [
+  { value: '7d', label: '7 days' },
+  { value: '30d', label: '30 days' },
+  { value: '90d', label: '90 days' },
+];
+
 export default function RecruiterDashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [stageEvents, setStageEvents] = useState<ApplicationStageEventRow[]>([]);
   const [verification, setVerification] = useState<Verification | null>(null);
   const [postingAccess, setPostingAccess] = useState(false);
   const [activeRecruiterPlanName, setActiveRecruiterPlanName] = useState<string | null>(null);
@@ -70,9 +110,18 @@ export default function RecruiterDashboardPage() {
   const [verificationPlans, setVerificationPlans] = useState<RecruiterVerificationPlan[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<RecruiterVerificationPlan | null>(null);
   const [showPayment, setShowPayment] = useState(false);
+  const [analyticsWindow, setAnalyticsWindow] = useState<RecruiterAnalyticsWindow>('30d');
 
   useEffect(() => {
     let mounted = true;
+
+    function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
+      if (Array.isArray(value)) {
+        return value[0] || null;
+      }
+
+      return value || null;
+    }
 
     async function loadDashboardData() {
       try {
@@ -107,7 +156,13 @@ export default function RecruiterDashboardPage() {
               status,
               created_at,
               job_id,
+              application_channel,
               viewed_at,
+              decision_status,
+              eligibility_status,
+              overall_stage_score,
+              ranking_score,
+              ranking_breakdown,
               profiles:applicant_id (
                 id,
                 full_name,
@@ -116,6 +171,15 @@ export default function RecruiterDashboardPage() {
               ),
               jobs:job_id (
                 title
+              ),
+              current_stage:current_stage_id (
+                id,
+                stage_key,
+                label,
+                stage_type,
+                order_index,
+                is_terminal,
+                allows_feedback
               )
             `)
             .in('job_id', jobIds)
@@ -125,10 +189,56 @@ export default function RecruiterDashboardPage() {
           if (!mounted) return;
           const normalizedApps = (appsData || []).map((app: any) => ({
             ...app,
-            jobs: Array.isArray(app.jobs) ? app.jobs[0] || null : app.jobs || null,
-            profiles: Array.isArray(app.profiles) ? app.profiles[0] || null : app.profiles || null,
+            jobs: normalizeRelation(app.jobs),
+            profiles: normalizeRelation(app.profiles),
+            current_stage: (() => {
+              const stage = normalizeRelation(app.current_stage);
+              if (!stage) return null;
+
+              return {
+                id: stage.id,
+                stageKey: stage.stage_key,
+                label: stage.label,
+                stageType: stage.stage_type,
+                orderIndex: stage.order_index,
+                isTerminal: stage.is_terminal,
+                allowsFeedback: stage.allows_feedback,
+              };
+            })(),
           }));
           setApplications(normalizedApps as Application[]);
+
+          const applicationIds = normalizedApps.map((app: Application) => app.id);
+          if (applicationIds.length > 0) {
+            const ninetyDaysAgo = new Date(Date.now() - 89 * 86400000).toISOString();
+            const { data: stageEventData } = await supabase
+              .from('application_stage_events')
+              .select(
+                `
+                application_id,
+                created_at,
+                to_stage:to_stage_id (
+                  stage_type
+                )
+              `
+              )
+              .in('application_id', applicationIds)
+              .gte('created_at', ninetyDaysAgo)
+              .order('created_at', { ascending: false });
+
+            if (!mounted) return;
+            const normalizedStageEvents = (stageEventData || []).map((event: any) => ({
+              application_id: event.application_id,
+              created_at: event.created_at,
+              to_stage: normalizeRelation(event.to_stage),
+            }));
+            setStageEvents(normalizedStageEvents as ApplicationStageEventRow[]);
+          } else {
+            setStageEvents([]);
+          }
+        } else {
+          setApplications([]);
+          setStageEvents([]);
         }
 
         // Fetch verification status
@@ -196,6 +306,127 @@ export default function RecruiterDashboardPage() {
     };
   }, [supabase, router]);
 
+  const totalJobs = jobs.length;
+  const publishedJobs = jobs.filter((j) => j.published).length;
+  const totalApplications = applications.length;
+  const analyticsInputs = useMemo<RecruiterAnalyticsInput[]>(
+    () =>
+      applications.map((app) => ({
+        createdAt: app.created_at,
+        decisionStatus: app.decision_status,
+        eligibilityStatus: app.eligibility_status,
+        rankingScore: app.ranking_score,
+        rankingBreakdown: app.ranking_breakdown,
+        overallStageScore: app.overall_stage_score,
+        viewedAt: app.viewed_at,
+        currentStageType: app.current_stage?.stageType || null,
+      })),
+    [applications]
+  );
+  const funnelEvents = useMemo<RecruiterFunnelEvent[]>(
+    () => [
+      ...applications.flatMap((app) => {
+        const events: RecruiterFunnelEvent[] = [
+          { createdAt: app.created_at, type: 'apply' },
+        ];
+
+        if (app.eligibility_status === 'eligible') {
+          events.push({ createdAt: app.created_at, type: 'eligible' });
+        }
+
+        return events;
+      }),
+      ...stageEvents.flatMap((event) => {
+        const stageType = event.to_stage?.stage_type;
+        if (stageType === 'interview' || stageType === 'offer' || stageType === 'hire') {
+          return [{ createdAt: event.created_at, type: stageType as RecruiterFunnelEvent['type'] }];
+        }
+
+        return [];
+      }),
+    ],
+    [applications, stageEvents]
+  );
+  const applicationLookup = useMemo(
+    () => new Map(applications.map((app) => [app.id, app])),
+    [applications]
+  );
+  const sourceChannelEvents = useMemo<SegmentedFunnelEvent[]>(
+    () => [
+      ...applications.flatMap((app) => {
+        const segment = getApplicationChannelSegment(app.application_channel);
+        const events: SegmentedFunnelEvent[] = [
+          {
+            createdAt: app.created_at,
+            type: 'apply',
+            segmentKey: segment.key,
+            segmentLabel: segment.label,
+          },
+        ];
+
+        if (app.eligibility_status === 'eligible') {
+          events.push({
+            createdAt: app.created_at,
+            type: 'eligible',
+            segmentKey: segment.key,
+            segmentLabel: segment.label,
+          });
+        }
+
+        return events;
+      }),
+      ...stageEvents.flatMap((event) => {
+        const app = applicationLookup.get(event.application_id);
+        if (!app) {
+          return [];
+        }
+
+        const stageType = event.to_stage?.stage_type;
+        if (stageType !== 'interview' && stageType !== 'offer' && stageType !== 'hire') {
+          return [];
+        }
+
+        const segment = getApplicationChannelSegment(app.application_channel);
+        return [
+          {
+            createdAt: event.created_at,
+            type: stageType,
+            segmentKey: segment.key,
+            segmentLabel: segment.label,
+          } satisfies SegmentedFunnelEvent,
+        ];
+      }),
+    ],
+    [applicationLookup, applications, stageEvents]
+  );
+  const analytics = useMemo(
+    () => summarizeRecruiterAnalytics(analyticsInputs),
+    [analyticsInputs]
+  );
+  const timeline = useMemo(
+    () => buildRecruiterAnalyticsTimeline(analyticsInputs, analyticsWindow),
+    [analyticsInputs, analyticsWindow]
+  );
+  const funnelTimeline = useMemo(
+    () => buildRecruiterFunnelTimeline(funnelEvents, analyticsWindow),
+    [funnelEvents, analyticsWindow]
+  );
+  const funnelConversions = useMemo(
+    () => summarizeFunnelConversions(funnelTimeline.totals),
+    [funnelTimeline]
+  );
+  const sourceChannelSummary = useMemo(
+    () => summarizeSegmentedFunnel(sourceChannelEvents, analyticsWindow),
+    [analyticsWindow, sourceChannelEvents]
+  );
+  const newApplications = analytics.unreadCount;
+  const eligibleApplications = analytics.eligibleCount;
+  const needsReviewApplications = analytics.needsReviewCount;
+  const ineligibleApplications = analytics.ineligibleCount;
+  const hiredApplications = analytics.hiredCount;
+  const recentJobs = jobs.slice(0, 5);
+  const recentApplications = applications.slice(0, 5);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -206,15 +437,6 @@ export default function RecruiterDashboardPage() {
       </div>
     );
   }
-
-  const totalJobs = jobs.length;
-  const publishedJobs = jobs.filter((j) => j.published).length;
-  const totalApplications = applications.length;
-  const newApplications = applications.filter((a) => a.status === 'submitted' && !a.viewed_at).length;
-  const shortlistedApplications = applications.filter((a) => a.status === 'shortlisted').length;
-  const hiredApplications = applications.filter((a) => a.status === 'hired').length;
-  const recentJobs = jobs.slice(0, 5);
-  const recentApplications = applications.slice(0, 5);
 
   function getApplicantName(profile: Profile | null): string {
     if (!profile) return 'Unknown';
@@ -227,6 +449,10 @@ export default function RecruiterDashboardPage() {
   function openVerificationCheckout(plan: RecruiterVerificationPlan) {
     setSelectedPlan(plan);
     setShowPayment(true);
+  }
+
+  function formatRate(value: number) {
+    return `${Math.round(value)}%`;
   }
 
   return (
@@ -377,11 +603,12 @@ export default function RecruiterDashboardPage() {
             </svg>
           }
         />
-        <Link href="/dashboard/recruiter/applications?status=submitted">
+        <Link href="/dashboard/recruiter/applications">
           <StatsCard
-            title="New Applications"
+            title="Unreviewed"
             value={newApplications}
             color="yellow"
+            description="Applications not opened yet"
             icon={
               <svg
                 className="w-6 h-6 text-yellow-400"
@@ -402,34 +629,232 @@ export default function RecruiterDashboardPage() {
       </div>
 
       {/* Additional Stats Row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Link href="/dashboard/recruiter/applications?status=shortlisted">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Link href="/dashboard/recruiter/applications?eligibility=eligible">
           <StatsCard
-            title="Shortlisted"
-            value={shortlistedApplications}
-            color="yellow"
+            title="Eligible"
+            value={eligibleApplications}
+            color="green"
+            description={`${formatRate(analytics.eligibleRate)} pass eligibility`}
           />
         </Link>
-        <Link href="/dashboard/recruiter/applications?status=hired">
+        <Link href="/dashboard/recruiter/applications?eligibility=needs_review">
+          <StatsCard
+            title="Needs Review"
+            value={needsReviewApplications}
+            color="yellow"
+            description="Borderline or incomplete checks"
+          />
+        </Link>
+        <Link href="/dashboard/recruiter/applications?eligibility=ineligible">
+          <StatsCard
+            title="Ineligible"
+            value={ineligibleApplications}
+            color="red"
+            description="Blocked by current rules"
+          />
+        </Link>
+        <Link href="/dashboard/recruiter/applications?stage=hire">
           <StatsCard
             title="Hired"
             value={hiredApplications}
             color="green"
+            description={`${formatRate(analytics.hireRate)} overall hire rate`}
           />
         </Link>
-        <Link href="/dashboard/recruiter/applications">
-          <div className="rounded-xl border p-6 bg-blue-600/20 text-blue-400 border-blue-600/30 hover:bg-blue-600/30 transition-colors">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-400 font-medium">View All Applications</p>
-                <p className="text-3xl font-bold text-white mt-2">{totalApplications}</p>
-              </div>
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatsCard
+          title="Average Rank"
+          value={analytics.averageRankingScore.toFixed(1)}
+          color="blue"
+          description="Composite ATS ranking"
+        />
+        <StatsCard
+          title="Average Stage Score"
+          value={analytics.averageStageScore.toFixed(1)}
+          color="purple"
+          description="Structured feedback average"
+        />
+        <StatsCard
+          title="Average AI Match"
+          value={analytics.averageAiMatch.toFixed(1)}
+          color="yellow"
+          description="AI contribution inside ranking"
+        />
+        <StatsCard
+          title="Interview and Beyond"
+          value={analytics.advancedStageCount}
+          color="blue"
+          description={`${formatRate(analytics.advancedStageRate)} in interview, offer, or hire`}
+        />
+      </div>
+
+      <div className="rounded-xl border border-gray-700 bg-gray-800 p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white">ATS Trend Window</h2>
+            <p className="mt-1 text-sm text-gray-400">
+              Track application volume, eligibility quality, unread load, and downstream hiring over a selected time range.
+            </p>
           </div>
-        </Link>
+          <div className="flex flex-wrap gap-2">
+            {ANALYTICS_WINDOWS.map((windowOption) => (
+              <button
+                key={windowOption.value}
+                type="button"
+                onClick={() => setAnalyticsWindow(windowOption.value)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  analyticsWindow === windowOption.value
+                    ? 'border-blue-500 bg-blue-500/20 text-blue-200'
+                    : 'border-gray-600 bg-gray-700/60 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                {windowOption.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatsCard
+            title="Window Applications"
+            value={timeline.totals.applications}
+            color="blue"
+            description={`Created in the last ${timeline.windowDays} days`}
+          />
+          <StatsCard
+            title="Window Eligible"
+            value={timeline.totals.eligible}
+            color="green"
+            description="Passed eligibility in window"
+          />
+          <StatsCard
+            title="Window Hires"
+            value={timeline.totals.hired}
+            color="green"
+            description="Hired decisions in window"
+          />
+          <StatsCard
+            title="Window Unread"
+            value={timeline.totals.unread}
+            color="yellow"
+            description="Still not opened"
+          />
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 md:grid-cols-5 gap-4">
+          <StatsCard
+            title="Apply Events"
+            value={funnelTimeline.totals.apply}
+            color="blue"
+            description="Applications started in window"
+          />
+          <StatsCard
+            title="Eligible Events"
+            value={funnelTimeline.totals.eligible}
+            color="green"
+            description="Eligible at submission"
+          />
+          <StatsCard
+            title="Interview Events"
+            value={funnelTimeline.totals.interview}
+            color="purple"
+            description="Moved into interview"
+          />
+          <StatsCard
+            title="Offer Events"
+            value={funnelTimeline.totals.offer}
+            color="yellow"
+            description="Moved into offer"
+          />
+          <StatsCard
+            title="Hire Events"
+            value={funnelTimeline.totals.hire}
+            color="green"
+            description="Moved into hire stage"
+          />
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
+          <StatsCard
+            title="Eligible / Apply"
+            value={formatRate(funnelConversions.eligibilityFromApply)}
+            color="green"
+            description="Submission pass-through"
+          />
+          <StatsCard
+            title="Interview / Eligible"
+            value={formatRate(funnelConversions.interviewFromEligible)}
+            color="purple"
+            description="Progress after eligibility"
+          />
+          <StatsCard
+            title="Offer / Interview"
+            value={formatRate(funnelConversions.offerFromInterview)}
+            color="yellow"
+            description="Interview-to-offer conversion"
+          />
+          <StatsCard
+            title="Hire / Offer"
+            value={formatRate(funnelConversions.hireFromOffer)}
+            color="green"
+            description="Offer acceptance rate"
+          />
+          <StatsCard
+            title="Hire / Apply"
+            value={formatRate(funnelConversions.hireFromApply)}
+            color="blue"
+            description="Top-line funnel conversion"
+          />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <RecruiterAnalyticsChart
+            title="Volume"
+            description="Applications created versus unread load"
+            buckets={timeline.buckets}
+            series={[
+              { key: 'applications', label: 'Applications', colorClass: 'bg-blue-500' },
+              { key: 'unread', label: 'Unread', colorClass: 'bg-amber-400' },
+            ]}
+          />
+          <RecruiterAnalyticsChart
+            title="Quality and Outcome"
+            description="Eligibility pass rate, interview progression, and hires"
+            buckets={timeline.buckets}
+            series={[
+              { key: 'eligible', label: 'Eligible', colorClass: 'bg-emerald-500' },
+              { key: 'advanced', label: 'Interview+', colorClass: 'bg-violet-500' },
+              { key: 'hired', label: 'Hired', colorClass: 'bg-cyan-400' },
+            ]}
+          />
+        </div>
+
+        <div className="mt-5">
+          <RecruiterAnalyticsChart
+            title="Event Funnel"
+            description="Real stage-movement events across apply, eligibility, interview, offer, and hire"
+            buckets={funnelTimeline.buckets}
+            series={[
+              { key: 'apply', label: 'Apply', colorClass: 'bg-blue-500' },
+              { key: 'eligible', label: 'Eligible', colorClass: 'bg-emerald-500' },
+              { key: 'interview', label: 'Interview', colorClass: 'bg-violet-500' },
+              { key: 'offer', label: 'Offer', colorClass: 'bg-amber-400' },
+              { key: 'hire', label: 'Hire', colorClass: 'bg-cyan-400' },
+            ]}
+          />
+        </div>
+
+        <div className="mt-5">
+          <SegmentedFunnelComparison
+            title="Source Channel Comparison"
+            description="Compare ATS funnel quality across native, WhatsApp, email, and external application channels."
+            segments={sourceChannelSummary}
+            emptyLabel="No source-channel funnel activity for this window yet."
+          />
+        </div>
       </div>
 
       {/* Quick Actions */}
@@ -604,11 +1029,28 @@ export default function RecruiterDashboardPage() {
                       )}
                     </p>
                     <p className="text-sm text-gray-400">
-                      {app.jobs?.title || 'Job'} • {new Date(app.created_at).toLocaleDateString()}
+                      {app.jobs?.title || 'Job'} - {new Date(app.created_at).toLocaleDateString()}
                     </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <EligibilityBadge status={app.eligibility_status} compact />
+                    </div>
+                    <div className="mt-1">
+                      <RankingExplanation
+                        compact
+                        rankingScore={app.ranking_score}
+                        rankingBreakdown={app.ranking_breakdown}
+                        overallStageScore={app.overall_stage_score}
+                        eligibilityStatus={app.eligibility_status}
+                        decisionStatus={app.decision_status}
+                        currentStageType={app.current_stage?.stageType || null}
+                      />
+                    </div>
                   </div>
                 </div>
-                <StatusBadge status={app.status} />
+                <StageBadge
+                  label={app.current_stage?.label || app.status}
+                  stageType={app.current_stage?.stageType || 'applied'}
+                />
               </Link>
             ))}
           </div>

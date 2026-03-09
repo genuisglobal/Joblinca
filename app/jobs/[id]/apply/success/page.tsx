@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect, notFound } from 'next/navigation';
 import Link from 'next/link';
+import { applicationDashboardHrefForRole } from '@/lib/opportunities';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -18,6 +19,12 @@ export default async function ApplySuccessPage({ params }: PageProps) {
   if (!user) {
     redirect('/auth/login');
   }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .maybeSingle();
 
   // Fetch job details
   const { data: job } = await supabase
@@ -95,7 +102,7 @@ export default async function ApplySuccessPage({ params }: PageProps) {
 
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <Link
-            href="/dashboard/job-seeker/applications"
+            href={applicationDashboardHrefForRole(profile?.role)}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors inline-flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

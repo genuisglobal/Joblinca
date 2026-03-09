@@ -3,6 +3,7 @@ import { checkAdminStatus } from '@/lib/admin';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import JobActions from './JobActions';
+import MatchInsightsPanel from '@/components/jobs/MatchInsightsPanel';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -148,6 +149,8 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
               <p className="text-gray-300">{job.rejection_reason}</p>
             </div>
           )}
+
+          <MatchInsightsPanel jobId={job.id} />
         </div>
 
         {/* Sidebar */}

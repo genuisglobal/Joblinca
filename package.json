@@ -8,6 +8,18 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "uat:phase1:newman": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1",
+    "uat:phase1:critical": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1 -CriticalPath",
+    "uat:phase1:report": "node scripts/summarize-phase1-uat-report.mjs",
+    "test:opportunities": "node tests/opportunities.test.js",
+    "test:application-dashboard": "node tests/application-dashboard.test.js",
+    "test:application-ranking": "node tests/application-ranking.test.js",
+    "test:hiring-pipeline": "node tests/hiring-pipeline.test.js",
+    "test:interview-calendar": "node tests/interview-calendar.test.js",
+    "test:interview-automation": "node tests/interview-automation.test.js",
+    "test:interview-self-schedule": "node tests/interview-self-schedule.test.js",
+    "test:interview-scheduling": "node tests/interview-scheduling.test.js",
+    "test:matching-agent": "node tests/job-matching-agent.test.js",
     "test:skillup-challenges": "node tests/skillup-challenges.test.js",
     "test:wa-screening": "node tests/wa-screening-state-machine.test.js && node tests/wa-screening-ai.test.js",
     "test:wa-agent": "node tests/wa-job-agent-parser.test.js && node tests/wa-job-agent-limits-state.test.js && node tests/wa-matched-jobs-policy.test.js && node tests/wa-intent-nlp.test.js && node tests/wa-ai-screening-policy.test.js && node tests/wa-phone-match.test.js"
@@ -35,6 +47,7 @@
     "@types/react-dom": "^19.2.3",
     "eslint": "^8.57.1",
     "eslint-config-next": "^14.0.0",
+    "newman": "^6.2.2",
     "typescript": "^5.2.2"
   }
 }

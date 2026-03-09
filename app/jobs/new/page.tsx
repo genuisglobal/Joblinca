@@ -6,9 +6,38 @@ import { createClient } from '@/lib/supabase/client';
 import { CustomQuestion } from '@/lib/questions';
 import QuestionBuilder from './QuestionBuilder';
 import AIQuestionGenerator from './AIQuestionGenerator';
+import InternshipConfigurationFields, {
+  applyInternshipTrackPreset,
+  buildInternshipRequirementsPayload,
+  createEmptyInternshipRequirementsFormState,
+} from '@/components/jobs/InternshipConfigurationFields';
+import {
+  getInternshipTrackPostingPreset,
+  getOpportunityPostingLabel,
+} from '@/lib/internship-posting';
+import { type InternshipTrack } from '@/lib/opportunities';
 
 type ApplyMethod = 'joblinca' | 'external_url' | 'email' | 'phone' | 'whatsapp' | 'multiple';
 const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
+
+type RecruiterOption = {
+  id: string;
+  label: string;
+};
+
+function formatRecruiterLabel(profile: {
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  email?: string | null;
+}, companyName?: string | null): string {
+  const name =
+    profile.first_name || profile.last_name
+      ? `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim()
+      : profile.full_name || profile.email || 'Unknown recruiter';
+
+  return companyName ? `${name} (${companyName})` : name;
+}
 
 export default function NewJobPage() {
   const router = useRouter();
@@ -25,6 +54,10 @@ export default function NewJobPage() {
   const [workType, setWorkType] = useState('onsite');
   const [jobType, setJobType] = useState('job');
   const [visibility, setVisibility] = useState('public');
+  const [internshipTrack, setInternshipTrack] = useState('');
+  const [internshipRequirements, setInternshipRequirements] = useState(
+    createEmptyInternshipRequirementsFormState()
+  );
   const [uploading, setUploading] = useState(false);
 
   // Apply method fields
@@ -46,6 +79,10 @@ export default function NewJobPage() {
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
   const [postingMode, setPostingMode] = useState<'recruiter' | 'admin' | null>(null);
+  const [postingTarget, setPostingTarget] = useState<'joblinca' | 'recruiter'>('joblinca');
+  const [recruiterOptions, setRecruiterOptions] = useState<RecruiterOption[]>([]);
+  const [selectedRecruiterId, setSelectedRecruiterId] = useState('');
+  const [loadingRecruiters, setLoadingRecruiters] = useState(false);
 
   useEffect(() => {
     async function checkRole() {
@@ -78,6 +115,42 @@ export default function NewJobPage() {
         if (profile && (profile.role === 'recruiter' || isActiveAdmin)) {
           setPostingMode(isActiveAdmin ? 'admin' : 'recruiter');
           setAllowed(true);
+
+          if (isActiveAdmin) {
+            setLoadingRecruiters(true);
+
+            const [{ data: recruiters, error: recruitersError }, { data: recruiterProfiles, error: recruiterProfilesError }] =
+              await Promise.all([
+                supabase
+                  .from('profiles')
+                  .select('id, full_name, first_name, last_name, email')
+                  .eq('role', 'recruiter')
+                  .order('created_at', { ascending: false }),
+                supabase
+                  .from('recruiter_profiles')
+                  .select('user_id, company_name'),
+              ]);
+
+            if (recruitersError || recruiterProfilesError) {
+              console.error('Recruiter list fetch error:', recruitersError || recruiterProfilesError);
+              setError('Unable to load recruiters for delegation. You can still post as Joblinca.');
+            } else {
+              const companyByUserId = new Map<string, string | null>();
+              (recruiterProfiles || []).forEach((row: any) => {
+                companyByUserId.set(row.user_id, row.company_name || null);
+              });
+
+              const options = (recruiters || []).map((recruiter: any) => ({
+                id: recruiter.id,
+                label: formatRecruiterLabel(recruiter, companyByUserId.get(recruiter.id)),
+              }));
+
+              setRecruiterOptions(options);
+              setSelectedRecruiterId(options[0]?.id || '');
+            }
+
+            setLoadingRecruiters(false);
+          }
         } else {
           // Redirect non‑recruiters to dashboard with message
           console.log('User role/admin:', profile?.role, profile?.admin_type, '- cannot post jobs');
@@ -87,12 +160,36 @@ export default function NewJobPage() {
         console.error('Role check error:', err);
         // On error, show error instead of redirecting
         setError('Unable to verify your permissions. Please try again.');
+        setLoadingRecruiters(false);
       } finally {
         setLoading(false);
       }
     }
     checkRole();
   }, [supabase, router]);
+
+  const internshipPreset = getInternshipTrackPostingPreset(internshipTrack as InternshipTrack | '');
+  const opportunityLabel = getOpportunityPostingLabel(jobType, internshipTrack as InternshipTrack | '');
+  const titlePlaceholder =
+    internshipPreset?.titlePlaceholder ||
+    (jobType === 'gig' ? 'e.g. Contract Graphic Designer' : 'e.g. Software Engineer');
+  const descriptionPrompt =
+    internshipPreset?.descriptionPrompt ||
+    'Describe the responsibilities, team context, and success expectations for this opportunity.';
+
+  function handleJobTypeChange(nextJobType: string) {
+    setJobType(nextJobType);
+
+    if (nextJobType !== 'internship') {
+      setInternshipTrack('');
+      setInternshipRequirements(createEmptyInternshipRequirementsFormState());
+    }
+  }
+
+  function handleInternshipTrackChange(nextTrack: InternshipTrack | '') {
+    setInternshipTrack(nextTrack);
+    setInternshipRequirements((current) => applyInternshipTrackPreset(current, nextTrack));
+  }
 
   /**
    * Handle file upload and invoke the parse API.  When a file is selected
@@ -178,6 +275,20 @@ export default function NewJobPage() {
       return;
     }
 
+    if (
+      postingMode === 'admin' &&
+      postingTarget === 'recruiter' &&
+      !selectedRecruiterId
+    ) {
+      setError('Please select a recruiter to delegate job management.');
+      return;
+    }
+
+    if (jobType === 'internship' && !internshipTrack) {
+      setError('Select whether this internship is educational or professional.');
+      return;
+    }
+
     try {
       const res = await fetch('/api/jobs', {
         method: 'POST',
@@ -194,6 +305,11 @@ export default function NewJobPage() {
           workType,
           jobType,
           visibility,
+          internshipTrack: jobType === 'internship' ? internshipTrack : undefined,
+          internshipRequirements:
+            jobType === 'internship'
+              ? buildInternshipRequirementsPayload(internshipRequirements)
+              : undefined,
           customQuestions: customQuestions.length > 0 ? customQuestions : undefined,
           applyMethod,
           externalApplyUrl: externalApplyUrl || undefined,
@@ -201,6 +317,10 @@ export default function NewJobPage() {
           applyPhone: applyPhone || undefined,
           applyWhatsapp: applyWhatsapp || undefined,
           closesAt: closesAt || undefined,
+          recruiterId:
+            postingMode === 'admin' && postingTarget === 'recruiter'
+              ? selectedRecruiterId
+              : undefined,
         }),
       });
       if (res.ok) {
@@ -324,11 +444,67 @@ export default function NewJobPage() {
 
   return (
     <main className="max-w-2xl mx-auto p-6 text-gray-100">
-      <h1 className="text-2xl font-bold mb-4">Post a New Job</h1>
+      <h1 className="text-2xl font-bold mb-4">Post a New {opportunityLabel}</h1>
       {error && <p className="text-red-500 mb-4">{error}</p>}
       {postingMode === 'recruiter' && (
         <div className="mb-4 rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-4 text-sm text-yellow-200">
           Recruiter-posted jobs are reviewed before they appear on the public jobs page. After submission, you will be taken to your dashboard while the post is pending approval.
+        </div>
+      )}
+      {postingMode === 'admin' && (
+        <div className="mb-4 rounded-lg border border-blue-700/50 bg-blue-900/20 p-4">
+          <p className="text-sm text-blue-200 mb-3">
+            Choose who should manage this job after posting.
+          </p>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm text-gray-200">
+              <input
+                type="radio"
+                name="postingTarget"
+                value="joblinca"
+                checked={postingTarget === 'joblinca'}
+                onChange={() => setPostingTarget('joblinca')}
+                className="h-4 w-4"
+              />
+              Post for Joblinca (managed by me)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-200">
+              <input
+                type="radio"
+                name="postingTarget"
+                value="recruiter"
+                checked={postingTarget === 'recruiter'}
+                onChange={() => setPostingTarget('recruiter')}
+                className="h-4 w-4"
+              />
+              Post on behalf of a recruiter
+            </label>
+          </div>
+          {postingTarget === 'recruiter' && (
+            <div className="mt-3">
+              <label className="block text-sm font-medium text-gray-300 mb-1">
+                Recruiter Manager
+              </label>
+              <select
+                value={selectedRecruiterId}
+                onChange={(e) => setSelectedRecruiterId(e.target.value)}
+                disabled={loadingRecruiters}
+                className="w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
+              >
+                <option value="">
+                  {loadingRecruiters ? 'Loading recruiters...' : 'Select recruiter'}
+                </option>
+                {recruiterOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">
+                The selected recruiter can manage the job and applications.
+              </p>
+            </div>
+          )}
         </div>
       )}
       {/* Use lighter card and input backgrounds for better readability */}
@@ -344,13 +520,13 @@ export default function NewJobPage() {
           {uploading && <p className="text-sm text-gray-400 mt-1">Parsing file…</p>}
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300">Job Title</label>
+          <label className="block text-sm font-medium text-gray-300">{opportunityLabel} Title</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="e.g. Software Engineer"
+            placeholder={titlePlaceholder}
             required
           />
         </div>
@@ -408,10 +584,10 @@ export default function NewJobPage() {
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300">Job Type</label>
+          <label className="block text-sm font-medium text-gray-300">Opportunity Type</label>
           <select
             value={jobType}
-            onChange={(e) => setJobType(e.target.value)}
+            onChange={(e) => handleJobTypeChange(e.target.value)}
             className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
           >
             <option value="job">Job</option>
@@ -430,9 +606,22 @@ export default function NewJobPage() {
             <option value="talent_only">Talent Only</option>
           </select>
         </div>
+        <InternshipConfigurationFields
+          jobType={jobType}
+          visibility={visibility}
+          internshipTrack={internshipTrack}
+          requirements={internshipRequirements}
+          onInternshipTrackChange={handleInternshipTrackChange}
+          onRequirementsChange={setInternshipRequirements}
+        />
+        {jobType === 'internship' && internshipPreset && (
+          <div className="rounded-lg border border-emerald-700/50 bg-emerald-900/20 p-4 text-sm text-emerald-100">
+            Native Joblinca apply is recommended here so eligibility checks, ATS stages, and matching stay structured for this {internshipPreset.label.toLowerCase()}.
+          </div>
+        )}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="block text-sm font-medium text-gray-300">Description</label>
+            <label className="block text-sm font-medium text-gray-300">{opportunityLabel} Description</label>
             <button
               type="button"
               onClick={handleGenerateDescription}
@@ -461,7 +650,7 @@ export default function NewJobPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="Describe the role, or type a brief sentence and click 'Generate with AI' to create a full description"
+            placeholder={descriptionPrompt}
             rows={8}
             required
           />
