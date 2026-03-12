@@ -419,6 +419,111 @@ export async function sendInterviewSelfScheduleInviteWhatsapp(opts: {
   return 'text';
 }
 
+function buildApplicationStatusFallbackText(opts: {
+  jobTitle: string;
+  company: string;
+  stageLabel: string;
+  stageType: string;
+  applicationsUrl: string;
+}) {
+  const jobTitle = opts.jobTitle || 'your application';
+  const company = opts.company || 'the hiring team';
+
+  switch (opts.stageType) {
+    case 'interview':
+      return [
+        `Update on ${jobTitle}: you have moved to the interview stage.`,
+        `Company: ${company}`,
+        'The hiring team will share interview details soon.',
+        `Track your status: ${opts.applicationsUrl}`,
+      ].join('\n');
+    case 'offer':
+      return [
+        `Good news for ${jobTitle}: you have moved to the offer stage.`,
+        `Company: ${company}`,
+        `Track your status: ${opts.applicationsUrl}`,
+      ].join('\n');
+    case 'hire':
+      return [
+        `Congratulations. You have been selected for ${jobTitle}.`,
+        `Company: ${company}`,
+        `Track your status: ${opts.applicationsUrl}`,
+      ].join('\n');
+    case 'rejected':
+      return [
+        `Update on ${jobTitle}: the hiring team is not moving forward at this time.`,
+        `Company: ${company}`,
+        `Track your status: ${opts.applicationsUrl}`,
+      ].join('\n');
+    case 'review':
+    default:
+      return [
+        `Update on ${jobTitle}: your application moved to ${opts.stageLabel}.`,
+        `Company: ${company}`,
+        `Track your status: ${opts.applicationsUrl}`,
+      ].join('\n');
+  }
+}
+
+export async function sendApplicationStatusAlertWhatsapp(opts: {
+  to: string;
+  seekerName: string;
+  jobTitle: string;
+  company: string;
+  stageLabel: string;
+  stageType: string;
+  applicationsUrl: string;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  const templateName =
+    process.env.WA_APPLICATION_STATUS_TEMPLATE || 'application_status_update_v1';
+  const languageCode = process.env.WA_APPLICATION_STATUS_TEMPLATE_LANG || 'en';
+  const components: WATemplateComponent[] = [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: opts.seekerName || 'there' },
+        { type: 'text', text: opts.jobTitle || 'your application' },
+        { type: 'text', text: opts.company || 'Joblinca' },
+        { type: 'text', text: opts.stageLabel || 'under review' },
+        { type: 'text', text: opts.applicationsUrl },
+      ],
+    },
+  ];
+
+  try {
+    await sendWhatsappTemplate(
+      opts.to,
+      templateName,
+      languageCode,
+      components,
+      opts.userId
+    );
+    return 'template';
+  } catch (templateError) {
+    const fallback = buildApplicationStatusFallbackText({
+      jobTitle: opts.jobTitle,
+      company: opts.company,
+      stageLabel: opts.stageLabel,
+      stageType: opts.stageType,
+      applicationsUrl: opts.applicationsUrl,
+    });
+
+    try {
+      await sendWhatsappMessage(opts.to, fallback, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Application status send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
+
 export async function sendMatchedJobsDigestWhatsapp(opts: {
   to: string;
   subscribed: boolean;

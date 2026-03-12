@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 
 interface User {
   id: string;
@@ -10,6 +9,7 @@ interface User {
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
+  email: string | null;
   role: string;
   avatar_url: string | null;
   admin_type: string | null;
@@ -30,12 +30,23 @@ interface UsersClientProps {
   counts: Counts;
   currentRole: string;
   currentSearch: string;
+  currentAdminId: string | null;
+  canDeleteUsers: boolean;
 }
 
-export default function UsersClient({ users, counts, currentRole, currentSearch }: UsersClientProps) {
+export default function UsersClient({
+  users,
+  counts,
+  currentRole,
+  currentSearch,
+  currentAdminId,
+  canDeleteUsers,
+}: UsersClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(currentSearch);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,6 +57,42 @@ export default function UsersClient({ users, counts, currentRole, currentSearch 
       params.delete('search');
     }
     router.push(`/admin/users?${params.toString()}`);
+  };
+
+  const handleDeleteUser = async (user: User) => {
+    if (actionLoading) {
+      return;
+    }
+
+    const label = getName(user);
+    const confirmed = window.confirm(
+      `Delete ${label} and all related test data? Recruiter-owned jobs and user-owned records will be removed. This cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoading(user.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/users/${user.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deleteOwnedJobs: true }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || 'Failed to delete user');
+      }
+
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const handleRoleChange = (role: string) => {
@@ -124,7 +171,7 @@ export default function UsersClient({ users, counts, currentRole, currentSearch 
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name..."
+              placeholder="Search by name, email, or phone..."
               className="w-full px-4 py-2 pl-10 bg-gray-800 text-white border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <svg
@@ -166,6 +213,12 @@ export default function UsersClient({ users, counts, currentRole, currentSearch 
       </div>
 
       {/* Users Table */}
+      {error && (
+        <div className="bg-red-900/30 border border-red-700 rounded-lg p-4 mb-4">
+          <p className="text-red-400">{error}</p>
+        </div>
+      )}
+
       {users.length === 0 ? (
         <div className="bg-gray-800 rounded-xl p-12 text-center">
           <svg className="w-16 h-16 mx-auto text-gray-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -184,6 +237,9 @@ export default function UsersClient({ users, counts, currentRole, currentSearch 
                 <th className="text-left p-4 text-gray-400 font-medium hidden lg:table-cell">Joined</th>
                 <th className="text-center p-4 text-gray-400 font-medium">Role</th>
                 <th className="text-center p-4 text-gray-400 font-medium hidden md:table-cell">Onboarding</th>
+                {canDeleteUsers && (
+                  <th className="text-right p-4 text-gray-400 font-medium">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -204,7 +260,9 @@ export default function UsersClient({ users, counts, currentRole, currentSearch 
                         </div>
                         <div>
                           <p className="font-medium text-white">{getName(user)}</p>
-                          <p className="text-sm text-gray-400">{user.id.slice(0, 8)}...</p>
+                          <p className="text-sm text-gray-400">
+                            {user.email || `${user.id.slice(0, 8)}...`}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -234,6 +292,24 @@ export default function UsersClient({ users, counts, currentRole, currentSearch 
                         </span>
                       )}
                     </td>
+                    {canDeleteUsers && (
+                      <td className="p-4 text-right">
+                        {user.id === currentAdminId || user.admin_type === 'super' ? (
+                          <span className="text-xs text-gray-500">
+                            {user.id === currentAdminId ? 'Current admin' : 'Protected'}
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(user)}
+                            disabled={actionLoading === user.id}
+                            className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors disabled:opacity-50"
+                          >
+                            {actionLoading === user.id ? 'Deleting...' : 'Delete'}
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

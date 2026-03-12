@@ -12,26 +12,17 @@
 
 import { createServerSupabaseClient } from "./supabase/server";
 
-// ============================================
-// Type Definitions
-// ============================================
-
-/**
- * All possible admin types (matches database enum)
- */
-export type AdminType =
-  | "super"
-  | "operations"
-  | "support"
-  | "recruiter_admin"
-  | "ai";
-
-/**
- * Currently active admin types
- * UPDATE THIS when activating new admin types in the database
- */
-const ACTIVE_ADMIN_TYPES = ["super", "operations"] as const;
-type ActiveAdminType = (typeof ACTIVE_ADMIN_TYPES)[number];
+// Re-export types and constants from the client-safe module
+export {
+  type AdminType,
+  ACTIVE_ADMIN_TYPES,
+  getAdminTypeLabel,
+  isAdminTypeActive,
+  getActiveAdminTypes,
+} from "./admin-types";
+import type { AdminType } from "./admin-types";
+import { ACTIVE_ADMIN_TYPES } from "./admin-types";
+type ActiveAdminType = "super" | "operations";
 
 /**
  * Result of an admin status check
@@ -219,34 +210,5 @@ export async function isOperationsAdmin(): Promise<boolean> {
   return adminType === "operations";
 }
 
-// ============================================
-// Utility Functions
-// ============================================
-
-/**
- * Get a human-readable label for an admin type
- */
-export function getAdminTypeLabel(type: AdminType): string {
-  const labels: Record<AdminType, string> = {
-    super: "Super Admin",
-    operations: "Operations Admin",
-    support: "Support Admin",
-    recruiter_admin: "Recruiter Admin",
-    ai: "AI System",
-  };
-  return labels[type] || type;
-}
-
-/**
- * Check if an admin type is currently active in the system
- */
-export function isAdminTypeActive(type: AdminType): boolean {
-  return ACTIVE_ADMIN_TYPES.includes(type as ActiveAdminType);
-}
-
-/**
- * Get all currently active admin types
- */
-export function getActiveAdminTypes(): readonly AdminType[] {
-  return ACTIVE_ADMIN_TYPES;
-}
+// Utility functions (getAdminTypeLabel, isAdminTypeActive, getActiveAdminTypes)
+// are re-exported from ./admin-types above.

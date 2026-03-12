@@ -6,8 +6,7 @@ import {
   loadJobOpportunityMetadata,
   persistJobOpportunityMetadata,
 } from '@/lib/opportunities-server';
-
-const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 
 interface RouteContext {
   params: {
@@ -137,6 +136,11 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
       apply_intake_mode,
       visibility,
       description,
+      closes_at,
+      target_hire_date,
+      lifecycle_status,
+      reopen_count,
+      last_reopened_at,
       wa_ai_screening_enabled
     `
     )
@@ -175,6 +179,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
   const visibility = sanitizeText(body.visibility) || 'public';
   const waAiScreeningEnabled = sanitizeOptionalBoolean(body.waAiScreeningEnabled);
   const recruiterIdInput = body.recruiterId;
+  const closesAtInput = body.closesAt;
+  const targetHireDateInput = body.targetHireDate;
   let recruiterIdUpdate: string | undefined;
 
   if (!title || !companyName || !description) {
@@ -304,6 +310,54 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     salary = parsedSalary;
   }
 
+  let closesAtUpdate: string | null | undefined;
+  if (closesAtInput !== undefined) {
+    if (closesAtInput === null || closesAtInput === '') {
+      closesAtUpdate = null;
+    } else if (typeof closesAtInput === 'string') {
+      const parsed = new Date(closesAtInput);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json(
+          { error: 'Application deadline must be a valid date.' },
+          { status: 400 }
+        );
+      }
+      if (parsed.getTime() <= Date.now()) {
+        return NextResponse.json(
+          { error: 'Application deadline must be in the future.' },
+          { status: 400 }
+        );
+      }
+      closesAtUpdate = parsed.toISOString();
+    } else {
+      return NextResponse.json(
+        { error: 'Application deadline must be a valid date.' },
+        { status: 400 }
+      );
+    }
+  }
+
+  let targetHireDateUpdate: string | null | undefined;
+  if (targetHireDateInput !== undefined) {
+    if (targetHireDateInput === null || targetHireDateInput === '') {
+      targetHireDateUpdate = null;
+    } else if (typeof targetHireDateInput === 'string') {
+      const parsed = new Date(targetHireDateInput);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json(
+          { error: 'Target hire date must be a valid date.' },
+          { status: 400 }
+        );
+      }
+      targetHireDateUpdate = targetHireDateInput.trim();
+    } else {
+      return NextResponse.json(
+        { error: 'Target hire date must be a valid date.' },
+        { status: 400 }
+      );
+    }
+  }
+
   const { data: job, error } = await access.serviceClient
     .from('jobs')
     .update({
@@ -319,6 +373,9 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       eligible_roles: opportunityValidation.normalized.eligibleRoles,
       apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
       description,
+      closes_at: closesAtUpdate === undefined ? undefined : closesAtUpdate,
+      target_hire_date:
+        targetHireDateUpdate === undefined ? undefined : targetHireDateUpdate,
       recruiter_id: recruiterIdUpdate,
       wa_ai_screening_enabled:
         waAiScreeningEnabled === undefined ? undefined : waAiScreeningEnabled,
@@ -342,6 +399,11 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       apply_intake_mode,
       visibility,
       description,
+      closes_at,
+      target_hire_date,
+      lifecycle_status,
+      reopen_count,
+      last_reopened_at,
       wa_ai_screening_enabled
     `
     )

@@ -142,6 +142,20 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
             )}
           </div>
 
+          {/* Scam Score Warning */}
+          {job.scam_score != null && job.scam_score > 0 && (
+            <div className={`rounded-xl p-6 border ${job.scam_score >= 60 ? 'bg-red-900/20 border-red-700/50' : 'bg-yellow-900/20 border-yellow-700/50'}`}>
+              <h2 className={`text-lg font-semibold mb-2 ${job.scam_score >= 60 ? 'text-red-400' : 'text-yellow-400'}`}>
+                Scam Detection Score: {job.scam_score}/100
+              </h2>
+              <p className="text-gray-300 text-sm">
+                {job.scam_score >= 60
+                  ? 'This job was auto-flagged as suspicious. Review carefully before approving.'
+                  : 'Minor signals detected. Review the content as normal.'}
+              </p>
+            </div>
+          )}
+
           {/* Rejection Reason (if rejected) */}
           {job.approval_status === 'rejected' && job.rejection_reason && (
             <div className="bg-red-900/20 border border-red-700/50 rounded-xl p-6">

@@ -27,8 +27,11 @@
     "test:wa-agent": "node tests/wa-job-agent-parser.test.js && node tests/wa-job-agent-limits-state.test.js && node tests/wa-matched-jobs-policy.test.js && node tests/wa-intent-nlp.test.js && node tests/wa-ai-screening-policy.test.js && node tests/wa-phone-match.test.js"
   },
   "dependencies": {
+    "@sentry/nextjs": "^10.42.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.39.4",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.36.3",
     "autoprefixer": "^10.4.15",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.260.0",

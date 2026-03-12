@@ -5,6 +5,7 @@ import {
   mapStageTypeToLegacyStatus,
   type LegacyApplicationStatus,
 } from '@/lib/hiring-pipeline/mapping';
+import { sendApplicationStatusAlertWhatsapp } from '@/lib/messaging/whatsapp';
 
 export type { LegacyApplicationStatus } from '@/lib/hiring-pipeline/mapping';
 
@@ -35,12 +36,262 @@ export interface StageTransitionResult {
   toStage: HiringStageRow;
   legacyStatus: LegacyApplicationStatus;
   eventId: string | null;
+  candidateNotification: CandidateStageNotificationResult | null;
+}
+
+interface StageNotificationContextRow {
+  applicant_id: string;
+  jobs:
+    | {
+        title: string | null;
+        company_name: string | null;
+      }
+    | Array<{
+        title: string | null;
+        company_name: string | null;
+      }>
+    | null;
+  profiles:
+    | {
+        role: string | null;
+        full_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+      }
+    | Array<{
+        role: string | null;
+        full_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+      }>
+    | null;
+}
+
+interface StageNotificationContext {
+  applicantId: string;
+  applicantRole: string | null;
+  applicantName: string;
+  jobTitle: string;
+  companyName: string;
+}
+
+interface WhatsappConversationRow {
+  wa_phone: string;
+}
+
+export interface CandidateStageNotificationResult {
+  channel: 'whatsapp';
+  status: 'template' | 'text' | 'skipped' | 'failed';
+  reason: string | null;
+  message: string;
 }
 
 function sanitizeText(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
   return trimmed || null;
+}
+
+function normalizeSingle<T>(value: T | T[] | null | undefined): T | null {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
+
+function normalizeE164(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const compact = phone.replace(/\s+/g, '').trim();
+  if (!compact) return null;
+
+  if (compact.startsWith('+')) {
+    const digits = compact.slice(1).replace(/\D/g, '');
+    return digits.length >= 8 ? `+${digits}` : null;
+  }
+
+  const digitsOnly = compact.replace(/\D/g, '');
+  return digitsOnly.length >= 8 ? `+${digitsOnly}` : null;
+}
+
+function applicantDisplayName(profile: {
+  full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+} | null) {
+  if (!profile) return 'there';
+
+  const composed = `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim();
+  return composed || profile.full_name || 'there';
+}
+
+function buildApplicationsUrl(role: string | null): string {
+  const appUrl = (process.env.NEXT_PUBLIC_APP_URL || 'https://joblinca.com').replace(/\/$/, '');
+  const path = role === 'talent' ? '/dashboard/talent/applications' : '/dashboard/job-seeker/applications';
+  return `${appUrl}${path}`;
+}
+
+function notificationSkipReason(
+  toStage: HiringStageRow,
+  trigger: string | undefined
+): CandidateStageNotificationResult | null {
+  if (trigger === 'pipeline_bootstrap') {
+    return {
+      channel: 'whatsapp',
+      status: 'skipped',
+      reason: 'pipeline_bootstrap',
+      message: 'Pipeline bootstrap does not notify candidates.',
+    };
+  }
+
+  if (trigger === 'interview_schedule') {
+    return {
+      channel: 'whatsapp',
+      status: 'skipped',
+      reason: 'interview_schedule_manages_notification',
+      message: 'Interview scheduling already sends its own candidate notification.',
+    };
+  }
+
+  if (!['review', 'interview', 'offer', 'hire', 'rejected'].includes(toStage.stage_type)) {
+    return {
+      channel: 'whatsapp',
+      status: 'skipped',
+      reason: 'stage_not_notifiable',
+      message: 'This hiring stage does not send candidate WhatsApp alerts.',
+    };
+  }
+
+  return null;
+}
+
+async function loadStageNotificationContext(
+  applicationId: string
+): Promise<StageNotificationContext | null> {
+  const db = createServiceSupabaseClient();
+  const { data, error } = await db
+    .from('applications')
+    .select(
+      `
+      applicant_id,
+      jobs:job_id (
+        title,
+        company_name
+      ),
+      profiles:applicant_id (
+        role,
+        full_name,
+        first_name,
+        last_name
+      )
+    `
+    )
+    .eq('id', applicationId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to load candidate notification context: ${error.message}`);
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  const row = data as StageNotificationContextRow;
+  const job = normalizeSingle(row.jobs);
+  const profile = normalizeSingle(row.profiles);
+
+  return {
+    applicantId: row.applicant_id,
+    applicantRole: profile?.role || null,
+    applicantName: applicantDisplayName(profile),
+    jobTitle: job?.title || 'your application',
+    companyName: job?.company_name || 'Joblinca',
+  };
+}
+
+async function loadOptedInWhatsappPhone(userId: string): Promise<string | null> {
+  const db = createServiceSupabaseClient();
+  const { data, error } = await db
+    .from('wa_conversations')
+    .select('wa_phone')
+    .eq('user_id', userId)
+    .eq('opted_in', true)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw new Error(`Failed to load candidate WhatsApp opt-in: ${error.message}`);
+  }
+
+  const row = ((data || []) as WhatsappConversationRow[])[0];
+  return normalizeE164(row?.wa_phone || null);
+}
+
+function sanitizeNotificationError(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'unknown_error';
+  return message.length <= 200 ? message : `${message.slice(0, 197)}...`;
+}
+
+async function sendCandidateStageNotification(params: {
+  applicationId: string;
+  toStage: HiringStageRow;
+  trigger?: string;
+}): Promise<CandidateStageNotificationResult | null> {
+  const skipped = notificationSkipReason(params.toStage, params.trigger);
+  if (skipped) {
+    return skipped;
+  }
+
+  try {
+    const context = await loadStageNotificationContext(params.applicationId);
+    if (!context) {
+      return {
+        channel: 'whatsapp',
+        status: 'skipped',
+        reason: 'missing_candidate_context',
+        message: 'Candidate context is incomplete, so no WhatsApp alert was sent.',
+      };
+    }
+
+    const phone = await loadOptedInWhatsappPhone(context.applicantId);
+    if (!phone) {
+      return {
+        channel: 'whatsapp',
+        status: 'skipped',
+        reason: 'no_whatsapp_opt_in',
+        message: 'No opted-in WhatsApp number was found for this applicant.',
+      };
+    }
+
+    const delivery = await sendApplicationStatusAlertWhatsapp({
+      to: phone,
+      seekerName: context.applicantName,
+      jobTitle: context.jobTitle,
+      company: context.companyName,
+      stageLabel: params.toStage.label,
+      stageType: params.toStage.stage_type,
+      applicationsUrl: buildApplicationsUrl(context.applicantRole),
+      userId: context.applicantId,
+    });
+
+    return {
+      channel: 'whatsapp',
+      status: delivery,
+      reason: null,
+      message:
+        delivery === 'template'
+          ? 'WhatsApp alert sent with template delivery.'
+          : 'WhatsApp alert sent with text fallback.',
+    };
+  } catch (error) {
+    return {
+      channel: 'whatsapp',
+      status: 'failed',
+      reason: 'send_failed',
+      message: `WhatsApp alert failed: ${sanitizeNotificationError(error)}`,
+    };
+  }
 }
 
 async function ensureJobPipeline(jobId: string): Promise<string> {
@@ -265,6 +516,7 @@ export async function moveApplicationToStage(params: {
       toStage,
       legacyStatus: mapStageTypeToLegacyStatus(toStage.stage_type),
       eventId: null,
+      candidateNotification: null,
     };
   }
 
@@ -343,11 +595,43 @@ export async function moveApplicationToStage(params: {
     });
   }
 
+  const candidateNotification = await sendCandidateStageNotification({
+    applicationId: params.applicationId,
+    toStage,
+    trigger: params.trigger,
+  });
+
+  if (candidateNotification) {
+    const action =
+      candidateNotification.status === 'failed'
+        ? 'candidate_status_whatsapp_failed'
+        : candidateNotification.status === 'skipped'
+          ? 'candidate_status_whatsapp_skipped'
+          : 'candidate_status_whatsapp_sent';
+
+    await insertActivity({
+      applicationId: params.applicationId,
+      actorId: params.actorId || null,
+      action,
+      newValue: toStage.label,
+      metadata: {
+        channel: candidateNotification.channel,
+        deliveryStatus: candidateNotification.status,
+        reason: candidateNotification.reason,
+        message: candidateNotification.message,
+        stageId: toStage.id,
+        stageKey: toStage.stage_key,
+        trigger: params.trigger || 'manual',
+      },
+    }).catch(() => undefined);
+  }
+
   return {
     application: updated as ApplicationTransitionRow,
     fromStage,
     toStage,
     legacyStatus,
     eventId,
+    candidateNotification,
   };
 }

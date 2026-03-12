@@ -4,8 +4,9 @@ import { requireActiveSubscription } from '@/lib/subscriptions';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 import { validateOpportunityConfiguration } from '@/lib/opportunities';
 import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
-
-const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
+import { checkJobForScam } from '@/lib/scam-detection';
+import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 
 function normalizeOptionalId(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -19,7 +20,8 @@ function normalizeOptionalId(value: unknown): string | null {
 // Handle GET /api/jobs and POST /api/jobs
 export async function GET() {
   const supabase = createServerSupabaseClient();
-  // Only return jobs that are both published AND approved
+  // Closed jobs can remain publicly viewable on direct links, but the public
+  // jobs feed should only return still-open listings.
   const { data: jobs, error } = await supabase
     .from('jobs')
     .select('*')
@@ -29,7 +31,7 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json(jobs);
+  return NextResponse.json((jobs || []).filter((job) => isJobPubliclyListable(job)));
 }
 
 export async function POST(request: NextRequest) {
@@ -76,16 +78,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    try {
-      await requireActiveSubscription(user.id, 'recruiter');
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            'Basic recruiter verification is required before posting jobs. Activate a recruiter plan in Billing.',
-        },
-        { status: 403 }
-      );
+    // Free first job post: count existing jobs by this recruiter.
+    // If they have 0 jobs, allow posting without a subscription.
+    const { count: existingJobCount } = await supabase
+      .from('jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('recruiter_id', user.id);
+
+    const hasFreePost = (existingJobCount ?? 0) === 0;
+
+    if (!hasFreePost) {
+      try {
+        await requireActiveSubscription(user.id, 'recruiter');
+      } catch {
+        return NextResponse.json(
+          {
+            error:
+              'You have used your free job post. Activate a recruiter plan in Billing to post more jobs.',
+          },
+          { status: 403 }
+        );
+      }
     }
   }
 
@@ -109,6 +122,7 @@ export async function POST(request: NextRequest) {
     applyPhone,
     applyWhatsapp,
     closesAt,
+    targetHireDate,
     waAiScreeningEnabled,
     recruiterId,
     internshipTrack,
@@ -120,6 +134,30 @@ export async function POST(request: NextRequest) {
 
   if (!title || !description) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+  }
+
+  let normalizedClosesAt: string | null = null;
+  if (typeof closesAt === 'string' && closesAt.trim()) {
+    const parsed = new Date(closesAt);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json({ error: 'Application deadline is invalid' }, { status: 400 });
+    }
+    if (parsed.getTime() <= Date.now()) {
+      return NextResponse.json(
+        { error: 'Application deadline must be in the future' },
+        { status: 400 }
+      );
+    }
+    normalizedClosesAt = parsed.toISOString();
+  }
+
+  let normalizedTargetHireDate: string | null = null;
+  if (typeof targetHireDate === 'string' && targetHireDate.trim()) {
+    const parsed = new Date(targetHireDate);
+    if (Number.isNaN(parsed.getTime())) {
+      return NextResponse.json({ error: 'Target hire date is invalid' }, { status: 400 });
+    }
+    normalizedTargetHireDate = targetHireDate.trim();
   }
 
   const opportunityValidation = validateOpportunityConfiguration({
@@ -201,8 +239,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const shouldPublishImmediately = isActiveAdmin;
-  const approvalStatus = isActiveAdmin ? 'approved' : 'pending';
+  // Scam detection: score the job content
+  const scamResult = checkJobForScam(title, description || '', companyName || null);
+
+  const shouldPublishImmediately = isActiveAdmin && !scamResult.isSuspicious;
+  const approvalStatus = isActiveAdmin && !scamResult.isSuspicious ? 'approved' : 'pending';
 
   const { data: insertedJob, error } = await supabase
     .from('jobs')
@@ -214,6 +255,7 @@ export async function POST(request: NextRequest) {
       recruiter_id: assignedRecruiterId,
       published: shouldPublishImmediately,
       approval_status: approvalStatus,
+      scam_score: scamResult.score,
       approved_at: isActiveAdmin ? new Date().toISOString() : null,
       approved_by: isActiveAdmin ? user.id : null,
       posted_by: user.id,
@@ -232,7 +274,8 @@ export async function POST(request: NextRequest) {
       apply_email: applyEmail || null,
       apply_phone: applyPhone || null,
       apply_whatsapp: applyWhatsapp || null,
-      closes_at: closesAt ? new Date(closesAt).toISOString() : null,
+      closes_at: normalizedClosesAt,
+      target_hire_date: normalizedTargetHireDate,
       wa_ai_screening_enabled:
         typeof waAiScreeningEnabled === 'boolean' ? waAiScreeningEnabled : null,
     })
@@ -290,10 +333,7 @@ export async function POST(request: NextRequest) {
       .eq('id', insertedJob.id);
   }
 
-  if (
-    insertedJob.published === true &&
-    (insertedJob.approval_status === 'approved' || insertedJob.approval_status === null)
-  ) {
+  if (isJobPubliclyListable(insertedJob)) {
     try {
       await dispatchJobMatchNotifications({
         jobId: insertedJob.id,
@@ -304,5 +344,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ id: insertedJob.id }, { status: 201 });
+  return NextResponse.json({
+    id: insertedJob.id,
+    ...(scamResult.isSuspicious && {
+      warning: 'This job was flagged for review due to suspicious content. It will be visible once approved by an admin.',
+    }),
+  }, { status: 201 });
 }

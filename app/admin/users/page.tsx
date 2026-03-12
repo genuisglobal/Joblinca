@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { checkAdminStatus } from '@/lib/admin';
 import UsersClient from './UsersClient';
 
 interface PageProps {
@@ -8,13 +9,16 @@ interface PageProps {
 export default async function AdminUsersPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const supabase = createServerSupabaseClient();
+  const { userId, adminType } = await checkAdminStatus();
   const roleFilter = params.role || 'all';
   const searchTerm = params.search || '';
 
   // Build query
   let query = supabase
     .from('profiles')
-    .select('*')
+    .select(
+      'id, full_name, first_name, last_name, phone, email, role, avatar_url, admin_type, created_at, onboarding_completed'
+    )
     .order('created_at', { ascending: false });
 
   if (roleFilter !== 'all') {
@@ -22,7 +26,9 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
   }
 
   if (searchTerm) {
-    query = query.or(`full_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%`);
+    query = query.or(
+      `full_name.ilike.%${searchTerm}%,first_name.ilike.%${searchTerm}%,last_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%,phone.ilike.%${searchTerm}%`
+    );
   }
 
   const { data: users, error } = await query;
@@ -62,6 +68,8 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
         counts={counts}
         currentRole={roleFilter}
         currentSearch={searchTerm}
+        currentAdminId={userId}
+        canDeleteUsers={adminType === 'super'}
       />
     </div>
   );

@@ -4,6 +4,7 @@ import ApplyForm from './ApplyForm';
 import { canRoleApplyToOpportunity } from '@/lib/opportunities';
 import { loadJobOpportunityMetadata } from '@/lib/opportunities-server';
 import { normalizeApplicantRole } from '@/lib/applications/server';
+import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -117,14 +118,7 @@ export default async function ApplyPage({ params }: PageProps) {
             : Promise.resolve({ data: null, error: null }),
         ]);
 
-  const isApproved =
-    job.approval_status === 'approved' ||
-    job.approval_status === undefined ||
-    job.approval_status === null;
-  const isPublished = job.published !== false;
-  const isNotClosed = !job.closes_at || new Date(job.closes_at) > new Date();
-
-  if (!(isApproved && isPublished && isNotClosed)) {
+  if (!isJobAcceptingApplications(job)) {
     redirect(`/jobs/${id}?error=not_accepting`);
   }
 

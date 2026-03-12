@@ -4,6 +4,7 @@ import {
   initiateSubscriptionPayment,
   initiateJobTierPayment,
 } from '@/lib/payments/index';
+import { rateLimit, getRateLimitIdentifier } from '@/lib/rate-limit';
 
 /**
  * POST /api/payments
@@ -20,6 +21,13 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
+
+    // Rate limit: 10 payment attempts per minute per user
+    const limit = await rateLimit(
+      getRateLimitIdentifier(request, user.id),
+      { requests: 10, window: '1m' }
+    );
+    if (!limit.allowed) return limit.response!;
 
     const body = await request.json();
     const { plan_slug, phone_number, promo_code, job_id, add_on_slugs, gateway } = body;

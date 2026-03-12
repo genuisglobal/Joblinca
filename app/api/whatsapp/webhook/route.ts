@@ -57,16 +57,16 @@ export async function POST(request: NextRequest) {
   // 1. Read raw body bytes for signature verification
   const rawBody = Buffer.from(await request.arrayBuffer());
 
-  // 2. Verify signature (skip in local dev when APP_SECRET is absent)
+  // 2. Verify signature — MANDATORY in all environments
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) {
+    console.error('[WA webhook] WHATSAPP_APP_SECRET is not configured — rejecting request');
+    return new NextResponse('Server misconfiguration', { status: 500 });
+  }
   const sig = request.headers.get('x-hub-signature-256') ?? '';
-  if (process.env.WHATSAPP_APP_SECRET) {
-    if (!verifySignature(rawBody, sig)) {
-      console.warn('[WA webhook] Invalid signature — rejecting request');
-      return new NextResponse('Unauthorized', { status: 401 });
-    }
-  } else {
-    // No secret configured — log a warning but don't block (dev/test)
-    console.warn('[WA webhook] WHATSAPP_APP_SECRET not set — skipping signature check');
+  if (!verifySignature(rawBody, sig)) {
+    console.warn('[WA webhook] Invalid signature — rejecting request');
+    return new NextResponse('Unauthorized', { status: 401 });
   }
 
   // 3. Parse payload

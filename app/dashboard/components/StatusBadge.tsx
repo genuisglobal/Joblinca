@@ -50,6 +50,36 @@ const statusConfig: Record<string, StatusConfig> = {
     text: 'text-gray-400',
     label: 'Draft',
   },
+  live: {
+    bg: 'bg-green-900/50 border-green-700',
+    text: 'text-green-400',
+    label: 'Live',
+  },
+  closed_reviewing: {
+    bg: 'bg-amber-900/50 border-amber-700',
+    text: 'text-amber-300',
+    label: 'Closed',
+  },
+  on_hold: {
+    bg: 'bg-slate-700/50 border-slate-600',
+    text: 'text-slate-300',
+    label: 'On Hold',
+  },
+  filled: {
+    bg: 'bg-emerald-900/50 border-emerald-700',
+    text: 'text-emerald-300',
+    label: 'Filled',
+  },
+  archived: {
+    bg: 'bg-stone-700/50 border-stone-600',
+    text: 'text-stone-300',
+    label: 'Archived',
+  },
+  removed: {
+    bg: 'bg-red-900/50 border-red-700',
+    text: 'text-red-400',
+    label: 'Removed',
+  },
 
   // Shared approval status
   approved: {

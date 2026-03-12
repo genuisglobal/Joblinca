@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
+import { checkAdminStatus } from '@/lib/admin';
 import {
   moveApplicationToLegacyStatus,
   type LegacyApplicationStatus,
@@ -21,6 +22,7 @@ export async function GET(
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const { isAdmin } = await checkAdminStatus();
 
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -57,7 +59,7 @@ export async function GET(
   const isApplicant = application.applicant_id === user.id;
   const isRecruiter = recruiterIdFromRelation(application.jobs) === user.id;
 
-  if (!isApplicant && !isRecruiter) {
+  if (!isApplicant && !isRecruiter && !isAdmin) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
   }
 
@@ -74,6 +76,7 @@ export async function PUT(
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const { isAdmin } = await checkAdminStatus();
 
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -98,7 +101,7 @@ export async function PUT(
   }
 
   // Only the job's recruiter can update the status
-  if (recruiterIdFromRelation(application.jobs) !== user.id) {
+  if (recruiterIdFromRelation(application.jobs) !== user.id && !isAdmin) {
     return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
   }
 
@@ -144,6 +147,7 @@ export async function PUT(
       current_stage_id: transition.toStage.id,
       current_stage_label: transition.toStage.label,
       current_stage_key: transition.toStage.stage_key,
+      candidateNotification: transition.candidateNotification,
     });
   } catch (transitionError) {
     return NextResponse.json(

@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
 import ApplicationProgressCard from '@/components/applications/ApplicationProgressCard';
 import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterviewsPanel';
+import ReferralCard from '@/components/ReferralCard';
 import {
   applyInterviewUpdateToApplications,
   attachInterviewsToApplications,
@@ -348,6 +349,9 @@ export default function JobSeekerDashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* Referral Card */}
+      <ReferralCard />
 
       <div className="rounded-xl bg-gray-800 p-6">
         <h2 className="mb-4 text-xl font-semibold text-white">Tips for Success</h2>

@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       institution,
       graduationYear,
       recruiterType,
+      referralCode,
     } = body as {
       userId?: string;
       role?: IncomingRole;
@@ -73,6 +74,7 @@ export async function POST(request: Request) {
       institution?: string;
       graduationYear?: string;
       recruiterType?: string;
+      referralCode?: string;
     };
 
     if (!userId || !role) {
@@ -83,17 +85,53 @@ export async function POST(request: Request) {
 
     const supabase = createServiceSupabaseClient();
 
+    // Resolve referral: look up who referred this user (only if referral columns exist)
+    let referredBy: string | null = null;
+    let newReferralCode: string | null = null;
+    if (referralCode) {
+      try {
+        const { data: referrer } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('referral_code', referralCode.trim())
+          .maybeSingle();
+        if (referrer) {
+          referredBy = referrer.id;
+        }
+        newReferralCode = Math.random().toString(36).slice(2, 10);
+      } catch {
+        // referral_code column may not exist yet — skip gracefully
+      }
+    }
+
     // 1) Upsert into profiles (MATCH YOUR TABLE COLUMNS)
-    const { error: profileError } = await supabase.from("profiles").upsert(
-      {
-        id: userId,
-        full_name: fullName ?? null,
-        phone: phone ?? null,
-        role: dbRole,
-        avatar_url: avatarUrl ?? null, // your schema uses avatar_url
-      },
-      { onConflict: "id" }
-    );
+    // Build profile data — only include referral fields if the columns exist
+    const profileData: Record<string, unknown> = {
+      id: userId,
+      full_name: fullName ?? null,
+      phone: phone ?? null,
+      role: dbRole,
+      avatar_url: avatarUrl ?? null,
+    };
+
+    // Try with referral fields first, fall back without them
+    if (newReferralCode || referralCode) {
+      profileData.referral_code = newReferralCode ?? Math.random().toString(36).slice(2, 10);
+      profileData.referred_by = referredBy;
+    }
+
+    let { error: profileError } = await supabase
+      .from("profiles")
+      .upsert(profileData, { onConflict: "id" });
+
+    // If it fails due to missing referral columns, retry without them
+    if (profileError && profileError.message.includes('referral_code')) {
+      const { referral_code: _rc, referred_by: _rb, ...basicData } = profileData as Record<string, unknown> & { referral_code?: unknown; referred_by?: unknown };
+      const result = await supabase
+        .from("profiles")
+        .upsert(basicData, { onConflict: "id" });
+      profileError = result.error;
+    }
 
     if (profileError) {
       return NextResponse.json(

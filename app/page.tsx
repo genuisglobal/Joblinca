@@ -6,6 +6,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n';
+import SponsoredHomeFeed from '@/components/sponsors/SponsoredHomeFeed';
+import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import {
   Briefcase,
   MapPin,
@@ -25,6 +27,12 @@ import {
   Quote,
   MessageCircle,
   Bell,
+  DollarSign,
+  Award,
+  MessageSquare,
+  BarChart3,
+  Code2,
+  Heart,
 } from 'lucide-react';
 
 interface Job {
@@ -35,58 +43,22 @@ interface Job {
   job_type: string | null;
   salary: number | null;
   created_at: string;
-  is_remote: boolean | null;
   work_type: string | null;
+  closes_at?: string | null;
+  lifecycle_status?: string | null;
   isSample?: boolean;
 }
 
-const SAMPLE_JOBS: Job[] = [
-  {
-    id: 'sample-1',
-    title: 'Marketing Manager',
-    company_name: 'TechHub Africa',
-    location: 'Douala, Cameroon',
-    job_type: 'job',
-    salary: null,
-    created_at: new Date().toISOString(),
-    is_remote: false,
-    work_type: 'onsite',
-    isSample: true,
-  },
-  {
-    id: 'sample-2',
-    title: 'Full-Stack Developer',
-    company_name: 'JobGenius Inc.',
-    location: 'Yaoundé, Cameroon',
-    job_type: 'job',
-    salary: null,
-    created_at: new Date().toISOString(),
-    is_remote: false,
-    work_type: 'hybrid',
-    isSample: true,
-  },
-  {
-    id: 'sample-3',
-    title: 'Customer Support Specialist',
-    company_name: 'Orange Cameroon',
-    location: 'Remote',
-    job_type: 'job',
-    salary: null,
-    created_at: new Date().toISOString(),
-    is_remote: true,
-    work_type: 'remote',
-    isSample: true,
-  },
-];
+// No sample/fake jobs — show an honest empty state when no real jobs exist
 
 const CITIES = [
-  { name: 'Douala', emoji: '🏙️' },
-  { name: 'Yaoundé', emoji: '🏛️' },
-  { name: 'Bafoussam', emoji: '🌿' },
-  { name: 'Limbé', emoji: '🌊' },
-  { name: 'Buea', emoji: '🏔️' },
-  { name: 'Kribi', emoji: '🏖️' },
-  { name: 'Remote', emoji: '🌐' },
+  { name: 'Douala', slug: 'douala', emoji: '🏙️' },
+  { name: 'Yaoundé', slug: 'yaounde', emoji: '🏛️' },
+  { name: 'Bafoussam', slug: 'bafoussam', emoji: '🌿' },
+  { name: 'Limbé', slug: 'limbe', emoji: '🌊' },
+  { name: 'Buea', slug: 'buea', emoji: '🏔️' },
+  { name: 'Kribi', slug: 'kribi', emoji: '🏖️' },
+  { name: 'Remote', slug: null, emoji: '🌐' },
 ];
 
 export default function HomePage() {
@@ -102,55 +74,27 @@ export default function HomePage() {
 
   useEffect(() => {
     async function loadJobs() {
+      // Fetch total count (lightweight HEAD query)
       const { count } = await supabase
         .from('jobs')
         .select('*', { count: 'exact', head: true })
         .eq('published', true)
-        .eq('approval_status', 'approved');
+        .eq('approval_status', 'approved')
+        .eq('lifecycle_status', 'live');
 
       const totalJobs = count || 0;
-      let fetchedJobs: Job[] = [];
 
-      if (totalJobs > 0 && totalJobs <= 10) {
-        const { data } = await supabase
-          .from('jobs')
-          .select('id, title, company_name, location, job_type, salary, created_at, is_remote, work_type')
-          .eq('published', true)
-          .eq('approval_status', 'approved')
-          .order('created_at', { ascending: false });
-        fetchedJobs = data || [];
-      } else if (totalJobs > 10) {
-        const today = new Date();
-        const dayOfYear = Math.floor(
-          (today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / (1000 * 60 * 60 * 24)
-        );
-        const { data: allJobs } = await supabase
-          .from('jobs')
-          .select('id, title, company_name, location, job_type, salary, created_at, is_remote, work_type')
-          .eq('published', true)
-          .eq('approval_status', 'approved')
-          .order('created_at', { ascending: false });
+      // Fetch only the 6 most recent jobs — never fetch the full table
+      const { data: fetchedJobs } = await supabase
+        .from('jobs')
+        .select('id, title, company_name, location, job_type, salary, created_at, work_type, closes_at, lifecycle_status')
+        .eq('published', true)
+        .eq('approval_status', 'approved')
+        .order('created_at', { ascending: false })
+        .limit(6);
 
-        if (allJobs && allJobs.length > 0) {
-          const shuffled = [...allJobs].sort((a, b) => {
-            const hashA = (a.id.charCodeAt(0) + dayOfYear) % 1000;
-            const hashB = (b.id.charCodeAt(0) + dayOfYear) % 1000;
-            return hashA - hashB;
-          });
-          const recentJobs = allJobs.slice(0, 2);
-          const recentIds = new Set(recentJobs.map(j => j.id));
-          const rotatedJobs = shuffled.filter(j => !recentIds.has(j.id)).slice(0, 4);
-          fetchedJobs = [...recentJobs, ...rotatedJobs];
-        }
-      }
-
-      if (fetchedJobs.length === 0) {
-        setJobs(SAMPLE_JOBS);
-        setTotalJobCount(SAMPLE_JOBS.length);
-      } else {
-        setJobs(fetchedJobs);
-        setTotalJobCount(totalJobs);
-      }
+      setJobs((fetchedJobs || []).filter((job) => isJobPubliclyListable(job)));
+      setTotalJobCount(totalJobs);
       setLoading(false);
     }
     loadJobs();
@@ -297,7 +241,7 @@ export default function HomePage() {
                   src="/assets/hero-community.png"
                   alt="Cameroon professionals using Joblinca"
                   fill
-                  className="object-cover object-top"
+                  className="object-cover object-center"
                   priority
                   sizes="(max-width: 1280px) 50vw, 640px"
                 />
@@ -312,7 +256,7 @@ export default function HomePage() {
                   <span className="text-xs text-green-400 font-medium uppercase tracking-wide">Live</span>
                 </div>
                 <p className="text-white font-bold text-lg leading-none">
-                  {totalJobCount > 0 ? `${totalJobCount}+` : '1,200+'} {t('home.stats.jobs')}
+                  {totalJobCount > 0 ? totalJobCount : '—'} {t('home.stats.jobs')}
                 </p>
               </div>
 
@@ -337,17 +281,17 @@ export default function HomePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             <div>
               <p className="text-3xl font-bold text-white">
-                {totalJobCount > 0 ? `${totalJobCount}+` : '1,200+'}
+                {totalJobCount > 0 ? totalJobCount : '—'}
               </p>
               <p className="text-sm text-neutral-400 mt-1">{t('home.stats.jobs')}</p>
             </div>
             <div>
-              <p className="text-3xl font-bold text-white">20+</p>
+              <p className="text-3xl font-bold text-white">7</p>
               <p className="text-sm text-neutral-400 mt-1">{t('home.stats.cities')}</p>
             </div>
             <div>
-              <p className="text-3xl font-bold text-white">500+</p>
-              <p className="text-sm text-neutral-400 mt-1">{t('home.stats.companies')}</p>
+              <p className="text-3xl font-bold text-white">{t('home.hero.freeForSeekers')}</p>
+              <p className="text-sm text-neutral-400 mt-1">{t('home.stats.jobSeekersAccess')}</p>
             </div>
             <div>
               <div className="flex items-center justify-center gap-2 mb-1">
@@ -371,7 +315,7 @@ export default function HomePage() {
             {CITIES.map((city) => (
               <Link
                 key={city.name}
-                href={`/jobs?location=${encodeURIComponent(city.name)}`}
+                href={city.slug ? `/jobs-in/${city.slug}` : '/jobs?remote=1'}
                 className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-primary-600/40 rounded-full text-sm text-neutral-300 hover:text-white transition-all"
               >
                 <span>{city.emoji}</span>
@@ -382,30 +326,77 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── TRUST SIGNALS ────────────────────────────────────────────────── */}
+      {/* ── WHY JOBLINCA — Feature Highlights ──────────────────────────── */}
+      {/* Sponsored opportunities and partners */}
+      <SponsoredHomeFeed />
+
+      {/* Why Joblinca */}
+      <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-900">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-xs sm:text-sm text-primary-400 uppercase tracking-widest mb-3 font-medium">
+              {t('home.features.label')}
+            </p>
+            <h2 className="text-2xl sm:text-3xl font-bold mb-4">{t('home.features.title')}</h2>
+            <p className="text-neutral-400 max-w-xl mx-auto">{t('home.features.subtitle')}</p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[
+              { icon: MessageSquare, color: 'primary', key: 'messaging' },
+              { icon: Star, color: 'yellow', key: 'reviews' },
+              { icon: DollarSign, color: 'green', key: 'salary' },
+              { icon: Heart, color: 'red', key: 'referrals' },
+              { icon: Award, color: 'accent', key: 'assessments' },
+              { icon: Code2, color: 'blue', key: 'api' },
+            ].map((feat) => {
+              const colorMap: Record<string, { bg: string; border: string; icon: string }> = {
+                primary: { bg: 'bg-primary-600/10', border: 'border-primary-600/20', icon: 'text-primary-400' },
+                yellow: { bg: 'bg-yellow-500/10', border: 'border-yellow-500/20', icon: 'text-yellow-400' },
+                green: { bg: 'bg-green-500/10', border: 'border-green-500/20', icon: 'text-green-400' },
+                red: { bg: 'bg-red-500/10', border: 'border-red-500/20', icon: 'text-red-400' },
+                accent: { bg: 'bg-accent-500/10', border: 'border-accent-500/20', icon: 'text-accent-400' },
+                blue: { bg: 'bg-blue-500/10', border: 'border-blue-500/20', icon: 'text-blue-400' },
+              };
+              const c = colorMap[feat.color];
+              return (
+                <div
+                  key={feat.key}
+                  className="bg-neutral-800/40 border border-neutral-700/50 rounded-xl p-6 hover:border-neutral-600 transition-colors group"
+                >
+                  <div className={`w-12 h-12 rounded-xl ${c.bg} border ${c.border} flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
+                    <feat.icon className={`w-6 h-6 ${c.icon}`} />
+                  </div>
+                  <h3 className="text-lg font-semibold mb-2">{t(`home.features.${feat.key}.title`)}</h3>
+                  <p className="text-neutral-400 text-sm leading-relaxed">{t(`home.features.${feat.key}.desc`)}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+
+      {/* ── PAYMENT PARTNERS ──────────────────────────────────────────────── */}
       <section className="py-8 sm:py-10 px-4 sm:px-6 bg-neutral-900/40 border-y border-neutral-800/40">
         <div className="max-w-5xl mx-auto">
           <p className="text-neutral-500 text-xs uppercase tracking-widest text-center mb-6">
-            {t('home.trust.title')}
+            {t('home.trust.paymentPartners')}
           </p>
           <div className="flex flex-wrap justify-center items-center gap-10 sm:gap-16">
             <Image
               src="/partners/mtn.png"
-              alt="MTN Cameroon"
+              alt="MTN Mobile Money"
               width={70}
               height={35}
-              className="object-contain opacity-40 hover:opacity-70 transition-opacity"
+              className="object-contain opacity-50 hover:opacity-80 transition-opacity"
             />
             <Image
               src="/partners/orange.png"
-              alt="Orange Cameroon"
+              alt="Orange Money"
               width={70}
               height={40}
-              className="object-contain opacity-40 hover:opacity-70 transition-opacity"
+              className="object-contain opacity-50 hover:opacity-80 transition-opacity"
             />
-            <span className="text-neutral-600 font-semibold text-sm opacity-60 hover:opacity-90 transition-opacity">JobGenius</span>
-            <span className="text-neutral-600 font-semibold text-sm opacity-60 hover:opacity-90 transition-opacity">TechHub Africa</span>
-            <span className="text-neutral-600 font-semibold text-sm opacity-60 hover:opacity-90 transition-opacity">ESSEC Douala</span>
           </div>
         </div>
       </section>
@@ -549,14 +540,14 @@ export default function HomePage() {
               {jobs.map((job) => (
                 <Link
                   key={job.id}
-                  href={job.isSample ? '/auth/register?role=candidate' : `/jobs/${job.id}`}
+                  href={`/jobs/${job.id}`}
                   className="group bg-neutral-900/50 border border-neutral-800 rounded-xl p-5 sm:p-6 hover:border-primary-600/50 hover:bg-neutral-800/50 transition-all"
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center">
                       <Briefcase className="w-6 h-6 text-primary-400" />
                     </div>
-                    {(job.is_remote || job.work_type === 'remote') && (
+                    {job.work_type === 'remote' && (
                       <span className="px-2.5 py-1 text-xs font-medium bg-green-500/10 text-green-400 rounded-full">
                         {t('home.featured.remote')}
                       </span>
@@ -584,7 +575,7 @@ export default function HomePage() {
                   </div>
                   <div className="mt-4 pt-4 border-t border-neutral-800">
                     <span className="text-primary-400 text-sm font-medium group-hover:underline">
-                      {job.isSample ? t('home.featured.signUpToApply') : t('home.featured.viewDetails')}
+                      {t('home.featured.viewDetails')}
                     </span>
                   </div>
                 </Link>
@@ -735,13 +726,38 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── SALARY INSIGHTS TEASER ─────────────────────────────────────── */}
+      <section className="py-14 sm:py-16 px-4 sm:px-6 bg-neutral-950">
+        <div className="max-w-4xl mx-auto">
+          <div className="relative bg-gradient-to-br from-green-600/10 via-emerald-600/5 to-transparent border border-green-600/20 rounded-2xl p-6 sm:p-8 overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-green-500/5 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col sm:flex-row items-center gap-6">
+              <div className="w-16 h-16 rounded-2xl bg-green-500/15 border border-green-500/25 flex items-center justify-center flex-shrink-0">
+                <BarChart3 className="w-8 h-8 text-green-400" />
+              </div>
+              <div className="flex-1 text-center sm:text-left">
+                <h3 className="text-xl font-bold mb-1">{t('home.salaryTeaser.title')}</h3>
+                <p className="text-neutral-400 text-sm">{t('home.salaryTeaser.desc')}</p>
+              </div>
+              <Link
+                href="/salary-insights"
+                className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-green-600/25 whitespace-nowrap"
+              >
+                {t('home.salaryTeaser.cta')}
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* ── FINAL CTA ────────────────────────────────────────────────────── */}
       <section className="py-20 sm:py-24 px-4 sm:px-6 bg-neutral-950 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary-600/5 via-transparent to-accent-500/5 pointer-events-none" />
         <div className="relative z-10 max-w-3xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-neutral-800/70 border border-neutral-700/50 text-sm text-neutral-300 mb-6">
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span>Open to all Cameroonians — Anywhere in the world</span>
+            <span>{t('home.finalCta.badge')}</span>
           </div>
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-6 leading-tight">
             {t('home.finalCta.title')}
@@ -799,6 +815,8 @@ export default function HomePage() {
                 <li><Link href="/jobs" className="text-neutral-400 hover:text-white transition-colors">{t('footer.browseJobs')}</Link></li>
                 <li><Link href="/resume" className="text-neutral-400 hover:text-white transition-colors">{t('footer.cvBuilder')}</Link></li>
                 <li><Link href="/remote-jobs" className="text-neutral-400 hover:text-white transition-colors">{t('footer.remoteJobs')}</Link></li>
+                <li><Link href="/salary-insights" className="text-neutral-400 hover:text-white transition-colors">{t('footer.salaryInsights')}</Link></li>
+                <li><Link href="/companies" className="text-neutral-400 hover:text-white transition-colors">{t('footer.companies')}</Link></li>
                 <li><Link href="/auth/register?role=candidate" className="text-neutral-400 hover:text-white transition-colors">{t('footer.createAccount')}</Link></li>
               </ul>
             </div>

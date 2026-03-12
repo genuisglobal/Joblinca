@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
+import { checkAdminStatus } from '@/lib/admin';
 import {
   LEGACY_APPLICATION_STATUSES,
   isLegacyApplicationStatus,
@@ -15,6 +16,7 @@ export async function POST(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const { isAdmin } = await checkAdminStatus();
 
   if (!user) {
     return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
@@ -46,9 +48,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Filter to only applications the user owns
-  const ownedApplications = applications?.filter(
-    (app) => (app.jobs as any)?.recruiter_id === user.id
-  ) || [];
+  const ownedApplications =
+    isAdmin
+      ? applications || []
+      : applications?.filter((app) => (app.jobs as any)?.recruiter_id === user.id) || [];
 
   if (ownedApplications.length === 0) {
     return NextResponse.json({ error: 'No authorized applications found' }, { status: 403 });

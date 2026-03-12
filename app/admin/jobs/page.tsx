@@ -11,6 +11,7 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
   const supabase = createServerSupabaseClient();
   const status = params.status || 'all';
   const listing = params.listing || 'all';
+  const search = params.search || '';
 
   // Build query based on status filter
   let query = supabase
@@ -46,6 +47,12 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
     query = query.eq('published', true);
   } else if (listing === 'unpublished') {
     query = query.eq('published', false);
+  }
+
+  if (search) {
+    query = query.or(
+      `title.ilike.%${search}%,company_name.ilike.%${search}%,location.ilike.%${search}%`
+    );
   }
 
   const { data: rawJobs, error } = await query;
@@ -90,6 +97,7 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
 
     if (nextStatus !== 'all') query.set('status', nextStatus);
     if (nextListing !== 'all') query.set('listing', nextListing);
+    if (search) query.set('search', search);
 
     const serialized = query.toString();
     return serialized ? `/admin/jobs?${serialized}` : '/admin/jobs';
@@ -112,6 +120,28 @@ export default async function AdminJobsPage({ searchParams }: PageProps) {
           Post Job
         </Link>
       </div>
+
+      <form className="mb-6">
+        <div className="relative max-w-xl">
+          <input
+            type="text"
+            name="search"
+            defaultValue={search}
+            placeholder="Search by title, company, or location..."
+            className="w-full px-4 py-2 pl-10 bg-gray-800 text-white border border-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          {status !== 'all' && <input type="hidden" name="status" value={status} />}
+          {listing !== 'all' && <input type="hidden" name="listing" value={listing} />}
+          <svg
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+      </form>
 
       {/* Status Tabs */}
       <div className="flex gap-2 mb-6">

@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveApplicationPayload } from '@/lib/applications/server';
+import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
 
 type QuestionAnswer = {
   questionId: string;
@@ -127,16 +128,14 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (!resolved.data.job.published) {
-    return NextResponse.json(
-      { error: 'This job is not accepting applications' },
-      { status: 400 }
-    );
-  }
-
   if (
-    resolved.data.job.approval_status &&
-    resolved.data.job.approval_status !== 'approved'
+    !isJobAcceptingApplications({
+      published: resolved.data.job.published,
+      approval_status: resolved.data.job.approval_status,
+      lifecycle_status: resolved.data.job.lifecycle_status,
+      closes_at: resolved.data.job.closes_at,
+      removed_at: resolved.data.job.removed_at,
+    })
   ) {
     return NextResponse.json(
       { error: 'This job is not accepting applications' },

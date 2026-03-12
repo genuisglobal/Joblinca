@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { isJobAcceptingApplications, isJobPubliclyVisible } from '@/lib/jobs/lifecycle';
 import SavedJobCard from './SavedJobCard';
 
 export default async function SavedJobsPage() {
@@ -31,7 +32,9 @@ export default async function SavedJobsPage() {
         salary_currency,
         published,
         approval_status,
+        lifecycle_status,
         closes_at,
+        removed_at,
         created_at
       )
     `)
@@ -100,8 +103,8 @@ export default async function SavedJobsPage() {
             if (!job) return null;
 
             const hasApplied = appliedJobIds.has(job.id);
-            const isClosed = job.closes_at && new Date(job.closes_at) < new Date();
-            const isAvailable = job.published && job.approval_status === 'approved' && !isClosed;
+            const isAvailable = isJobAcceptingApplications(job);
+            const isClosed = isJobPubliclyVisible(job) && !isAvailable;
 
             return (
               <SavedJobCard

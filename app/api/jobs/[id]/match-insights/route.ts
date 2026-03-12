@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
-
-const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 
 interface RouteContext {
   params: {

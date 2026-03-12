@@ -129,8 +129,9 @@ export async function ensureLeadMonthlyReset(lead: WaLeadRow): Promise<WaLeadRow
 }
 
 export async function resolveWebsiteUserByPhone(phone: string): Promise<string | null> {
-  // WhatsApp account linking must be strict to avoid mis-linking the wrong profile.
-  return resolveProfileIdByPhone(leadDb, phone, { allowFuzzy: false });
+  // Try exact match first, then fall back to fuzzy matching (score >= 85 = last-8-digit match).
+  // Fuzzy matching is safe for Cameroon numbers and handles format mismatches (spaces, leading-zero, etc.).
+  return resolveProfileIdByPhone(leadDb, phone, { allowFuzzy: true });
 }
 
 export async function syncLeadUserLink(lead: WaLeadRow, linkedUserId: string | null): Promise<WaLeadRow> {
