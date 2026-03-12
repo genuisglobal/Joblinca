@@ -37,6 +37,7 @@ export default async function AdminLayout({
           </div>
           <NavLink href="/admin/jobs" icon={<BriefcaseIcon />} label="Jobs" />
           <NavLink href="/admin/verifications" icon={<ShieldCheckIcon />} label="Verifications" />
+          <NavLink href="/admin/reports" icon={<FlagIcon />} label="Reports" />
           <NavLink href="/admin/users" icon={<UsersIcon />} label="Users" />
           <NavLink href="/admin/recruiters" icon={<BuildingIcon />} label="Recruiters" />
           <NavLink href="/admin/applications" icon={<DocumentIcon />} label="Applications" />
@@ -46,6 +47,7 @@ export default async function AdminLayout({
           </div>
           <NavLink href="/admin/payments" icon={<CreditCardIcon />} label="Payments" />
           <NavLink href="/admin/promo-codes" icon={<TagIcon />} label="Promo Codes" />
+          <NavLink href="/admin/sponsorships" icon={<MegaphoneIcon />} label="Sponsorships" />
 
           {adminType === 'super' && (
             <>
@@ -170,10 +172,31 @@ function ClipboardIcon() {
   );
 }
 
+function FlagIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+    </svg>
+  );
+}
+
 function TagIcon() {
   return (
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+    </svg>
+  );
+}
+
+function MegaphoneIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M11 5.882A1 1 0 0112.447 5L20 9v6l-7.553 4A1 1 0 0111 18.118V5.882zM5 10h6v4H5a2 2 0 110-4zm1 4l1.5 4"
+      />
     </svg>
   );
 }

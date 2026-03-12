@@ -102,6 +102,33 @@ export default function JobsTable({ jobs }: JobsTableProps) {
     }
   };
 
+  const handleDelete = async (jobId: string, title: string) => {
+    const confirmed = window.confirm(
+      `Delete "${title}" and all related applications and scheduling data? This cannot be undone.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setActionLoading(jobId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/jobs/${jobId}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || 'Failed to delete job');
+      }
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const getPostedByName = (job: Job) => {
     if (job.profiles) {
       const { first_name, last_name, full_name, email } = job.profiles;
@@ -224,6 +251,13 @@ export default function JobsTable({ jobs }: JobsTableProps) {
                         : job.published
                           ? 'Unpublish'
                           : 'Publish'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(job.id, job.title)}
+                      disabled={actionLoading === job.id}
+                      className="px-3 py-1 text-sm bg-red-700 text-white rounded hover:bg-red-800 transition-colors disabled:opacity-50"
+                    >
+                      {actionLoading === job.id ? '...' : 'Delete'}
                     </button>
                   </div>
                 </td>

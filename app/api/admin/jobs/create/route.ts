@@ -4,6 +4,7 @@ import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 import { validateOpportunityConfiguration } from '@/lib/opportunities';
 import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
+import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 
 export async function POST(request: Request) {
   try {
@@ -21,6 +22,8 @@ export async function POST(request: Request) {
       visibility,
       applyIntakeMode,
       description,
+      closesAt,
+      targetHireDate,
       autoApprove = true,
       published = true,
       customQuestions,
@@ -37,6 +40,26 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    let normalizedClosesAt: string | null = null;
+    if (typeof closesAt === 'string' && closesAt.trim()) {
+      const parsed = new Date(closesAt);
+      if (Number.isNaN(parsed.getTime())) {
+        return NextResponse.json({ error: 'Application deadline is invalid' }, { status: 400 });
+      }
+      if (parsed.getTime() <= Date.now()) {
+        return NextResponse.json(
+          { error: 'Application deadline must be in the future' },
+          { status: 400 }
+        );
+      }
+      normalizedClosesAt = parsed.toISOString();
+    }
+
+    const normalizedTargetHireDate =
+      typeof targetHireDate === 'string' && targetHireDate.trim().length > 0
+        ? targetHireDate.trim()
+        : null;
 
     const opportunityValidation = validateOpportunityConfiguration({
       jobType,
@@ -125,6 +148,8 @@ export async function POST(request: Request) {
         eligible_roles: opportunityValidation.normalized.eligibleRoles,
         apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
         custom_questions: customQuestions || null,
+        closes_at: normalizedClosesAt,
+        target_hire_date: normalizedTargetHireDate,
         published: autoApprove ? published : false,
         approval_status: autoApprove ? 'approved' : 'pending',
         approved_at: autoApprove ? new Date().toISOString() : null,
@@ -154,10 +179,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      job.published === true &&
-      (job.approval_status === 'approved' || job.approval_status === null)
-    ) {
+    if (isJobPubliclyListable(job)) {
       try {
         await dispatchJobMatchNotifications({
           jobId: job.id,

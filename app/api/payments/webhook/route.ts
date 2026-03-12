@@ -4,12 +4,51 @@ import {
   finalizeFailedPayment,
   finalizeSuccessfulPayment,
 } from '@/lib/payments/finalize';
+import { createHmac } from 'crypto';
+import { rateLimit, getRateLimitIdentifier } from '@/lib/rate-limit';
+
+/**
+ * Verify the webhook signature from PayUnit.
+ *
+ * PayUnit signs webhook payloads using HMAC-SHA256 with the shared secret.
+ * The signature is sent in the `x-payunit-signature` header.
+ *
+ * If PAYUNIT_WEBHOOK_SECRET is not configured, ALL requests are rejected
+ * (fail-closed security posture).
+ */
+function verifyPayunitSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+  secret: string
+): boolean {
+  if (!signatureHeader) return false;
+
+  const expectedSignature = createHmac('sha256', secret)
+    .update(rawBody, 'utf8')
+    .digest('hex');
+
+  // Constant-time comparison to prevent timing attacks
+  const sigBuffer = Buffer.from(signatureHeader, 'hex');
+  const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+
+  if (sigBuffer.length !== expectedBuffer.length) return false;
+
+  let mismatch = 0;
+  for (let i = 0; i < sigBuffer.length; i++) {
+    mismatch |= sigBuffer[i] ^ expectedBuffer[i];
+  }
+  return mismatch === 0;
+}
 
 /**
  * POST /api/payments/webhook
  *
  * Payunit calls this endpoint when a payment status changes.
  * The payload includes: data.transaction_id, data.transaction_status, etc.
+ *
+ * Security:
+ *   - Request signature is verified using HMAC-SHA256 (PAYUNIT_WEBHOOK_SECRET)
+ *   - Idempotent: duplicate webhook deliveries are handled gracefully
  *
  * On SUCCESSFUL payment:
  *   - Update transaction status to completed
@@ -23,7 +62,35 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // ── Rate limit: 60 webhook calls per minute per IP ──────────────────
+    const webhookLimit = await rateLimit(
+      `webhook:${getRateLimitIdentifier(request)}`,
+      { requests: 60, window: '1m' }
+    );
+    if (!webhookLimit.allowed) return webhookLimit.response!;
+
+    // ── Signature verification ──────────────────────────────────────────
+    const webhookSecret = (process.env.PAYUNIT_WEBHOOK_SECRET || '').trim();
+    if (!webhookSecret) {
+      console.error('[payments/webhook] PAYUNIT_WEBHOOK_SECRET is not configured — rejecting');
+      return NextResponse.json(
+        { error: 'Webhook secret not configured' },
+        { status: 500 }
+      );
+    }
+
+    const rawBody = await request.text();
+    const signature = request.headers.get('x-payunit-signature');
+
+    if (!verifyPayunitSignature(rawBody, signature, webhookSecret)) {
+      console.warn('[payments/webhook] Invalid signature — rejecting request');
+      return NextResponse.json(
+        { error: 'Invalid signature' },
+        { status: 401 }
+      );
+    }
+
+    const body = JSON.parse(rawBody);
     const data = (body?.data || {}) as Record<string, unknown>;
     const payunitStatus = (
       (data.transaction_status as string) ||
@@ -42,26 +109,29 @@ export async function POST(request: NextRequest) {
 
     // Find the transaction by provider_reference or internal transaction ID
     let transactionId: string | null = null;
+    let currentStatus: string | null = null;
 
     if (payunitTransactionId) {
       const { data: txByRef } = await supabase
         .from('transactions')
-        .select('id')
+        .select('id, status')
         .eq('provider_reference', payunitTransactionId)
         .maybeSingle();
       if (txByRef?.id) {
         transactionId = txByRef.id;
+        currentStatus = txByRef.status;
       }
     }
 
     if (!transactionId && payunitTransactionId) {
       const { data: txById } = await supabase
         .from('transactions')
-        .select('id')
+        .select('id, status')
         .eq('id', payunitTransactionId)
         .maybeSingle();
       if (txById?.id) {
         transactionId = txById.id;
+        currentStatus = txById.status;
       }
     }
 
@@ -69,6 +139,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Transaction not found' },
         { status: 404 }
+      );
+    }
+
+    // ── Idempotency: skip if transaction is already in a terminal state ──
+    if (currentStatus === 'completed' || currentStatus === 'failed') {
+      return NextResponse.json(
+        { message: `Transaction already ${currentStatus} — skipping` },
+        { status: 200 }
       );
     }
 

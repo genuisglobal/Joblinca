@@ -20,6 +20,7 @@ import {
   type JobInterviewSelfScheduleSettings,
 } from '@/lib/interview-scheduling/self-schedule';
 import { describeEligibleRoles, getOpportunityTypeLabel } from '@/lib/opportunities';
+import { getJobManagementStatus } from '@/lib/jobs/lifecycle';
 
 interface Job {
   id: string;
@@ -37,8 +38,20 @@ interface Job {
   rejection_reason: string | null;
   description: string | null;
   custom_questions: unknown[] | null;
+  lifecycle_status: string | null;
+  closed_at: string | null;
+  closed_reason: string | null;
+  archived_at: string | null;
+  filled_at: string | null;
+  closes_at: string | null;
+  target_hire_date: string | null;
+  retention_expires_at: string | null;
+  reopen_count: number | null;
+  last_reopened_at: string | null;
   created_at: string;
 }
+
+type LifecycleAction = 'hold' | 'fill' | 'reopen' | 'repost';
 
 interface Profile {
   id: string;
@@ -92,6 +105,38 @@ function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null;
 }
 
+function toDateInputValue(value: string | null | undefined): string {
+  if (!value) {
+    return '';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return '';
+  }
+
+  return parsed.toISOString().split('T')[0];
+}
+
+function futureDateInputValue(daysAhead = 14): string {
+  const next = new Date();
+  next.setDate(next.getDate() + daysAhead);
+  return next.toISOString().split('T')[0];
+}
+
+function defaultDeadlineInputValue(value: string | null | undefined): string {
+  if (!value) {
+    return futureDateInputValue();
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+    return futureDateInputValue();
+  }
+
+  return parsed.toISOString().split('T')[0];
+}
+
 export default function RecruiterJobDetailPage({
   params,
 }: {
@@ -115,7 +160,17 @@ export default function RecruiterJobDetailPage({
       DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS
     );
   const [savingSelfSchedule, setSavingSelfSchedule] = useState(false);
+  const [lifecycleAction, setLifecycleAction] = useState<LifecycleAction | null>(null);
+  const [lifecycleMessage, setLifecycleMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+  const [lifecycleForm, setLifecycleForm] = useState({
+    closesAt: futureDateInputValue(),
+    targetHireDate: '',
+  });
   const showCreatedNotice = searchParams.get('created') === '1';
+  const showRepostedNotice = searchParams.get('reposted') === '1';
 
   useEffect(() => {
     let mounted = true;
@@ -250,6 +305,17 @@ export default function RecruiterJobDetailPage({
     };
   }, [supabase, router, params.id]);
 
+  useEffect(() => {
+    if (!job) {
+      return;
+    }
+
+    setLifecycleForm({
+      closesAt: defaultDeadlineInputValue(job.closes_at),
+      targetHireDate: toDateInputValue(job.target_hire_date),
+    });
+  }, [job]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -265,6 +331,7 @@ export default function RecruiterJobDetailPage({
     return null;
   }
 
+  const managementStatus = getJobManagementStatus(job);
   const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
   const eligibleRoleSummary = describeEligibleRoles(
     job.eligible_roles,
@@ -272,6 +339,119 @@ export default function RecruiterJobDetailPage({
     job.internship_track,
     job.visibility
   );
+  const todayInputValue = new Date().toISOString().split('T')[0];
+  const canPutOnHold =
+    managementStatus === 'live' || managementStatus === 'closed_reviewing';
+  const canMarkFilled =
+    managementStatus === 'live' ||
+    managementStatus === 'closed_reviewing' ||
+    managementStatus === 'on_hold';
+  const canReopen =
+    managementStatus === 'closed_reviewing' || managementStatus === 'on_hold';
+  const canRepost =
+    managementStatus === 'closed_reviewing' ||
+    managementStatus === 'on_hold' ||
+    managementStatus === 'filled' ||
+    managementStatus === 'archived';
+  const lastReopenedLabel = job.last_reopened_at
+    ? new Date(job.last_reopened_at).toLocaleDateString()
+    : 'Never';
+  const retentionExpiryLabel = job.retention_expires_at
+    ? new Date(job.retention_expires_at).toLocaleDateString()
+    : null;
+
+  const submitLifecycleAction = async (action: LifecycleAction) => {
+    if (lifecycleAction) {
+      return;
+    }
+
+    if (action === 'reopen' || action === 'repost') {
+      if (!lifecycleForm.closesAt) {
+        setLifecycleMessage({
+          type: 'error',
+          text: 'Set a new future application deadline before reopening or reposting this job.',
+        });
+        return;
+      }
+    }
+
+    if (
+      action === 'hold' &&
+      !window.confirm('Put this job on hold and hide it from public listings?')
+    ) {
+      return;
+    }
+
+    if (
+      action === 'fill' &&
+      !window.confirm('Mark this job as filled and stop taking new applications?')
+    ) {
+      return;
+    }
+
+    if (
+      action === 'repost' &&
+      !window.confirm('Create a new reposted listing using this job as the source?')
+    ) {
+      return;
+    }
+
+    setLifecycleAction(action);
+    setLifecycleMessage(null);
+
+    const payload: Record<string, string> = {};
+    if (action === 'reopen' || action === 'repost') {
+      payload.closesAt = lifecycleForm.closesAt;
+    }
+    if (
+      (action === 'reopen' || action === 'repost' || action === 'fill') &&
+      lifecycleForm.targetHireDate
+    ) {
+      payload.targetHireDate = lifecycleForm.targetHireDate;
+    }
+
+    try {
+      const response = await fetch(`/api/jobs/${params.id}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: Object.keys(payload).length > 0 ? JSON.stringify(payload) : undefined,
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to update job lifecycle.');
+      }
+
+      if (action === 'repost' && result?.id) {
+        router.push(`/dashboard/recruiter/jobs/${result.id}?reposted=1`);
+        return;
+      }
+
+      if (result?.job) {
+        setJob(result.job as Job);
+      }
+
+      setLifecycleMessage({
+        type: 'success',
+        text:
+          action === 'hold'
+            ? 'Job is now on hold.'
+            : action === 'fill'
+              ? 'Job marked as filled.'
+              : 'Job updated successfully.',
+      });
+    } catch (error) {
+      setLifecycleMessage({
+        type: 'error',
+        text:
+          error instanceof Error
+            ? error.message
+            : 'Failed to update job lifecycle.',
+      });
+    } finally {
+      setLifecycleAction(null);
+    }
+  };
 
   const handlePipelineSave = async (payload: {
     name: string;
@@ -418,7 +598,7 @@ export default function RecruiterJobDetailPage({
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <StatusBadge status={job.approval_status || (job.published ? 'published' : 'pending')} />
+          <StatusBadge status={managementStatus} />
           <Link
             href={`/jobs/${job.id}/edit`}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -469,6 +649,22 @@ export default function RecruiterJobDetailPage({
         </div>
       )}
 
+      {showRepostedNotice && (
+        <div className="bg-blue-900/20 border border-blue-700/50 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-blue-400 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-blue-400">Job Reposted</h3>
+              <p className="text-gray-300 mt-1">
+                A fresh listing has been created from your previous job. Review the new deadline and lifecycle state below.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pending Approval Notice */}
       {job.approval_status === 'pending' && (
         <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-xl p-4">
@@ -483,6 +679,182 @@ export default function RecruiterJobDetailPage({
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {managementStatus === 'closed_reviewing' && (
+        <div className="bg-amber-900/20 border border-amber-700/50 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-amber-300 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-amber-300">Applications Closed</h3>
+              <p className="text-gray-300 mt-1">
+                This job is no longer taking new applications, but you can keep reviewing candidates or reopen it with a new deadline.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {managementStatus === 'on_hold' && (
+        <div className="bg-slate-800 border border-slate-600 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-slate-300 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m5-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-slate-200">Job On Hold</h3>
+              <p className="text-gray-300 mt-1">
+                This job is hidden from public listings. Reopen it with a new deadline when hiring resumes.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {managementStatus === 'filled' && (
+        <div className="bg-emerald-900/20 border border-emerald-700/50 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-emerald-300 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-emerald-300">Job Filled</h3>
+              <p className="text-gray-300 mt-1">
+                Hiring is complete for this listing. It will stay in retention until it is archived{retentionExpiryLabel ? ` on ${retentionExpiryLabel}` : ''}.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {managementStatus === 'archived' && (
+        <div className="bg-stone-800 border border-stone-600 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <svg className="w-5 h-5 text-stone-300 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 12h14M5 16h14" />
+            </svg>
+            <div>
+              <h3 className="font-medium text-stone-200">Job Archived</h3>
+              <p className="text-gray-300 mt-1">
+                This listing is now historical. Repost it to create a new active opening.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(canPutOnHold || canMarkFilled || canReopen || canRepost) && (
+        <div className="bg-gray-800 rounded-xl p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Lifecycle Actions</h2>
+              <p className="text-sm text-gray-400 mt-1">
+                Control whether this job is live, on hold, filled, or reposted as a new listing.
+              </p>
+            </div>
+            <StatusBadge status={managementStatus} />
+          </div>
+
+          {lifecycleMessage && (
+            <div
+              className={`mt-4 rounded-lg border px-4 py-3 text-sm ${
+                lifecycleMessage.type === 'success'
+                  ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-200'
+                  : 'border-red-700/50 bg-red-900/20 text-red-200'
+              }`}
+            >
+              {lifecycleMessage.text}
+            </div>
+          )}
+
+          {(canReopen || canRepost || canMarkFilled) && (
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="block">
+                <span className="text-sm font-medium text-gray-300">Next Application Deadline</span>
+                <input
+                  type="date"
+                  value={lifecycleForm.closesAt}
+                  onChange={(event) =>
+                    setLifecycleForm((current) => ({
+                      ...current,
+                      closesAt: event.target.value,
+                    }))
+                  }
+                  min={todayInputValue}
+                  className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring"
+                />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-gray-300">Target Hire Date</span>
+                <input
+                  type="date"
+                  value={lifecycleForm.targetHireDate}
+                  onChange={(event) =>
+                    setLifecycleForm((current) => ({
+                      ...current,
+                      targetHireDate: event.target.value,
+                    }))
+                  }
+                  min={todayInputValue}
+                  className="mt-1 w-full rounded-lg border border-gray-600 bg-gray-900 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring"
+                />
+              </label>
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            {canPutOnHold && (
+              <button
+                type="button"
+                onClick={() => void submitLifecycleAction('hold')}
+                disabled={lifecycleAction !== null}
+                className="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+              >
+                {lifecycleAction === 'hold' ? 'Putting On Hold...' : 'Put On Hold'}
+              </button>
+            )}
+
+            {canMarkFilled && (
+              <button
+                type="button"
+                onClick={() => void submitLifecycleAction('fill')}
+                disabled={lifecycleAction !== null}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+              >
+                {lifecycleAction === 'fill' ? 'Marking Filled...' : 'Mark Filled'}
+              </button>
+            )}
+
+            {canReopen && (
+              <button
+                type="button"
+                onClick={() => void submitLifecycleAction('reopen')}
+                disabled={lifecycleAction !== null}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+              >
+                {lifecycleAction === 'reopen' ? 'Reopening...' : 'Reopen Job'}
+              </button>
+            )}
+
+            {canRepost && (
+              <button
+                type="button"
+                onClick={() => void submitLifecycleAction('repost')}
+                disabled={lifecycleAction !== null}
+                className="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
+              >
+                {lifecycleAction === 'repost' ? 'Reposting...' : 'Repost as New Job'}
+              </button>
+            )}
+          </div>
+
+          <p className="mt-3 text-xs text-gray-500">
+            Reopen reuses this listing with a new deadline. Repost creates a new listing and keeps the old one as history.
+          </p>
         </div>
       )}
 
@@ -525,6 +897,36 @@ export default function RecruiterJobDetailPage({
           <div>
             <p className="text-sm text-gray-400">Eligible Profiles</p>
             <p className="text-white">{eligibleRoleSummary}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-400">Application Deadline</p>
+            <p className="text-white">
+              {job.closes_at ? new Date(job.closes_at).toLocaleDateString() : 'Open until manually closed'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-400">Target Hire Date</p>
+            <p className="text-white">
+              {job.target_hire_date
+                ? new Date(job.target_hire_date).toLocaleDateString()
+                : 'Not set'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-400">Reopened</p>
+            <p className="text-white">
+              {job.reopen_count && job.reopen_count > 0
+                ? `${job.reopen_count} time${job.reopen_count === 1 ? '' : 's'}`
+                : 'Never'}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-400">Last Reopened</p>
+            <p className="text-white">{lastReopenedLabel}</p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-400">Retention Ends</p>
+            <p className="text-white">{retentionExpiryLabel || 'Not scheduled'}</p>
           </div>
         </div>
         <div className="mt-6">

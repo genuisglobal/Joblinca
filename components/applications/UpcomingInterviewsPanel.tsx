@@ -80,16 +80,35 @@ export default function UpcomingInterviewsPanel({
               {interview.location && (
                 <p className="mt-2 text-sm text-gray-400">Location: {interview.location}</p>
               )}
-              {interview.meetingUrl && (
-                <a
-                  href={interview.meetingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-2 inline-flex text-sm text-blue-400 hover:text-blue-300"
-                >
-                  Open meeting link
-                </a>
-              )}
+              {interview.meetingUrl && (() => {
+                const diff = new Date(interview.scheduledAt).getTime() - Date.now();
+                const isImminentOrLive = diff < 30 * 60 * 1000 && diff > -2 * 60 * 60 * 1000;
+                return isImminentOrLive ? (
+                  <a
+                    href={interview.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-500 transition-colors"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Join Meeting Now
+                  </a>
+                ) : (
+                  <a
+                    href={interview.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-flex items-center gap-1.5 text-sm text-blue-400 hover:text-blue-300"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    Meeting link available
+                  </a>
+                );
+              })()}
               <InterviewCalendarActions
                 interviewId={interview.id}
                 scheduledAt={interview.scheduledAt}

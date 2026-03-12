@@ -42,6 +42,7 @@ export async function POST(
     let updatedDecisionStatus = decisionStatus;
     let currentStage = application.currentStage;
     let legacyStatus = application.status;
+    let candidateNotification = null;
 
     if (decisionStatus === 'hired' || decisionStatus === 'rejected') {
       const transition = await moveApplicationToLegacyStatus({
@@ -63,6 +64,7 @@ export async function POST(
         allowsFeedback: transition.toStage.allows_feedback,
       };
       legacyStatus = transition.legacyStatus;
+      candidateNotification = transition.candidateNotification;
     } else if (
       decisionStatus === 'active' &&
       (application.currentStage?.stageType === 'hire' ||
@@ -87,6 +89,7 @@ export async function POST(
         allowsFeedback: transition.toStage.allows_feedback,
       };
       legacyStatus = transition.legacyStatus;
+      candidateNotification = transition.candidateNotification;
     }
 
     const updatePayload: Record<string, unknown> = {
@@ -140,6 +143,7 @@ export async function POST(
       currentStage,
       decisionStatus: updatedDecisionStatus,
       legacyStatus,
+      candidateNotification,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to record decision';

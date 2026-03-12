@@ -5,6 +5,7 @@ import { linkConversationToUser } from '@/lib/whatsapp-db';
 import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { getUserSubscription } from '@/lib/subscriptions';
 import { resolveProfileIdByPhone } from '@/lib/phone-match';
+import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
 import {
   formatRecruiterSummaryText,
   generateOptionalFollowUpQuestion,
@@ -118,7 +119,9 @@ interface JobRow {
   recruiter_id: string;
   published: boolean;
   approval_status: string | null;
+  lifecycle_status: string | null;
   closes_at: string | null;
+  removed_at: string | null;
 }
 
 interface DbErrorLike {
@@ -570,7 +573,9 @@ async function resolveUserIdByPhone(
 async function getJob(jobId: string): Promise<JobRow | null> {
   const { data, error } = await screeningDb
     .from('jobs')
-    .select('id, title, description, recruiter_id, published, approval_status, closes_at')
+    .select(
+      'id, title, description, recruiter_id, published, approval_status, lifecycle_status, closes_at, removed_at'
+    )
     .eq('id', jobId)
     .maybeSingle();
 
@@ -578,9 +583,7 @@ async function getJob(jobId: string): Promise<JobRow | null> {
     return null;
   }
 
-  const isApproved = data.approval_status === 'approved' || data.approval_status === null;
-  const notClosed = !data.closes_at || new Date(data.closes_at) > new Date();
-  if (!data.published || !isApproved || !notClosed) {
+  if (!isJobAcceptingApplications(data)) {
     return null;
   }
 

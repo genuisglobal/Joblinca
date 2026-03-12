@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import { ACTIVE_ADMIN_TYPES, type AdminType } from '@/lib/admin-types';
 import type {
   ApplicationCurrentStage,
   ApplicationStageFeedbackView,
@@ -129,6 +130,26 @@ function toNumber(value: number | string | null | undefined): number {
   return 0;
 }
 
+async function loadAdminTypeForUser(userId: string): Promise<AdminType | null> {
+  const db = createServiceSupabaseClient();
+  const { data, error } = await db
+    .from('profiles')
+    .select('admin_type')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Failed to validate admin access: ${error.message}`);
+  }
+
+  return ((data as { admin_type?: AdminType | null } | null)?.admin_type || null) as AdminType | null;
+}
+
+async function isActiveAdminUser(userId: string): Promise<boolean> {
+  const adminType = await loadAdminTypeForUser(userId);
+  return Boolean(adminType && ACTIVE_ADMIN_TYPES.includes(adminType));
+}
+
 export function mapCurrentStage(
   value:
     | Relation<{
@@ -200,7 +221,7 @@ export async function requireRecruiterOwnedJob(jobId: string, userId: string) {
     throw new Error('Job not found');
   }
 
-  if ((data as JobOwnershipRow).recruiter_id !== userId) {
+  if ((data as JobOwnershipRow).recruiter_id !== userId && !(await isActiveAdminUser(userId))) {
     throw new Error('Not authorized');
   }
 
@@ -246,7 +267,11 @@ export async function requireRecruiterOwnedApplication(applicationId: string, us
   const application = data as ApplicationOwnershipRow;
   const job = normalizeRelation(application.jobs);
 
-  if (!job || job.recruiter_id !== userId) {
+  if (!job) {
+    throw new Error('Application not found');
+  }
+
+  if (job.recruiter_id !== userId && !(await isActiveAdminUser(userId))) {
     throw new Error('Not authorized');
   }
 

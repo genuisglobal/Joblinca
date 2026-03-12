@@ -26,6 +26,9 @@ export async function POST(
         approved_by: userId,
         published: false,
         rejection_reason: reason.trim(),
+        removed_at: new Date().toISOString(),
+        removed_by: userId,
+        removal_reason: reason.trim(),
       })
       .eq('id', jobId)
       .select()

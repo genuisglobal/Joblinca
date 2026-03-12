@@ -12,6 +12,7 @@ import EligibilityBadge from '@/components/applications/EligibilityBadge';
 import RankingExplanation from '@/components/applications/RankingExplanation';
 import RecruiterAnalyticsChart from '@/components/applications/RecruiterAnalyticsChart';
 import SegmentedFunnelComparison from '@/components/applications/SegmentedFunnelComparison';
+import { getJobManagementStatus } from '@/lib/jobs/lifecycle';
 import {
   buildRecruiterAnalyticsTimeline,
   buildRecruiterFunnelTimeline,
@@ -31,6 +32,8 @@ interface Job {
   title: string;
   location: string;
   published: boolean;
+  approval_status: string | null;
+  lifecycle_status: string | null;
   created_at: string;
 }
 
@@ -307,7 +310,7 @@ export default function RecruiterDashboardPage() {
   }, [supabase, router]);
 
   const totalJobs = jobs.length;
-  const publishedJobs = jobs.filter((j) => j.published).length;
+  const publishedJobs = jobs.filter((job) => getJobManagementStatus(job) === 'live').length;
   const totalApplications = applications.length;
   const analyticsInputs = useMemo<RecruiterAnalyticsInput[]>(
     () =>
@@ -564,7 +567,7 @@ export default function RecruiterDashboardPage() {
           }
         />
         <StatsCard
-          title="Published Jobs"
+          title="Live Jobs"
           value={publishedJobs}
           color="green"
           icon={
@@ -959,7 +962,7 @@ export default function RecruiterDashboardPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <StatusBadge
-                    status={job.published ? 'published' : 'pending'}
+                    status={getJobManagementStatus(job)}
                   />
                   <Link
                     href={`/dashboard/recruiter/jobs/${job.id}`}

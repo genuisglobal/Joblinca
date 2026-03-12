@@ -6,6 +6,7 @@ import {
   calculateChargeBreakdown,
   getProcessingFeePercentServer,
 } from '@/lib/payments/fees';
+import { rateLimit, getRateLimitIdentifier } from '@/lib/rate-limit';
 
 /**
  * POST /api/promo-codes/validate
@@ -15,6 +16,13 @@ import {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Rate limit: 5 promo code validations per minute per IP (prevent brute force)
+    const ipLimit = await rateLimit(
+      `promo:${getRateLimitIdentifier(request)}`,
+      { requests: 5, window: '1m' }
+    );
+    if (!ipLimit.allowed) return ipLimit.response!;
+
     const supabase = createServerSupabaseClient();
     const {
       data: { user },

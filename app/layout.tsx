@@ -1,14 +1,43 @@
 import "@/app/globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import dynamic from "next/dynamic";
 import ClientLayout from "@/components/ClientLayout";
 
 // Client-only NavBar (uses Supabase browser client)
 const NavBar = dynamic(() => import("../components/NavBar"), { ssr: false });
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  themeColor: "#0ea5e9",
+};
+
 export const metadata: Metadata = {
-  title: "JobLinca",
-  description: "National-scale hiring platform for Cameroon – connect recruiters and job seekers.",
+  title: {
+    default: "Joblinca — Cameroon's Job Marketplace",
+    template: "%s | Joblinca",
+  },
+  description:
+    "Find jobs, internships, and gigs in Cameroon. Free for job seekers. Post your first job free.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Joblinca",
+  },
+  icons: {
+    icon: "/assets/logo-icon.png",
+    apple: "/assets/logo-icon.png",
+  },
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "Joblinca",
+    title: "Joblinca — Cameroon's Job Marketplace",
+    description:
+      "Find jobs, internships, and gigs in Cameroon. Free for job seekers.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -16,7 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="bg-gray-900 text-gray-100 relative">
         <ClientLayout>
-          <header className="w-full z-50">
+          <header className="sticky top-0 w-full z-50 bg-neutral-950/90 backdrop-blur-lg border-b border-neutral-800/50">
             <NavBar />
           </header>
 

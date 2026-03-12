@@ -17,8 +17,9 @@ import {
 } from '@/lib/internship-posting';
 import { type InternshipTrack } from '@/lib/opportunities';
 
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin-types';
+
 type ApplyMethod = 'joblinca' | 'external_url' | 'email' | 'phone' | 'whatsapp' | 'multiple';
-const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
 
 type RecruiterOption = {
   id: string;
@@ -447,8 +448,13 @@ export default function NewJobPage() {
       <h1 className="text-2xl font-bold mb-4">Post a New {opportunityLabel}</h1>
       {error && <p className="text-red-500 mb-4">{error}</p>}
       {postingMode === 'recruiter' && (
-        <div className="mb-4 rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-4 text-sm text-yellow-200">
-          Recruiter-posted jobs are reviewed before they appear on the public jobs page. After submission, you will be taken to your dashboard while the post is pending approval.
+        <div className="mb-4 space-y-3">
+          <div className="rounded-lg border border-yellow-700/50 bg-yellow-900/20 p-4 text-sm text-yellow-200">
+            Recruiter-posted jobs are reviewed before they appear on the public jobs page. After submission, you will be taken to your dashboard while the post is pending approval.
+          </div>
+          <div className="rounded-lg border border-green-700/50 bg-green-900/20 p-4 text-sm text-green-200">
+            Your first job post is free — no subscription required. After that, activate a recruiter plan to continue posting.
+          </div>
         </div>
       )}
       {postingMode === 'admin' && (

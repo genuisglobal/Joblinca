@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import {
@@ -17,26 +18,29 @@ import {
   resolveOpportunityBrowseFilter,
   type OpportunityBrowseFilter,
 } from '@/lib/opportunities';
+import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import JobSearchBar from './JobSearchBar';
 
 interface Job {
   id: string;
   title: string;
   company_name: string | null;
+  recruiter_id: string | null;
   description: string | null;
   location: string | null;
   job_type: string | null;
   internship_track: string | null;
   eligible_roles: string[] | null;
   visibility: string | null;
-  salary_min: number | null;
-  salary_max: number | null;
-  salary_currency: string | null;
+  salary: number | null;
   created_at: string;
-  is_remote: boolean | null;
+  work_type: string | null;
+  closes_at: string | null;
+  lifecycle_status: string | null;
 }
 
 interface JobsPageProps {
-  searchParams: Promise<{ type?: string }>;
+  searchParams: Promise<{ type?: string; q?: string; location?: string; remote?: string }>;
 }
 
 const FILTERS: Array<{
@@ -70,26 +74,15 @@ function formatDate(dateString: string) {
 }
 
 function formatCompensation(job: Job) {
-  if (!job.salary_min && !job.salary_max) {
+  if (!job.salary) {
     return 'Compensation not disclosed';
   }
 
-  const currency = job.salary_currency || 'XAF';
   const formatter = new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency,
     maximumFractionDigits: 0,
   });
 
-  if (job.salary_min && job.salary_max) {
-    return `${formatter.format(job.salary_min)} - ${formatter.format(job.salary_max)}`;
-  }
-
-  if (job.salary_min) {
-    return `From ${formatter.format(job.salary_min)}`;
-  }
-
-  return `Up to ${formatter.format(job.salary_max || 0)}`;
+  return `${formatter.format(job.salary)} XAF`;
 }
 
 function badgeClasses(label: string) {
@@ -111,33 +104,52 @@ function badgeClasses(label: string) {
 export default async function JobsPage({ searchParams }: JobsPageProps) {
   const query = await searchParams;
   const activeFilter = resolveOpportunityBrowseFilter(query.type);
+  const searchQuery = (query.q || '').trim();
+  const locationQuery = (query.location || '').trim();
+  const remoteOnly = query.remote === '1';
   const supabase = createServerSupabaseClient();
 
-  const { data: jobs, error } = await supabase
+  let dbQuery = supabase
     .from('jobs')
     .select(
       `
       id,
       title,
       company_name,
+      recruiter_id,
       description,
       location,
       job_type,
       internship_track,
       eligible_roles,
       visibility,
-      salary_min,
-      salary_max,
-      salary_currency,
+      salary,
       created_at,
-      is_remote
+      work_type,
+      closes_at,
+      lifecycle_status
     `
     )
     .eq('published', true)
-    .eq('approval_status', 'approved')
-    .order('created_at', { ascending: false });
+    .eq('approval_status', 'approved');
 
-  const allJobs = (jobs || []) as Job[];
+  if (searchQuery) {
+    dbQuery = dbQuery.or(
+      `title.ilike.%${searchQuery}%,company_name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`
+    );
+  }
+
+  if (locationQuery) {
+    dbQuery = dbQuery.ilike('location', `%${locationQuery}%`);
+  }
+
+  if (remoteOnly) {
+    dbQuery = dbQuery.eq('work_type', 'remote');
+  }
+
+  const { data: jobs, error } = await dbQuery.order('created_at', { ascending: false });
+
+  const allJobs = ((jobs || []) as Job[]).filter((job) => isJobPubliclyListable(job));
   const filteredJobs = allJobs.filter((job) =>
     matchesOpportunityBrowseFilter(activeFilter, job.job_type, job.internship_track)
   );
@@ -169,22 +181,22 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-neutral-500">Jobs</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{counts.job}</p>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:w-auto w-full">
+              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 truncate">Jobs</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{counts.job}</p>
               </div>
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">Educational</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{counts.internship_education}</p>
+              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-emerald-300 truncate">Internships (Edu)</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{counts.internship_education}</p>
               </div>
-              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-sky-300">Professional</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{counts.internship_professional}</p>
+              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-sky-300 truncate">Internships (Pro)</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{counts.internship_professional}</p>
               </div>
-              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-amber-300">Gigs</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{counts.gig}</p>
+              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 min-w-0">
+                <p className="text-[10px] uppercase tracking-[0.15em] text-amber-300 truncate">Gigs</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{counts.gig}</p>
               </div>
             </div>
           </div>
@@ -192,7 +204,13 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
           <div className="mt-8 flex flex-wrap gap-2">
             {FILTERS.map((filter) => {
               const isActive = activeFilter === filter.key;
-              const href = filter.key === 'all' ? '/jobs' : `/jobs?type=${filter.key}`;
+              // Preserve existing search params when switching type tabs
+              const tabParams = new URLSearchParams();
+              if (filter.key !== 'all') tabParams.set('type', filter.key);
+              if (searchQuery) tabParams.set('q', searchQuery);
+              if (locationQuery) tabParams.set('location', locationQuery);
+              if (remoteOnly) tabParams.set('remote', '1');
+              const href = tabParams.toString() ? `/jobs?${tabParams.toString()}` : '/jobs';
               const count = counts[filter.key];
 
               return (
@@ -211,6 +229,10 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
               );
             })}
           </div>
+
+          <Suspense>
+            <JobSearchBar />
+          </Suspense>
         </div>
       </section>
 
@@ -269,7 +291,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${badgeClasses(opportunityLabel)}`}>
                           {opportunityLabel}
                         </span>
-                        {job.is_remote && (
+                        {job.work_type === 'remote' && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400">
                             <Globe className="h-3 w-3" />
                             Remote

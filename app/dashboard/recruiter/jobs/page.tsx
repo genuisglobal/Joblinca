@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import StatusBadge from '../../components/StatusBadge';
+import { getJobManagementStatus } from '@/lib/jobs/lifecycle';
 
 interface Job {
   id: string;
@@ -13,6 +14,7 @@ interface Job {
   location: string | null;
   published: boolean;
   approval_status: string | null;
+  lifecycle_status: string | null;
   rejection_reason: string | null;
   created_at: string;
 }
@@ -209,7 +211,7 @@ export default function RecruiterJobsPage() {
                   </td>
                   <td className="p-4 text-center">
                     <StatusBadge
-                      status={job.approval_status || (job.published ? 'published' : 'pending')}
+                      status={getJobManagementStatus(job)}
                     />
                     {job.approval_status === 'rejected' && job.rejection_reason && (
                       <p className="text-xs text-red-400 mt-1 max-w-32 truncate" title={job.rejection_reason}>

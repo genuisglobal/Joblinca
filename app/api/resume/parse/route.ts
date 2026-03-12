@@ -4,6 +4,7 @@ import mammoth from 'mammoth';
 import OpenAI from 'openai';
 import { createEmptyResume } from '@/lib/resume';
 import type { ResumeData } from '@/lib/resume';
+import { maskPII } from '@/lib/pii-mask';
 
 export const runtime = 'nodejs';
 
@@ -71,7 +72,7 @@ Use empty strings for missing fields. Use empty arrays if no items found. For da
             },
             {
               role: 'user',
-              content: `Parse this resume text:\n\n${text.slice(0, 6000)}`,
+              content: `Parse this resume text:\n\n${maskPII(text.slice(0, 6000))}`,
             },
           ],
           max_tokens: 2000,

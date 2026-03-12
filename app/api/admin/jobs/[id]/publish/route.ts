@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
+import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 
 export async function POST(
   request: Request,
@@ -17,12 +18,22 @@ export async function POST(
 
     const { data: existingJob, error: loadError } = await supabase
       .from('jobs')
-      .select('id, approval_status, published')
+      .select('id, approval_status, published, lifecycle_status, closes_at')
       .eq('id', jobId)
       .single();
 
     if (loadError || !existingJob) {
       return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+    }
+
+    if (
+      published &&
+      (existingJob.lifecycle_status === 'filled' || existingJob.lifecycle_status === 'archived')
+    ) {
+      return NextResponse.json(
+        { error: 'Filled or archived jobs must be reposted instead of republished' },
+        { status: 409 }
+      );
     }
 
     const nextUpdate: Record<string, unknown> = {
@@ -36,6 +47,9 @@ export async function POST(
       nextUpdate.approved_at = new Date().toISOString();
       nextUpdate.approved_by = userId;
       nextUpdate.rejection_reason = null;
+      nextUpdate.removed_at = null;
+      nextUpdate.removed_by = null;
+      nextUpdate.removal_reason = null;
     }
 
     const { data, error } = await supabase
@@ -50,10 +64,7 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to update job visibility' }, { status: 500 });
     }
 
-    if (
-      data.published === true &&
-      (data.approval_status === 'approved' || data.approval_status === null)
-    ) {
+    if (isJobPubliclyListable(data)) {
       try {
         await dispatchJobMatchNotifications({
           jobId,

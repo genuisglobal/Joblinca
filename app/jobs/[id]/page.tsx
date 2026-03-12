@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -6,6 +7,10 @@ import {
   describeEligibleRoles,
   getOpportunityTypeLabel,
 } from '@/lib/opportunities';
+import {
+  isJobAcceptingApplications,
+  isJobPubliclyVisible,
+} from '@/lib/jobs/lifecycle';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -80,6 +85,32 @@ function opportunityBadgeClasses(opportunityLabel: string) {
   return 'border border-blue-500/30 bg-blue-500/10 text-blue-300';
 }
 
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const { id } = await params;
+  const supabase = createServerSupabaseClient();
+  const { data: job } = await supabase
+    .from('jobs')
+    .select('title, company_name, location, job_type, work_type')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (!job) return { title: 'Job Not Found' };
+
+  const locationText = job.work_type === 'remote' ? 'Remote' : job.location || 'Cameroon';
+  const title = `${job.title}${job.company_name ? ` at ${job.company_name}` : ''} — ${locationText}`;
+  const description = `Apply for ${job.title}${job.company_name ? ` at ${job.company_name}` : ''} in ${locationText}. Find jobs on Joblinca.`;
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      type: 'article',
+    },
+  };
+}
+
 export default async function JobDetailPage({ params, searchParams }: PageProps) {
   const { id } = await params;
   const query = await searchParams;
@@ -103,12 +134,9 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
     job.visibility
   );
 
-  const isApproved =
-    job.approval_status === 'approved' ||
-    job.approval_status === undefined ||
-    job.approval_status === null;
-  const isPubliclyVisible = job.published !== false && isApproved;
-  const isClosed = job.closes_at && new Date(job.closes_at) < new Date();
+  const isPubliclyVisible = isJobPubliclyVisible(job);
+  const isAcceptingApplications = isJobAcceptingApplications(job);
+  const isClosed = !isAcceptingApplications;
 
   let internshipRequirements: InternshipRequirements | null = null;
   if (job.job_type === 'internship') {
@@ -244,7 +272,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                 <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${opportunityBadgeClasses(opportunityLabel)}`}>
                   {opportunityLabel}
                 </span>
-                {job.is_remote && (
+                {job.work_type === 'remote' && (
                   <span className="inline-flex rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-xs font-medium text-green-300">
                     Remote-friendly
                   </span>
@@ -257,7 +285,13 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
               </div>
 
               <h1 className="mb-2 text-2xl font-bold text-white">{job.title}</h1>
-              <p className="mb-4 text-lg text-gray-300">{job.company_name}</p>
+              {job.recruiter_id ? (
+                <Link href={`/companies/${job.recruiter_id}`} className="mb-4 block text-lg text-gray-300 hover:text-primary-300 transition-colors">
+                  {job.company_name}
+                </Link>
+              ) : (
+                <p className="mb-4 text-lg text-gray-300">{job.company_name}</p>
+              )}
 
               <div className="flex flex-wrap gap-4 text-sm text-gray-400">
                 {job.location && (
@@ -326,7 +360,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
               {job.created_at && (
                 <p className="mt-4 text-sm text-gray-500">
                   Posted {formatDate(job.created_at)}
-                  {job.closes_at && !isClosed && (
+                  {job.closes_at && isAcceptingApplications && (
                     <span className="ml-2">| Closes {formatDate(job.closes_at)}</span>
                   )}
                 </p>
@@ -489,6 +523,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                   id: job.id,
                   title: job.title,
                   company_name: job.company_name,
+                  recruiter_id: job.recruiter_id ?? null,
                   job_type: job.job_type,
                   internship_track: job.internship_track,
                   visibility: job.visibility,

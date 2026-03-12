@@ -4,6 +4,7 @@ import {
   normalizeOpportunityJobType,
   type InternshipRequirementsInput,
 } from '../opportunities';
+import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
 
 export type ApplicationEligibilityStatus = 'eligible' | 'needs_review' | 'ineligible';
 
@@ -19,7 +20,9 @@ export interface ApplicationEligibilityPreview {
 export interface ApplicationEligibilityJob {
   published: boolean;
   approvalStatus: string | null;
+  lifecycleStatus?: string | null;
   closesAt?: string | null;
+  removedAt?: string | null;
   jobType: string | null;
   internshipTrack: string | null;
   visibility: string | null;
@@ -281,15 +284,15 @@ export function evaluateApplicationEligibility(input: {
     input.job.internshipTrack
   );
 
-  if (!input.job.published) {
-    addUnique(preview.blockingReasons, 'This opportunity is not currently accepting applications.');
-  }
-
-  if (input.job.approvalStatus && input.job.approvalStatus !== 'approved') {
-    addUnique(preview.blockingReasons, 'This opportunity is not currently accepting applications.');
-  }
-
-  if (input.job.closesAt && new Date(input.job.closesAt) <= new Date()) {
+  if (
+    !isJobAcceptingApplications({
+      published: input.job.published,
+      approval_status: input.job.approvalStatus,
+      lifecycle_status: input.job.lifecycleStatus,
+      closes_at: input.job.closesAt,
+      removed_at: input.job.removedAt,
+    })
+  ) {
     addUnique(preview.blockingReasons, 'This opportunity is no longer accepting applications.');
   }
 

@@ -102,6 +102,34 @@ export async function resolveProfileIdByPhone(
     }
   }
 
+  // If no exact match found, try ilike with the last 8 digits split into
+  // overlapping patterns — handles stored phones with spaces/dashes/formatting
+  if (exactMatches.size === 0) {
+    const digits = normalizePhoneDigits(e164);
+    if (digits.length >= 8) {
+      const tail8 = digits.slice(-8);
+      // Build a pattern like %6%7%7%4%9%9%7%2% to match formatted phones
+      const likePattern = `%${tail8.split('').join('%')}%`;
+      const { data } = await db
+        .from('profiles')
+        .select('id, phone')
+        .ilike('phone', likePattern)
+        .limit(10);
+
+      for (const row of ((data || []) as ProfilePhoneRow[])) {
+        if (!row.id || !row.phone) continue;
+        const storedDigits = normalizePhoneDigits(row.phone);
+        if (storedDigits.length >= 8 && storedDigits.slice(-8) === tail8) {
+          exactMatches.add(row.id);
+        }
+      }
+
+      if (exactMatches.size > 1) {
+        return null;
+      }
+    }
+  }
+
   if (exactMatches.size === 1) {
     return Array.from(exactMatches)[0];
   }

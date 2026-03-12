@@ -45,6 +45,7 @@ const en: Record<string, string> = {
   "home.stats.cities": "Cities Covered",
   "home.stats.companies": "Companies Hiring",
   "home.stats.payment": "Mobile Money Accepted",
+  "home.stats.jobSeekersAccess": "No fees to apply",
 
   // City quick links
   "home.cities.title": "Find Jobs in Your City",
@@ -60,8 +61,9 @@ const en: Record<string, string> = {
   "home.whatsapp.cta": "Enable WhatsApp Alerts",
   "home.whatsapp.note": "Join 2,000+ professionals already using it",
 
-  // Trust
+  // Trust / Payment Partners
   "home.trust.title": "Trusted by leading employers across Africa",
+  "home.trust.paymentPartners": "Pay securely with Mobile Money",
 
   // Testimonials
   "home.testimonials.title": "Trusted by professionals across Cameroon",
@@ -146,8 +148,31 @@ const en: Record<string, string> = {
   "home.finalCta.title": "Cameroon's Talent, Ready to Work",
   "home.finalCta.subtitle":
     "Join thousands of professionals and companies building the future of Cameroon — together.",
+  "home.finalCta.badge": "Open to all Cameroonians — Anywhere in the world",
   "home.finalCta.findJobs": "Find My Next Job",
   "home.finalCta.hireTalent": "Hire Top Talent",
+
+  // Why Joblinca — feature highlights
+  "home.features.label": "Why Joblinca",
+  "home.features.title": "Everything You Need to Succeed",
+  "home.features.subtitle": "More than a job board — a complete career platform built for Cameroon.",
+  "home.features.messaging.title": "Direct Messaging",
+  "home.features.messaging.desc": "Chat directly with recruiters and candidates. No more waiting — get answers fast.",
+  "home.features.reviews.title": "Company Reviews",
+  "home.features.reviews.desc": "Read honest reviews from real employees before you apply. Know what to expect.",
+  "home.features.salary.title": "Salary Insights",
+  "home.features.salary.desc": "Explore salary ranges by industry and city. Negotiate with confidence.",
+  "home.features.referrals.title": "Referral Rewards",
+  "home.features.referrals.desc": "Refer friends and earn rewards. Grow together with your professional network.",
+  "home.features.assessments.title": "Skill Assessments",
+  "home.features.assessments.desc": "Prove your skills with verified assessments. Stand out to employers.",
+  "home.features.api.title": "Developer API",
+  "home.features.api.desc": "Integrate Joblinca jobs into your app or website with our public API.",
+
+  // Salary insights teaser
+  "home.salaryTeaser.title": "Know Your Worth",
+  "home.salaryTeaser.desc": "Explore salary data across industries and cities in Cameroon. Make informed career decisions.",
+  "home.salaryTeaser.cta": "Explore Salaries",
 
   // ---------------------------------------------------------------------------
   // Footer
@@ -158,6 +183,8 @@ const en: Record<string, string> = {
   "footer.browseJobs": "Browse Jobs",
   "footer.cvBuilder": "CV Builder",
   "footer.remoteJobs": "Remote Jobs",
+  "footer.salaryInsights": "Salary Insights",
+  "footer.companies": "Company Reviews",
   "footer.createAccount": "Create Account",
   "footer.forEmployers": "For Employers",
   "footer.postAJob": "Post a Job",
@@ -233,6 +260,7 @@ const en: Record<string, string> = {
   "auth.login.privacy": "Privacy Policy",
   "auth.login.noSession":
     "Login succeeded but no session was created. Please try again.",
+  "auth.login.continueWithGoogle": "Continue with Google",
   "auth.login.unexpectedError":
     "An unexpected error occurred. Please try again.",
 
@@ -264,9 +292,42 @@ const en: Record<string, string> = {
   "auth.register.terms": "Terms",
   "auth.register.and": "and",
   "auth.register.privacy": "Privacy Policy",
+  "auth.register.continueWithGoogle": "Continue with Google",
   "auth.register.unexpectedError":
     "An unexpected error occurred. Please try again.",
+  "auth.register.confirmPassword": "Confirm password",
+  "auth.register.confirmPasswordPlaceholder": "Re-enter your password",
+  "auth.register.passwordMismatch": "Passwords do not match",
   "auth.register.profileFailed": "Failed to create profile",
+
+  // ---------------------------------------------------------------------------
+  // Auth – Forgot Password
+  // ---------------------------------------------------------------------------
+  "auth.forgotPassword.title": "Reset your password",
+  "auth.forgotPassword.subtitle": "Enter your email and we'll send you a reset link",
+  "auth.forgotPassword.email": "Email address",
+  "auth.forgotPassword.emailPlaceholder": "you@example.com",
+  "auth.forgotPassword.sendLink": "Send Reset Link",
+  "auth.forgotPassword.checkEmail": "Check your email",
+  "auth.forgotPassword.emailSent": "We sent a password reset link to {email}. Check your inbox and spam folder.",
+  "auth.forgotPassword.backToLogin": "Back to sign in",
+  "auth.forgotPassword.unexpectedError": "Something went wrong. Please try again.",
+
+  // ---------------------------------------------------------------------------
+  // Auth – Reset Password
+  // ---------------------------------------------------------------------------
+  "auth.resetPassword.title": "Set new password",
+  "auth.resetPassword.subtitle": "Choose a strong password for your account",
+  "auth.resetPassword.newPassword": "New password",
+  "auth.resetPassword.newPasswordPlaceholder": "Enter new password",
+  "auth.resetPassword.confirmPassword": "Confirm new password",
+  "auth.resetPassword.confirmPasswordPlaceholder": "Re-enter new password",
+  "auth.resetPassword.passwordMismatch": "Passwords do not match",
+  "auth.resetPassword.resetButton": "Reset Password",
+  "auth.resetPassword.success": "Password updated!",
+  "auth.resetPassword.redirecting": "Redirecting you to sign in...",
+  "auth.resetPassword.goToLogin": "Go to sign in",
+  "auth.resetPassword.unexpectedError": "Something went wrong. Please try again.",
 
   // Role benefits
   "auth.register.benefit.job_seeker.1": "Apply to unlimited jobs for free",

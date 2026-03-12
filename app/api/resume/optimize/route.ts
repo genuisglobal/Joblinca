@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import OpenAI from 'openai';
+import { rateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
@@ -13,6 +14,10 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Rate limit: 3 AI optimization requests per hour per user (protect API costs)
+  const limit = await rateLimit(`resume-optimize:user:${user.id}`, { requests: 3, window: '1h' });
+  if (!limit.allowed) return limit.response!;
 
   let body: { field: string; value: string; context?: string };
   try {

@@ -119,7 +119,7 @@ export async function sendMatchedJobAlertEmail(opts: {
     '',
     `View and apply: ${opts.jobUrl}`,
     '',
-    'You are receiving this because you have an active Joblinca subscription.',
+    'You are receiving this because you have a Joblinca account with job alerts enabled.',
   ].join('\n');
 
   const html = `
@@ -140,7 +140,7 @@ export async function sendMatchedJobAlertEmail(opts: {
         </a>
       </p>
       <p style="margin:0;color:#6b7280;font-size:12px;">
-        You are receiving this because you have an active Joblinca subscription.
+        You are receiving this because you have a Joblinca account with job alerts enabled.
       </p>
     </div>
   `;

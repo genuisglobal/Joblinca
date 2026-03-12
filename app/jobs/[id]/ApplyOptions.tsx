@@ -17,6 +17,7 @@ type Job = {
   id: string;
   title: string;
   company_name: string | null;
+  recruiter_id: string | null;
   job_type: string | null;
   internship_track: string | null;
   visibility: string | null;
@@ -58,6 +59,10 @@ export default function ApplyOptions({
   const [isSaved, setIsSaved] = useState(initialIsSaved);
   const [isSaving, setIsSaving] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [showReport, setShowReport] = useState(false);
+  const [reportReason, setReportReason] = useState('');
+  const [reportDescription, setReportDescription] = useState('');
+  const [reportStatus, setReportStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
 
   const canApply = isAuthenticated &&
     canRoleApplyToOpportunity(
@@ -454,6 +459,138 @@ export default function ApplyOptions({
           </a>
         </div>
       </div>
+
+      {/* Message Recruiter */}
+      {isAuthenticated && job.recruiter_id && (
+        <div className="mt-4 pt-4 border-t border-gray-700">
+          <button
+            onClick={() => {
+              const msg = `Hi, I'm interested in the "${job.title}" position.`;
+              fetch('/api/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ receiverId: job.recruiter_id, message: msg, jobId: job.id }),
+              }).then((r) => {
+                if (r.ok) {
+                  router.push('/dashboard/job-seeker/messages');
+                }
+              });
+            }}
+            className="w-full px-4 py-2.5 text-sm text-neutral-300 hover:text-white border border-gray-600 rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+            </svg>
+            Message Recruiter
+          </button>
+        </div>
+      )}
+
+      {/* Report Job */}
+      {isAuthenticated && (
+        <div className="mt-4 pt-4 border-t border-gray-700">
+          <button
+            onClick={() => setShowReport(true)}
+            className="w-full px-4 py-2 text-sm text-neutral-500 hover:text-red-400 transition-colors flex items-center justify-center gap-1.5"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+            </svg>
+            Report this job
+          </button>
+        </div>
+      )}
+
+      {/* Report Modal */}
+      {showReport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-900 p-6">
+            <h3 className="text-lg font-semibold text-white mb-1">Report Job Posting</h3>
+            <p className="text-sm text-neutral-400 mb-4">
+              Help us keep Joblinca safe. Select a reason for reporting this job.
+            </p>
+
+            {reportStatus === 'sent' ? (
+              <div className="text-center py-4">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10">
+                  <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-white font-medium">Report submitted</p>
+                <p className="text-sm text-neutral-400 mt-1">Our team will review this posting.</p>
+                <button
+                  onClick={() => { setShowReport(false); setReportStatus('idle'); setReportReason(''); setReportDescription(''); }}
+                  className="mt-4 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors text-sm"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <>
+                <select
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  className="w-full mb-3 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2.5 text-sm text-neutral-200"
+                >
+                  <option value="">Select a reason</option>
+                  <option value="scam">Scam or fraud</option>
+                  <option value="misleading">Misleading information</option>
+                  <option value="duplicate">Duplicate posting</option>
+                  <option value="offensive">Offensive content</option>
+                  <option value="wrong_info">Incorrect information</option>
+                  <option value="other">Other</option>
+                </select>
+
+                <textarea
+                  value={reportDescription}
+                  onChange={(e) => setReportDescription(e.target.value)}
+                  placeholder="Add details (optional)"
+                  rows={3}
+                  maxLength={1000}
+                  className="w-full mb-4 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-500 resize-none"
+                />
+
+                {reportStatus === 'error' && (
+                  <p className="text-sm text-red-400 mb-3">Failed to submit. You may have already reported this job.</p>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowReport(false); setReportStatus('idle'); }}
+                    className="flex-1 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    disabled={!reportReason || reportStatus === 'sending'}
+                    onClick={async () => {
+                      setReportStatus('sending');
+                      try {
+                        const res = await fetch(`/api/jobs/${job.id}/report`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ reason: reportReason, description: reportDescription }),
+                        });
+                        if (res.ok) {
+                          setReportStatus('sent');
+                        } else {
+                          setReportStatus('error');
+                        }
+                      } catch {
+                        setReportStatus('error');
+                      }
+                    }}
+                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 disabled:bg-red-600/50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                  >
+                    {reportStatus === 'sending' ? 'Submitting...' : 'Submit Report'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

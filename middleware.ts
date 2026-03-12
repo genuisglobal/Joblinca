@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-
-// Admin types that are currently active (must match lib/admin.ts and database)
-const ACTIVE_ADMIN_TYPES = ['super', 'operations'];
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 
 export async function middleware(req: NextRequest) {
   let res = NextResponse.next({

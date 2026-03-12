@@ -46,7 +46,9 @@ export interface ResolvedApplicationPayload {
     id: string;
     published: boolean;
     approval_status: string | null;
+    lifecycle_status: string | null;
     closes_at: string | null;
+    removed_at: string | null;
     job_type: string | null;
     internship_track: string | null;
     visibility: string | null;
@@ -193,7 +195,7 @@ export async function resolveApplicationPayload(
   const { data: job, error: jobError } = await supabase
     .from('jobs')
     .select(
-      'id, published, approval_status, closes_at, job_type, internship_track, visibility, eligible_roles'
+      'id, published, approval_status, lifecycle_status, closes_at, removed_at, job_type, internship_track, visibility, eligible_roles'
     )
     .eq('id', jobId)
     .maybeSingle();
@@ -322,7 +324,9 @@ export async function resolveApplicationPayload(
     job: {
       published: job.published !== false,
       approvalStatus: job.approval_status || null,
+      lifecycleStatus: job.lifecycle_status || null,
       closesAt: job.closes_at || null,
+      removedAt: job.removed_at || null,
       jobType: job.job_type || null,
       internshipTrack: job.internship_track || null,
       visibility: job.visibility || null,

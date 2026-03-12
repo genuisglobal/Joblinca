@@ -45,6 +45,7 @@ const fr: Record<string, string> = {
   "home.stats.cities": "Villes couvertes",
   "home.stats.companies": "Entreprises recrutent",
   "home.stats.payment": "Mobile Money accept\u00e9",
+  "home.stats.jobSeekersAccess": "Aucun frais pour postuler",
 
   // City quick links
   "home.cities.title": "Trouvez un emploi dans votre ville",
@@ -62,6 +63,7 @@ const fr: Record<string, string> = {
 
   // Trust
   "home.trust.title": "Approuv\u00e9 par des employeurs de premier plan \u00e0 travers l'Afrique",
+  "home.trust.paymentPartners": "Payez en toute s\u00e9curit\u00e9 avec Mobile Money",
 
   // Testimonials
   "home.testimonials.title": "Des professionnels camerounais nous font confiance",
@@ -146,8 +148,31 @@ const fr: Record<string, string> = {
   "home.finalCta.title": "Le talent camerounais, pr\u00eat \u00e0 travailler",
   "home.finalCta.subtitle":
     "Rejoignez des milliers de professionnels et d'entreprises qui construisent l'avenir du Cameroun \u2014 ensemble.",
+  "home.finalCta.badge": "Ouvert \u00e0 tous les Camerounais \u2014 Partout dans le monde",
   "home.finalCta.findJobs": "Trouver mon prochain emploi",
   "home.finalCta.hireTalent": "Recruter les meilleurs talents",
+
+  // Why Joblinca — feature highlights
+  "home.features.label": "Pourquoi Joblinca",
+  "home.features.title": "Tout ce qu'il faut pour réussir",
+  "home.features.subtitle": "Plus qu'un site d'emploi — une plateforme carrière complète conçue pour le Cameroun.",
+  "home.features.messaging.title": "Messagerie directe",
+  "home.features.messaging.desc": "Discutez directement avec les recruteurs et candidats. Plus d'attente — obtenez des réponses rapidement.",
+  "home.features.reviews.title": "Avis sur les entreprises",
+  "home.features.reviews.desc": "Lisez des avis honnêtes d'employés réels avant de postuler. Sachez à quoi vous attendre.",
+  "home.features.salary.title": "Tendances salariales",
+  "home.features.salary.desc": "Explorez les fourchettes salariales par secteur et par ville. Négociez en toute confiance.",
+  "home.features.referrals.title": "Récompenses de parrainage",
+  "home.features.referrals.desc": "Parrainez des amis et gagnez des récompenses. Grandissez avec votre réseau professionnel.",
+  "home.features.assessments.title": "Évaluations de compétences",
+  "home.features.assessments.desc": "Prouvez vos compétences avec des évaluations vérifiées. Démarquez-vous auprès des employeurs.",
+  "home.features.api.title": "API développeur",
+  "home.features.api.desc": "Intégrez les offres Joblinca dans votre application ou site web avec notre API publique.",
+
+  // Salary insights teaser
+  "home.salaryTeaser.title": "Connaissez votre valeur",
+  "home.salaryTeaser.desc": "Explorez les données salariales par secteur et par ville au Cameroun. Prenez des décisions de carrière éclairées.",
+  "home.salaryTeaser.cta": "Explorer les salaires",
 
   // ---------------------------------------------------------------------------
   // Footer
@@ -158,6 +183,8 @@ const fr: Record<string, string> = {
   "footer.browseJobs": "Parcourir les emplois",
   "footer.cvBuilder": "Cr\u00e9ateur de CV",
   "footer.remoteJobs": "Emplois \u00e0 distance",
+  "footer.salaryInsights": "Tendances salariales",
+  "footer.companies": "Avis sur les entreprises",
   "footer.createAccount": "Cr\u00e9er un compte",
   "footer.forEmployers": "Pour les employeurs",
   "footer.postAJob": "Publier une offre",
@@ -233,6 +260,7 @@ const fr: Record<string, string> = {
   "auth.login.privacy": "Politique de confidentialit\u00e9",
   "auth.login.noSession":
     "Connexion r\u00e9ussie mais aucune session n'a \u00e9t\u00e9 cr\u00e9\u00e9e. Veuillez r\u00e9essayer.",
+  "auth.login.continueWithGoogle": "Continuer avec Google",
   "auth.login.unexpectedError":
     "Une erreur inattendue s'est produite. Veuillez r\u00e9essayer.",
 
@@ -264,9 +292,36 @@ const fr: Record<string, string> = {
   "auth.register.terms": "Conditions",
   "auth.register.and": "et",
   "auth.register.privacy": "Politique de confidentialit\u00e9",
+  "auth.register.continueWithGoogle": "Continuer avec Google",
   "auth.register.unexpectedError":
     "Une erreur inattendue s'est produite. Veuillez r\u00e9essayer.",
+  "auth.register.confirmPassword": "Confirmer le mot de passe",
+  "auth.register.confirmPasswordPlaceholder": "Ressaisissez votre mot de passe",
+  "auth.register.passwordMismatch": "Les mots de passe ne correspondent pas",
   "auth.register.profileFailed": "\u00c9chec de la cr\u00e9ation du profil",
+
+  "auth.forgotPassword.title": "R\u00e9initialiser votre mot de passe",
+  "auth.forgotPassword.subtitle": "Entrez votre email et nous vous enverrons un lien de r\u00e9initialisation",
+  "auth.forgotPassword.email": "Adresse e-mail",
+  "auth.forgotPassword.emailPlaceholder": "vous@exemple.com",
+  "auth.forgotPassword.sendLink": "Envoyer le lien",
+  "auth.forgotPassword.checkEmail": "V\u00e9rifiez votre email",
+  "auth.forgotPassword.emailSent": "Nous avons envoy\u00e9 un lien de r\u00e9initialisation \u00e0 {email}. V\u00e9rifiez votre bo\u00eete de r\u00e9ception et vos spams.",
+  "auth.forgotPassword.backToLogin": "Retour \u00e0 la connexion",
+  "auth.forgotPassword.unexpectedError": "Une erreur s'est produite. Veuillez r\u00e9essayer.",
+
+  "auth.resetPassword.title": "Nouveau mot de passe",
+  "auth.resetPassword.subtitle": "Choisissez un mot de passe fort pour votre compte",
+  "auth.resetPassword.newPassword": "Nouveau mot de passe",
+  "auth.resetPassword.newPasswordPlaceholder": "Entrez le nouveau mot de passe",
+  "auth.resetPassword.confirmPassword": "Confirmer le nouveau mot de passe",
+  "auth.resetPassword.confirmPasswordPlaceholder": "Ressaisissez le nouveau mot de passe",
+  "auth.resetPassword.passwordMismatch": "Les mots de passe ne correspondent pas",
+  "auth.resetPassword.resetButton": "R\u00e9initialiser le mot de passe",
+  "auth.resetPassword.success": "Mot de passe mis \u00e0 jour !",
+  "auth.resetPassword.redirecting": "Redirection vers la connexion...",
+  "auth.resetPassword.goToLogin": "Aller \u00e0 la connexion",
+  "auth.resetPassword.unexpectedError": "Une erreur s'est produite. Veuillez r\u00e9essayer.",
 
   // Role benefits
   "auth.register.benefit.job_seeker.1": "Postulez \u00e0 un nombre illimit\u00e9 d'emplois gratuitement",

@@ -12,6 +12,7 @@ import {
   isMatchingEmailConfigured,
   sendMatchedJobAlertEmail,
 } from '@/lib/messaging/email';
+import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 
 const matchingDb = createServiceSupabaseClient();
 
@@ -28,12 +29,9 @@ interface LiveJobRow {
   job_type: string | null;
   published: boolean;
   approval_status: string | null;
+  lifecycle_status: string | null;
   closes_at: string | null;
-}
-
-interface SubscriptionRow {
-  user_id: string;
-  pricing_plans: { role: string } | { role: string }[] | null;
+  removed_at: string | null;
 }
 
 interface ProfileRow {
@@ -193,16 +191,11 @@ function getConfiguredWeeklyNotificationLimit(): number {
   return Math.max(1, Math.min(500, Math.floor(value)));
 }
 
-function getPlanRole(row: SubscriptionRow): string | null {
-  const normalized = normalizeSingle(row.pricing_plans);
-  return normalized?.role || null;
-}
-
 async function loadLiveJob(jobId: string): Promise<LiveJobRow | null> {
   const { data, error } = await matchingDb
     .from('jobs')
     .select(
-      'id, public_id, title, description, location, work_type, company_name, job_type, published, approval_status, closes_at'
+      'id, public_id, title, description, location, work_type, company_name, job_type, published, approval_status, lifecycle_status, closes_at, removed_at'
     )
     .eq('id', jobId)
     .maybeSingle();
@@ -212,49 +205,19 @@ async function loadLiveJob(jobId: string): Promise<LiveJobRow | null> {
   }
 
   const job = data as LiveJobRow;
-  const notClosed = !job.closes_at || new Date(job.closes_at) > new Date();
-  const isLive =
-    job.published &&
-    (job.approval_status === 'approved' || job.approval_status === null) &&
-    notClosed;
-
-  return isLive ? job : null;
+  return isJobPubliclyListable(job) ? job : null;
 }
 
 async function loadSubscribedProfiles(
   allowedRoles: Array<'job_seeker' | 'talent'>
 ): Promise<ProfileRow[]> {
-  const today = new Date().toISOString().split('T')[0];
-  const { data: subscriptions, error: subscriptionsError } = await matchingDb
-    .from('subscriptions')
-    .select('user_id, pricing_plans:plan_id(role)')
-    .eq('status', 'active')
-    .or(`end_date.gte.${today},end_date.is.null`);
-
-  if (subscriptionsError || !subscriptions) {
-    throw new Error(
-      `Failed to load subscriptions for matching: ${subscriptionsError?.message || 'unknown_error'}`
-    );
-  }
-
-  const eligibleUserIds = new Set<string>();
-  for (const row of subscriptions as SubscriptionRow[]) {
-    const role = getPlanRole(row);
-    if (!role) continue;
-    if (!allowedRoles.includes(role as 'job_seeker' | 'talent')) continue;
-    eligibleUserIds.add(row.user_id);
-  }
-
-  if (eligibleUserIds.size === 0) {
-    return [];
-  }
-
-  const userIds = Array.from(eligibleUserIds);
+  // Load ALL registered profiles in the allowed roles, not just paid subscribers.
+  // Job match alerts are free for all job seekers and talents.
   const { data: profiles, error: profilesError } = await matchingDb
     .from('profiles')
     .select('id, role, full_name, email')
-    .in('id', userIds)
-    .in('role', allowedRoles);
+    .in('role', allowedRoles)
+    .not('email', 'is', null);
 
   if (profilesError || !profiles) {
     throw new Error(
