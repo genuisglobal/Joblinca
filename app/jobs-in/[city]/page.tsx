@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
 import { notFound } from 'next/navigation';
-import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import {
   ArrowRight,
   Briefcase,
@@ -17,6 +16,7 @@ import {
   describeEligibleRoles,
 } from '@/lib/opportunities';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { getRequestBaseUrl } from '@/lib/app-url';
 
 const CITY_DATA: Record<
   string,
@@ -88,6 +88,25 @@ interface CityPageProps {
   params: Promise<{ city: string }>;
 }
 
+interface Job {
+  id: string;
+  title: string;
+  company_name: string | null;
+  description: string | null;
+  location: string | null;
+  job_type: string | null;
+  internship_track: string | null;
+  eligible_roles: string[] | null;
+  visibility: string | null;
+  work_type: string | null;
+  created_at: string;
+  closes_at: string | null;
+  lifecycle_status: string | null;
+}
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 function formatDate(dateString: string) {
   const date = new Date(dateString);
   const now = new Date();
@@ -98,10 +117,6 @@ function formatDate(dateString: string) {
   if (diffDays === 2) return 'Yesterday';
   if (diffDays <= 7) return `${diffDays} days ago`;
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-export async function generateStaticParams() {
-  return Object.keys(CITY_DATA).map((city) => ({ city }));
 }
 
 export async function generateMetadata({
@@ -130,31 +145,24 @@ export default async function CityJobsPage({ params }: CityPageProps) {
 
   if (!data) notFound();
 
-  const supabase = createServiceSupabaseClient();
+  let jobs: Job[] = [];
 
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select(
-      'id, title, company_name, description, location, job_type, internship_track, eligible_roles, visibility, work_type, created_at, closes_at, lifecycle_status'
-    )
-    .eq('published', true)
-    .eq('approval_status', 'approved')
-    .eq('visibility', 'public')
-    .in('lifecycle_status', ['live', 'closed_reviewing'])
-    .ilike('location', `%${data.name}%`)
-    .order('created_at', { ascending: false });
+  try {
+    const response = await fetch(`${getRequestBaseUrl()}/api/jobs`, {
+      cache: 'no-store',
+    });
 
-  const allJobs = (jobs || []).filter((job) => isJobPubliclyListable(job));
+    if (response.ok) {
+      const payload = await response.json();
+      jobs = Array.isArray(payload) ? (payload as Job[]) : [];
+    }
+  } catch {
+    jobs = [];
+  }
 
-  // Also count remote jobs accessible from this city
-  const { count: remoteCount } = await supabase
-    .from('jobs')
-    .select('id', { count: 'exact', head: true })
-    .eq('published', true)
-    .eq('approval_status', 'approved')
-    .eq('visibility', 'public')
-    .eq('lifecycle_status', 'live')
-    .eq('work_type', 'remote');
+  const publicJobs = jobs.filter((job) => job.visibility === 'public' && isJobPubliclyListable(job));
+  const allJobs = publicJobs.filter((job) => job.location?.toLowerCase().includes(data.name.toLowerCase()));
+  const remoteCount = publicJobs.filter((job) => job.work_type === 'remote').length;
 
   return (
     <main className="min-h-screen bg-neutral-950">
