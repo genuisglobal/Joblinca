@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
 import { notFound } from 'next/navigation';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import {
   ArrowRight,
   Briefcase,
@@ -130,7 +130,7 @@ export default async function CityJobsPage({ params }: CityPageProps) {
 
   if (!data) notFound();
 
-  const supabase = createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
 
   const { data: jobs } = await supabase
     .from('jobs')
@@ -139,6 +139,8 @@ export default async function CityJobsPage({ params }: CityPageProps) {
     )
     .eq('published', true)
     .eq('approval_status', 'approved')
+    .eq('visibility', 'public')
+    .in('lifecycle_status', ['live', 'closed_reviewing'])
     .ilike('location', `%${data.name}%`)
     .order('created_at', { ascending: false });
 
@@ -150,6 +152,7 @@ export default async function CityJobsPage({ params }: CityPageProps) {
     .select('id', { count: 'exact', head: true })
     .eq('published', true)
     .eq('approval_status', 'approved')
+    .eq('visibility', 'public')
     .eq('lifecycle_status', 'live')
     .eq('work_type', 'remote');
 

@@ -1,7 +1,7 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
-import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import {
   ArrowRight,
   Briefcase,
@@ -110,7 +110,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   const searchQuery = (query.q || '').trim();
   const locationQuery = (query.location || '').trim();
   const remoteOnly = query.remote === '1';
-  const supabase = createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
 
   let dbQuery = supabase
     .from('jobs')
@@ -134,7 +134,9 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
     `
     )
     .eq('published', true)
-    .eq('approval_status', 'approved');
+    .eq('approval_status', 'approved')
+    .eq('visibility', 'public')
+    .in('lifecycle_status', ['live', 'closed_reviewing']);
 
   if (searchQuery) {
     dbQuery = dbQuery.or(
