@@ -1,5 +1,6 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import {
   ArrowRight,
@@ -102,6 +103,8 @@ function badgeClasses(label: string) {
 }
 
 export default async function JobsPage({ searchParams }: JobsPageProps) {
+  noStore();
+
   const query = await searchParams;
   const activeFilter = resolveOpportunityBrowseFilter(query.type);
   const searchQuery = (query.q || '').trim();
