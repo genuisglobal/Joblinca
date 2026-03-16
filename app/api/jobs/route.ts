@@ -27,6 +27,7 @@ export async function GET() {
     .select('*')
     .eq('published', true)
     .eq('approval_status', 'approved')
+    .eq('visibility', 'public')
     .order('created_at', { ascending: false });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

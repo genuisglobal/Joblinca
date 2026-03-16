@@ -1,7 +1,6 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
-import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import {
   ArrowRight,
   Briefcase,
@@ -20,6 +19,7 @@ import {
   type OpportunityBrowseFilter,
 } from '@/lib/opportunities';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { getRequestBaseUrl } from '@/lib/app-url';
 import JobSearchBar from './JobSearchBar';
 
 interface Job {
@@ -60,6 +60,9 @@ export const metadata = {
   description:
     'Browse jobs, educational internships, professional internships, and remote opportunities on Joblinca.',
 };
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 function formatDate(dateString: string) {
   const date = new Date(dateString);
@@ -110,51 +113,53 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   const searchQuery = (query.q || '').trim();
   const locationQuery = (query.location || '').trim();
   const remoteOnly = query.remote === '1';
-  const supabase = createServiceSupabaseClient();
+  const searchNeedle = searchQuery.toLowerCase();
+  const locationNeedle = locationQuery.toLowerCase();
 
-  let dbQuery = supabase
-    .from('jobs')
-    .select(
-      `
-      id,
-      title,
-      company_name,
-      recruiter_id,
-      description,
-      location,
-      job_type,
-      internship_track,
-      eligible_roles,
-      visibility,
-      salary,
-      created_at,
-      work_type,
-      closes_at,
-      lifecycle_status
-    `
-    )
-    .eq('published', true)
-    .eq('approval_status', 'approved')
-    .eq('visibility', 'public')
-    .in('lifecycle_status', ['live', 'closed_reviewing']);
+  let jobs: Job[] = [];
+  let error: { message: string } | null = null;
 
-  if (searchQuery) {
-    dbQuery = dbQuery.or(
-      `title.ilike.%${searchQuery}%,company_name.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`
-    );
+  try {
+    const response = await fetch(`${getRequestBaseUrl()}/api/jobs`, {
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      error = { message: `Failed to load jobs (${response.status})` };
+    } else {
+      const payload = await response.json();
+      jobs = Array.isArray(payload) ? (payload as Job[]) : [];
+    }
+  } catch (fetchError) {
+    error = {
+      message: fetchError instanceof Error ? fetchError.message : 'Failed to load jobs',
+    };
   }
 
-  if (locationQuery) {
-    dbQuery = dbQuery.ilike('location', `%${locationQuery}%`);
-  }
+  const allJobs = jobs
+    .filter((job) => job.visibility === 'public' && isJobPubliclyListable(job))
+    .filter((job) => {
+      if (searchNeedle) {
+        const haystack = [job.title, job.company_name, job.description]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
 
-  if (remoteOnly) {
-    dbQuery = dbQuery.eq('work_type', 'remote');
-  }
+        if (!haystack.includes(searchNeedle)) {
+          return false;
+        }
+      }
 
-  const { data: jobs, error } = await dbQuery.order('created_at', { ascending: false });
+      if (locationNeedle && !job.location?.toLowerCase().includes(locationNeedle)) {
+        return false;
+      }
 
-  const allJobs = ((jobs || []) as Job[]).filter((job) => isJobPubliclyListable(job));
+      if (remoteOnly && job.work_type !== 'remote') {
+        return false;
+      }
+
+      return true;
+    });
   const filteredJobs = allJobs.filter((job) =>
     matchesOpportunityBrowseFilter(activeFilter, job.job_type, job.internship_track)
   );
