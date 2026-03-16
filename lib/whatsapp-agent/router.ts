@@ -6,6 +6,7 @@ import {
   sendWhatsappQuickReplies,
 } from '@/lib/messaging/whatsapp';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
+import { resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 import {
   getOrCreateWaLead,
   syncLeadUserLink,
@@ -768,6 +769,14 @@ async function handleRecruiterFlow(
     companyName: recruiterProfile.data.company_name || null,
     seedDescription: draft.description,
   });
+  const lifecycleStatus = resolveJobLifecycleStatus({
+    published: false,
+    approval_status: 'pending',
+    closes_at: null,
+    removed_at: null,
+    archived_at: null,
+    filled_at: null,
+  });
 
   const { data: createdJob, error: createError } = await agentDb
     .from('jobs')
@@ -782,6 +791,7 @@ async function handleRecruiterFlow(
       company_name: recruiterProfile.data.company_name || null,
       published: false,
       approval_status: 'pending',
+      lifecycle_status: lifecycleStatus,
       apply_method: applyMethod.applyMethod,
       external_apply_url: applyMethod.externalApplyUrl,
       apply_email: applyMethod.applyEmail,

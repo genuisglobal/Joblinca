@@ -97,6 +97,7 @@ export async function POST(
     .update({
       published: false,
       approval_status: 'approved',
+      lifecycle_status: 'on_hold',
       closed_at: nowIso,
       closed_reason: 'manual_hold',
       updated_at: nowIso,

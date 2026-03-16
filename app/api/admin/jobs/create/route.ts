@@ -4,7 +4,7 @@ import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 import { validateOpportunityConfiguration } from '@/lib/opportunities';
 import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
-import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 
 export async function POST(request: Request) {
   try {
@@ -131,6 +131,17 @@ export async function POST(request: Request) {
     }
 
     // Create the job
+    const publishedState = autoApprove ? published : false;
+    const approvalStatus = autoApprove ? 'approved' : 'pending';
+    const lifecycleStatus = resolveJobLifecycleStatus({
+      published: publishedState,
+      approval_status: approvalStatus,
+      closes_at: normalizedClosesAt,
+      removed_at: null,
+      archived_at: null,
+      filled_at: null,
+    });
+
     const { data: job, error } = await supabase
       .from('jobs')
       .insert({
@@ -150,8 +161,9 @@ export async function POST(request: Request) {
         custom_questions: customQuestions || null,
         closes_at: normalizedClosesAt,
         target_hire_date: normalizedTargetHireDate,
-        published: autoApprove ? published : false,
-        approval_status: autoApprove ? 'approved' : 'pending',
+        published: publishedState,
+        approval_status: approvalStatus,
+        lifecycle_status: lifecycleStatus,
         approved_at: autoApprove ? new Date().toISOString() : null,
         approved_by: autoApprove ? userId : null,
         posted_by: userId,

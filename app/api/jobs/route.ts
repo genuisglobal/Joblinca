@@ -6,7 +6,7 @@ import { validateOpportunityConfiguration } from '@/lib/opportunities';
 import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 import { checkJobForScam } from '@/lib/scam-detection';
-import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 
 function normalizeOptionalId(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -244,6 +244,14 @@ export async function POST(request: NextRequest) {
 
   const shouldPublishImmediately = isActiveAdmin && !scamResult.isSuspicious;
   const approvalStatus = isActiveAdmin && !scamResult.isSuspicious ? 'approved' : 'pending';
+  const lifecycleStatus = resolveJobLifecycleStatus({
+    published: shouldPublishImmediately,
+    approval_status: approvalStatus,
+    closes_at: normalizedClosesAt,
+    removed_at: null,
+    archived_at: null,
+    filled_at: null,
+  });
 
   const { data: insertedJob, error } = await supabase
     .from('jobs')
@@ -255,6 +263,7 @@ export async function POST(request: NextRequest) {
       recruiter_id: assignedRecruiterId,
       published: shouldPublishImmediately,
       approval_status: approvalStatus,
+      lifecycle_status: lifecycleStatus,
       scam_score: scamResult.score,
       approved_at: isActiveAdmin ? new Date().toISOString() : null,
       approved_by: isActiveAdmin ? user.id : null,

@@ -4,7 +4,7 @@ import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 import { requireActiveSubscription } from '@/lib/subscriptions';
 import { checkJobForScam } from '@/lib/scam-detection';
-import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 import { validateOpportunityConfiguration } from '@/lib/opportunities';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 import {
@@ -180,6 +180,14 @@ export async function POST(
   );
 
   const autoApprove = access.isActiveAdmin && !scamResult.isSuspicious;
+  const lifecycleStatus = resolveJobLifecycleStatus({
+    published: autoApprove,
+    approval_status: autoApprove ? 'approved' : 'pending',
+    closes_at: normalizedClosesAt,
+    removed_at: null,
+    archived_at: null,
+    filled_at: null,
+  });
   const sourceMetadata = await loadJobOpportunityMetadata(access.serviceClient as any, jobId);
 
   if (sourceMetadata.error) {
@@ -236,6 +244,7 @@ export async function POST(
       scam_score: scamResult.score,
       published: autoApprove,
       approval_status: autoApprove ? 'approved' : 'pending',
+      lifecycle_status: lifecycleStatus,
       approved_at: autoApprove ? new Date().toISOString() : null,
       approved_by: autoApprove ? access.userId : null,
       posted_by: access.userId,

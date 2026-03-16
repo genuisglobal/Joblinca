@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
-import { canJobBeReopened, isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { canJobBeReopened, isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 
 const MAX_STANDARD_REOPENS = 1;
@@ -146,21 +146,36 @@ export async function POST(
     );
   }
 
+  const nowIso = new Date().toISOString();
+  const lifecycleStatus = resolveJobLifecycleStatus({
+    published: true,
+    approval_status: 'approved',
+    closes_at: parsedDeadline.toISOString(),
+    removed_at: null,
+    archived_at: null,
+    filled_at: null,
+  });
+
   const { data: reopenedJob, error } = await access.serviceClient
     .from('jobs')
     .update({
       published: true,
       approval_status: 'approved',
+      lifecycle_status: lifecycleStatus,
       closes_at: parsedDeadline.toISOString(),
       target_hire_date: normalizedTargetHireDate,
       archived_at: null,
       filled_at: null,
+      closed_at: null,
+      closed_reason: null,
       retention_expires_at: null,
       removed_at: null,
       removed_by: null,
       removal_reason: null,
       rejection_reason: null,
-      updated_at: new Date().toISOString(),
+      reopen_count: (access.job.reopen_count || 0) + 1,
+      last_reopened_at: nowIso,
+      updated_at: nowIso,
     })
     .eq('id', jobId)
     .select('*')
