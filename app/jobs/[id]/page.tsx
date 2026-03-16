@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { notFound } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import ApplyOptions from './ApplyOptions';
@@ -112,6 +113,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function JobDetailPage({ params, searchParams }: PageProps) {
+  noStore();
+
   const { id } = await params;
   const query = await searchParams;
   const supabase = createServerSupabaseClient();

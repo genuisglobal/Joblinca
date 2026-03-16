@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { unstable_noStore as noStore } from 'next/cache';
 import { notFound } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import {
@@ -121,6 +122,8 @@ export async function generateMetadata({
 }
 
 export default async function CityJobsPage({ params }: CityPageProps) {
+  noStore();
+
   const { city } = await params;
   const cityKey = city.toLowerCase();
   const data = CITY_DATA[cityKey];
