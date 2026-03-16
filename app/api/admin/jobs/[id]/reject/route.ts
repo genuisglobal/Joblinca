@@ -25,6 +25,7 @@ export async function POST(
         approved_at: new Date().toISOString(),
         approved_by: userId,
         published: false,
+        lifecycle_status: 'removed',
         rejection_reason: reason.trim(),
         removed_at: new Date().toISOString(),
         removed_by: userId,

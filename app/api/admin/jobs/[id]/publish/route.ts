@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
-import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 
 export async function POST(
   request: Request,
@@ -36,15 +36,20 @@ export async function POST(
       );
     }
 
+    const nowIso = new Date().toISOString();
     const nextUpdate: Record<string, unknown> = {
       published,
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     };
+    const nextApprovalStatus =
+      published || existingJob.approval_status === 'approved'
+        ? 'approved'
+        : existingJob.approval_status;
 
     // Publishing from pending/rejected should move the job to approved.
     if (published && existingJob.approval_status !== 'approved') {
-      nextUpdate.approval_status = 'approved';
-      nextUpdate.approved_at = new Date().toISOString();
+      nextUpdate.approval_status = nextApprovalStatus;
+      nextUpdate.approved_at = nowIso;
       nextUpdate.approved_by = userId;
       nextUpdate.rejection_reason = null;
       nextUpdate.removed_at = null;
@@ -52,11 +57,35 @@ export async function POST(
       nextUpdate.removal_reason = null;
     }
 
+    const lifecycleStatus = resolveJobLifecycleStatus({
+      published,
+      approval_status: nextApprovalStatus,
+      closes_at: existingJob.closes_at,
+      removed_at: null,
+      archived_at: null,
+      filled_at: null,
+    });
+
+    nextUpdate.lifecycle_status = lifecycleStatus;
+    nextUpdate.closed_at =
+      lifecycleStatus === 'live'
+        ? null
+        : lifecycleStatus === 'closed_reviewing'
+          ? existingJob.closes_at || nowIso
+          : undefined;
+    nextUpdate.closed_reason =
+      lifecycleStatus === 'live'
+        ? null
+        : lifecycleStatus === 'closed_reviewing'
+          ? 'deadline_elapsed'
+          : undefined;
+    nextUpdate.retention_expires_at = lifecycleStatus === 'live' ? null : undefined;
+
     const { data, error } = await supabase
       .from('jobs')
       .update(nextUpdate)
       .eq('id', jobId)
-      .select('id, title, approval_status, published, approved_at, approved_by')
+      .select('id, title, approval_status, published, approved_at, approved_by, closes_at, lifecycle_status')
       .single();
 
     if (error) {

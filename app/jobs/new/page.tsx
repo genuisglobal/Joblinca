@@ -60,6 +60,7 @@ export default function NewJobPage() {
     createEmptyInternshipRequirementsFormState()
   );
   const [uploading, setUploading] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // Apply method fields
   const [applyMethod, setApplyMethod] = useState<ApplyMethod>('joblinca');
@@ -254,9 +255,50 @@ export default function NewJobPage() {
     }
   }
 
+  async function handleLogoChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !postingMode) {
+      return;
+    }
+
+    setUploadingLogo(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+
+      const res = await fetch(
+        postingMode === 'admin' ? '/api/admin/jobs/logo' : '/api/profile/logo',
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to upload logo');
+      }
+
+      setCompanyLogoUrl((data.logoUrl as string) || '');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload logo');
+    } finally {
+      setUploadingLogo(false);
+      e.target.value = '';
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    if (uploadingLogo) {
+      setError('Please wait for the logo upload to finish.');
+      return;
+    }
 
     // Validate apply method fields
     if (applyMethod === 'external_url' && !externalApplyUrl) {
@@ -547,14 +589,38 @@ export default function NewJobPage() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300">Company Logo URL (optional)</label>
+          <label className="block text-sm font-medium text-gray-300">Company Logo (optional)</label>
           <input
-            type="url"
-            value={companyLogoUrl}
-            onChange={(e) => setCompanyLogoUrl(e.target.value)}
-            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            placeholder="https://example.com/logo.png"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            onChange={handleLogoChange}
+            disabled={uploadingLogo}
+            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
           />
+          <p className="text-xs text-gray-400 mt-2">
+            Upload a JPEG, PNG, WebP, or GIF image up to 2MB.
+          </p>
+          {uploadingLogo && <p className="text-sm text-blue-400 mt-2">Uploading logo...</p>}
+          {companyLogoUrl && (
+            <div className="mt-3 flex items-center gap-4 rounded-lg border border-gray-600 bg-gray-800/60 p-3">
+              <img
+                src={companyLogoUrl}
+                alt="Company logo preview"
+                className="h-14 w-14 rounded-lg object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-white">Logo ready</p>
+                <p className="truncate text-xs text-gray-400">{companyLogoUrl}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompanyLogoUrl('')}
+                className="px-3 py-1.5 text-sm text-gray-300 hover:text-white transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-300">Location</label>

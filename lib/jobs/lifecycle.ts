@@ -65,6 +65,32 @@ export function isJobModerationApproved(job: JobLifecycleFields): boolean {
   return !job.approval_status || job.approval_status === 'approved';
 }
 
+export function resolveJobLifecycleStatus(
+  job: Pick<
+    JobLifecycleFields,
+    'published' | 'approval_status' | 'lifecycle_status' | 'closes_at' | 'removed_at' | 'archived_at' | 'filled_at'
+  >,
+  now: Date = new Date()
+): JobLifecycleStatus {
+  if (job.approval_status === 'rejected' || job.removed_at) {
+    return 'removed';
+  }
+
+  if (job.archived_at) {
+    return 'archived';
+  }
+
+  if (job.filled_at) {
+    return 'filled';
+  }
+
+  if (job.published && isJobModerationApproved(job)) {
+    return isJobClosedByDeadline(job.closes_at, now) ? 'closed_reviewing' : 'live';
+  }
+
+  return 'on_hold';
+}
+
 export function isJobRemoved(job: JobLifecycleFields): boolean {
   return Boolean(job.removed_at) || normalizeJobLifecycleStatus(job.lifecycle_status) === 'removed';
 }

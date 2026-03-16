@@ -76,6 +76,32 @@ function run() {
     true
   );
   console.log('ok - filled jobs archive once retention expires');
+
+  assert.equal(
+    lifecycle.resolveJobLifecycleStatus({
+      published: true,
+      approval_status: 'approved',
+      lifecycle_status: null,
+      closes_at: '2026-03-13T12:00:00.000Z',
+      removed_at: null,
+      archived_at: null,
+      filled_at: null,
+    }, now),
+    'live'
+  );
+  assert.equal(
+    lifecycle.resolveJobLifecycleStatus({
+      published: false,
+      approval_status: 'pending',
+      lifecycle_status: null,
+      closes_at: null,
+      removed_at: null,
+      archived_at: null,
+      filled_at: null,
+    }, now),
+    'on_hold'
+  );
+  console.log('ok - lifecycle resolution stays aligned with moderation and publish state');
 }
 
 try {

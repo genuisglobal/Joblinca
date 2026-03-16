@@ -58,6 +58,7 @@ export async function PATCH(
       .update({
         published: false,
         approval_status: 'rejected',
+        lifecycle_status: 'removed',
         approved_at: new Date().toISOString(),
         approved_by: userId,
         rejection_reason: removalReason,

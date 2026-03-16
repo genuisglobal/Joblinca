@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
-import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 
 export async function POST(
   request: Request,
@@ -11,21 +11,44 @@ export async function POST(
   try {
     const { userId } = await requireAdmin();
     const { id: jobId } = await params;
-
     const supabase = createServerSupabaseClient();
+    const nowIso = new Date().toISOString();
+
+    const { data: existingJob, error: loadError } = await supabase
+      .from('jobs')
+      .select('id, closes_at')
+      .eq('id', jobId)
+      .single();
+
+    if (loadError || !existingJob) {
+      return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+    }
+
+    const lifecycleStatus = resolveJobLifecycleStatus({
+      published: true,
+      approval_status: 'approved',
+      closes_at: existingJob.closes_at,
+      removed_at: null,
+      archived_at: null,
+      filled_at: null,
+    });
 
     // Update the job
     const { data, error } = await supabase
       .from('jobs')
       .update({
         approval_status: 'approved',
-        approved_at: new Date().toISOString(),
+        approved_at: nowIso,
         approved_by: userId,
         published: true,
+        lifecycle_status: lifecycleStatus,
         rejection_reason: null,
         removed_at: null,
         removed_by: null,
         removal_reason: null,
+        closed_at: lifecycleStatus === 'live' ? null : existingJob.closes_at || nowIso,
+        closed_reason: lifecycleStatus === 'live' ? null : 'deadline_elapsed',
+        retention_expires_at: lifecycleStatus === 'live' ? null : undefined,
       })
       .eq('id', jobId)
       .select()

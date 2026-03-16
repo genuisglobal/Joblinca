@@ -111,14 +111,19 @@ export async function POST(
   }
 
   const nowIso = new Date().toISOString();
+  const retentionExpiresAt = normalizedTargetHireDate
+    ? new Date(`${normalizedTargetHireDate}T00:00:00.000Z`).toISOString()
+    : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: job, error } = await access.serviceClient
     .from('jobs')
     .update({
+      published: false,
+      lifecycle_status: 'filled',
       target_hire_date: normalizedTargetHireDate,
       filled_at: nowIso,
       closed_at: nowIso,
       closed_reason: 'filled',
-      retention_expires_at: null,
+      retention_expires_at: retentionExpiresAt,
       updated_at: nowIso,
     })
     .eq('id', jobId)
