@@ -7,7 +7,7 @@ import { getOpportunityTypeLabel } from '@/lib/opportunities';
 interface Job {
   id: string;
   title: string;
-  description: string;
+  description: string | null;
   location: string | null;
   salary: number | null;
   company_name: string | null;
@@ -28,9 +28,10 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
   const [appliedJobs] = useState<Set<string>>(appliedJobIds);
 
   const filteredJobs = jobs.filter((job) => {
+    const description = job.description || '';
     const matchesSearch =
       job.title.toLowerCase().includes(search.toLowerCase()) ||
-      job.description.toLowerCase().includes(search.toLowerCase()) ||
+      description.toLowerCase().includes(search.toLowerCase()) ||
       job.company_name?.toLowerCase().includes(search.toLowerCase());
 
     const matchesWorkType =
@@ -157,7 +158,7 @@ export default function JobsList({ jobs, appliedJobIds }: JobsListProps) {
               </div>
 
               <p className="text-gray-300 text-sm line-clamp-3 mb-4">
-                {job.description}
+                {job.description || 'No description provided yet.'}
               </p>
 
               <div className="flex items-center justify-between pt-4 border-t border-gray-700">

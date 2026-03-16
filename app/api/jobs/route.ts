@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
 import { requireActiveSubscription } from '@/lib/subscriptions';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
@@ -19,7 +20,7 @@ function normalizeOptionalId(value: unknown): string | null {
 
 // Handle GET /api/jobs and POST /api/jobs
 export async function GET() {
-  const supabase = createServerSupabaseClient();
+  const supabase = createServiceSupabaseClient();
   // Closed jobs can remain publicly viewable on direct links, but the public
   // jobs feed should only return still-open listings.
   const { data: jobs, error } = await supabase

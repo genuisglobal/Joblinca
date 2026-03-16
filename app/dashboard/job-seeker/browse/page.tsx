@@ -1,7 +1,26 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { canRoleApplyToOpportunity } from '@/lib/opportunities';
+import { getRequestBaseUrl } from '@/lib/app-url';
 import JobsList from './JobsList';
+
+interface Job {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  salary: number | null;
+  company_name: string | null;
+  work_type: string | null;
+  job_type: string | null;
+  internship_track: string | null;
+  eligible_roles: string[] | null;
+  visibility: string | null;
+  created_at: string;
+  closes_at: string | null;
+  lifecycle_status: string | null;
+}
 
 export default async function BrowseJobsPage() {
   const supabase = createServerSupabaseClient();
@@ -14,40 +33,32 @@ export default async function BrowseJobsPage() {
     redirect('/auth/login');
   }
 
-  // Fetch only approved opportunities that job seekers are eligible to apply for.
-  const { data: jobs } = await supabase
-    .from('jobs')
-    .select(
-      `
-      id,
-      title,
-      description,
-      location,
-      salary,
-      company_name,
-      work_type,
-      job_type,
-      internship_track,
-      eligible_roles,
-      created_at,
-      closes_at,
-      lifecycle_status
-    `
-    )
-    .eq('published', true)
-    .eq('approval_status', 'approved')
-    .contains('eligible_roles', ['job_seeker'])
-    .order('created_at', { ascending: false });
+  const [jobsResponse, applicationsResult] = await Promise.all([
+    fetch(`${getRequestBaseUrl()}/api/jobs`, {
+      cache: 'no-store',
+    }),
+    supabase.from('applications').select('job_id').eq('applicant_id', user.id),
+  ]);
 
-  // Get user's existing applications to mark which jobs they've applied to
-  const liveJobs = (jobs || []).filter((job) => isJobPubliclyListable(job));
+  let jobs: Job[] = [];
+  if (jobsResponse.ok) {
+    const payload = await jobsResponse.json();
+    jobs = Array.isArray(payload) ? (payload as Job[]) : [];
+  }
 
-  const { data: applications } = await supabase
-    .from('applications')
-    .select('job_id')
-    .eq('applicant_id', user.id);
+  const liveJobs = jobs.filter(
+    (job) =>
+      isJobPubliclyListable(job) &&
+      canRoleApplyToOpportunity(
+        'job_seeker',
+        job.eligible_roles,
+        job.job_type,
+        job.internship_track,
+        job.visibility
+      )
+  );
 
-  const appliedJobIds = new Set(applications?.map((a) => a.job_id) || []);
+  const appliedJobIds = new Set(applicationsResult.data?.map((a) => a.job_id) || []);
 
   return (
     <div className="space-y-6">
