@@ -39,8 +39,17 @@ export default async function AdminLayout({
           <NavLink href="/admin/verifications" icon={<ShieldCheckIcon />} label="Verifications" />
           <NavLink href="/admin/reports" icon={<FlagIcon />} label="Reports" />
           <NavLink href="/admin/users" icon={<UsersIcon />} label="Users" />
+          <NavLink href="/admin/field-agents" icon={<UsersIcon />} label="Field Agents" />
           <NavLink href="/admin/recruiters" icon={<BuildingIcon />} label="Recruiters" />
           <NavLink href="/admin/applications" icon={<DocumentIcon />} label="Applications" />
+
+          <div className="pt-4 mt-4 border-t border-gray-700">
+            <p className="text-xs text-gray-500 uppercase mb-2 px-3">Aggregation</p>
+          </div>
+          <NavLink href="/admin/aggregation" icon={<LayersIcon />} label="Control Room" />
+          <NavLink href="/admin/aggregation/sources" icon={<GlobeIcon />} label="Sources" />
+          <NavLink href="/admin/aggregation/discovered-jobs" icon={<CompassIcon />} label="Discovered Jobs" />
+          <NavLink href="/admin/aggregation/runs" icon={<ClockIcon />} label="Runs" />
 
           <div className="pt-4 mt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500 uppercase mb-2 px-3">Finance</p>
@@ -197,6 +206,38 @@ function MegaphoneIcon() {
         strokeWidth={2}
         d="M11 5.882A1 1 0 0112.447 5L20 9v6l-7.553 4A1 1 0 0111 18.118V5.882zM5 10h6v4H5a2 2 0 110-4zm1 4l1.5 4"
       />
+    </svg>
+  );
+}
+
+function LayersIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4l8 4-8 4-8-4 8-4zm0 8l8 4-8 4-8-4 8-4zm0 8l8-4" />
+    </svg>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-9c2.5 2.5 4 5.833 4 9s-1.5 6.5-4 9m0-18c-2.5 2.5-4 5.833-4 9s1.5 6.5 4 9m-8-9h16" />
+    </svg>
+  );
+}
+
+function CompassIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21a9 9 0 100-18 9 9 0 000 18zm3-12l-4 2-2 4 4-2 2-4z" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
   );
 }

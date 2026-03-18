@@ -101,6 +101,12 @@ type ApplyFormProps = {
   initialAnswers: QuestionAnswer[];
 };
 
+type ApplicationSubmitResponse = {
+  error?: string;
+  code?: string;
+  eligibilityPreview?: ApplicationEligibilityPreview;
+};
+
 type Step = 'contact' | 'education' | 'experience' | 'resume' | 'questions' | 'review';
 type CompletionAction =
   | {
@@ -131,6 +137,46 @@ function formatList(values: string[] | undefined) {
 
 function getCandidateProfileHref(role: string) {
   return role === 'talent' ? '/dashboard/talent/profile' : '/dashboard/job-seeker/profile';
+}
+
+function getApplicationSubmitErrorMessage(
+  response: ApplicationSubmitResponse | null,
+  status: number
+) {
+  switch (response?.code) {
+    case 'application_draft_out_of_sync':
+      return 'Your saved application draft needs to be refreshed before it can be submitted. Reload the page and try again.';
+    case 'application_duplicate':
+      return 'You have already applied to this opportunity.';
+    case 'job_not_accepting_applications':
+      return 'This opportunity is no longer accepting applications.';
+    case 'application_submission_blocked':
+      return 'Your application could not be submitted right now. Please try again in a moment.';
+    case 'application_submit_failed':
+      return 'We could not submit your application right now. Please refresh the page and try again. If the problem continues, contact support.';
+    case 'application_ineligible':
+      return response.error || 'Your profile is not eligible for this opportunity yet.';
+    default:
+      break;
+  }
+
+  if (status === 401) {
+    return 'Your session has expired. Please sign in again and resubmit your application.';
+  }
+
+  if (status === 403) {
+    return 'This account is not permitted to apply for opportunities.';
+  }
+
+  if (status === 422 && response?.error) {
+    return response.error;
+  }
+
+  if (status >= 500) {
+    return 'We could not submit your application right now. Please refresh the page and try again. If the problem continues, contact support.';
+  }
+
+  return response?.error || 'We could not submit your application right now. Please refresh the page and try again.';
 }
 
 function buildCompletionActions(input: {
@@ -704,13 +750,13 @@ export default function ApplyForm({
         body: JSON.stringify(buildApplicationPayload()),
       });
 
-      const data = await response.json().catch(() => null);
+      const data = (await response.json().catch(() => null)) as ApplicationSubmitResponse | null;
       if (!response.ok) {
         if (data?.eligibilityPreview) {
           setEligibilityPreview(data.eligibilityPreview as ApplicationEligibilityPreview);
           setPreviewSignature(buildPreviewSignature());
         }
-        throw new Error(data?.error || 'Failed to submit application');
+        throw new Error(getApplicationSubmitErrorMessage(data, response.status));
       }
 
       router.push(`/jobs/${job.id}/apply/success`);

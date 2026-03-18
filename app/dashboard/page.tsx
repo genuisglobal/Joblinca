@@ -48,6 +48,8 @@ export default function DashboardPage() {
         // Redirect to role-specific dashboard
         if (profile.role === 'admin') {
           router.replace('/admin');
+        } else if (profile.role === 'field_agent') {
+          router.replace('/dashboard/field-agent');
         } else if (profile.role === 'recruiter') {
           router.replace('/dashboard/recruiter');
         } else if (profile.role === 'talent') {

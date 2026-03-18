@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import DashboardSidebar from './components/DashboardSidebar';
 import DashboardHeader from './components/DashboardHeader';
+import RegistrationOfficerPrompt from './components/RegistrationOfficerPrompt';
 
 export default async function DashboardLayout({
   children,
@@ -32,13 +33,14 @@ export default async function DashboardLayout({
   }
 
   // For non-admin users, cast to the expected role type
-  const role = rawRole as 'recruiter' | 'job_seeker' | 'talent';
+  const role = rawRole as 'recruiter' | 'job_seeker' | 'talent' | 'field_agent';
 
   return (
     <div className="min-h-screen bg-gray-900 flex">
       <DashboardSidebar role={role} />
       <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
         <DashboardHeader />
+        {role !== 'field_agent' && <RegistrationOfficerPrompt />}
         <main className="flex-1 p-6 overflow-auto">{children}</main>
       </div>
     </div>

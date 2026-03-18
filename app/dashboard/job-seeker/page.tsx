@@ -10,6 +10,7 @@ import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterview
 import ReferralCard from '@/components/ReferralCard';
 import {
   applyInterviewUpdateToApplications,
+  attachInterviewPrepReadinessToApplications,
   attachInterviewsToApplications,
   attachInterviewSlotsToApplications,
   countApplicationsAtStageTypes,
@@ -21,6 +22,11 @@ import {
   normalizeApplicationRow,
   type CandidateApplicationRecord,
 } from '@/lib/applications/dashboard';
+import {
+  buildInterviewPrepReadinessByApplication,
+  isInterviewPrepAttemptsTableMissing,
+  normalizeInterviewPrepAttemptRow,
+} from '@/lib/interview-prep/readiness';
 
 export default function JobSeekerDashboardPage() {
   const router = useRouter();
@@ -45,7 +51,7 @@ export default function JobSeekerDashboardPage() {
           return;
         }
 
-        const [applicationsResult, interviewsResult, slotsResult] = await Promise.all([
+        const [applicationsResult, interviewsResult, slotsResult, attemptsResult] = await Promise.all([
           supabase
             .from('applications')
             .select(
@@ -120,17 +126,39 @@ export default function JobSeekerDashboardPage() {
             )
             .eq('candidate_user_id', user.id)
             .order('scheduled_at', { ascending: true }),
+          supabase
+            .from('interview_prep_attempts')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false }),
         ]);
 
         if (!mounted) return;
 
+        if (attemptsResult.error && !isInterviewPrepAttemptsTableMissing(attemptsResult.error)) {
+          console.error('Dashboard interview prep attempts load error:', attemptsResult.error);
+        }
+
+        const normalizedAttempts = ((attemptsResult.error &&
+          isInterviewPrepAttemptsTableMissing(attemptsResult.error))
+          ? []
+          : attemptsResult.data || [])
+          .map(normalizeInterviewPrepAttemptRow)
+          .filter(Boolean) as NonNullable<ReturnType<typeof normalizeInterviewPrepAttemptRow>>[];
+        const readinessByApplication = buildInterviewPrepReadinessByApplication(
+          normalizedAttempts
+        );
+
         setApplications(
-          attachInterviewSlotsToApplications(
-            attachInterviewsToApplications(
-              (applicationsResult.data || []).map(normalizeApplicationRow),
-              (interviewsResult.data || []).map(normalizeInterviewRow)
+          attachInterviewPrepReadinessToApplications(
+            attachInterviewSlotsToApplications(
+              attachInterviewsToApplications(
+                (applicationsResult.data || []).map(normalizeApplicationRow),
+                (interviewsResult.data || []).map(normalizeInterviewRow)
+              ),
+              (slotsResult.data || []).map(normalizeInterviewSlotRow)
             ),
-            (slotsResult.data || []).map(normalizeInterviewSlotRow)
+            readinessByApplication
           )
         );
         setLoading(false);
@@ -173,6 +201,17 @@ export default function JobSeekerDashboardPage() {
   }).length;
   const recentApplications = applications.slice(0, 3);
   const draftCount = applications.filter((application) => getApplicationDisplayStatus(application) === 'draft').length;
+  const suggestedPrepApplication =
+    applications.find((application) => Boolean(application.nextInterview)) ||
+    applications.find((application) => !application.isDraft) ||
+    null;
+  const interviewPrepHref = suggestedPrepApplication
+    ? `/dashboard/job-seeker/interview-prep?application=${suggestedPrepApplication.id}${
+        suggestedPrepApplication.nextInterview
+          ? '&suggest=scheduled_interview'
+          : '&suggest=application'
+      }`
+    : '/dashboard/job-seeker/interview-prep';
 
   return (
     <div className="space-y-8">
@@ -259,6 +298,12 @@ export default function JobSeekerDashboardPage() {
           className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
         >
           View All Applications
+        </Link>
+        <Link
+          href={interviewPrepHref}
+          className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-white transition-colors hover:bg-teal-500"
+        >
+          Interview Prep
         </Link>
         <Link
           href="/dashboard/job-seeker/profile"

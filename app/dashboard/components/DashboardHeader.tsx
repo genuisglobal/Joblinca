@@ -93,8 +93,11 @@ export default function DashboardHeader() {
     recruiter: 'Recruiter',
     job_seeker: 'Job Seeker',
     talent: 'Talent',
+    field_agent: 'Field Agent',
   }[user?.role || ''] || 'User';
 
+  const showSubscription =
+    user?.role === 'recruiter' || user?.role === 'job_seeker' || user?.role === 'talent';
   const isSubscribed = Boolean(subscription?.isActive);
   const expiryText = subscription?.expiresAt
     ? new Date(subscription.expiresAt).toLocaleDateString()
@@ -109,29 +112,31 @@ export default function DashboardHeader() {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="hidden lg:block">
-            {subscriptionLoading ? (
-              <div className="h-8 w-52 bg-gray-700 rounded-lg animate-pulse" />
-            ) : isSubscribed ? (
-              <Link
-                href="/dashboard/subscription"
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-600/40 bg-emerald-900/20 text-emerald-300 text-xs"
-              >
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <span>
-                  Subscribed: {subscription?.plan?.name || 'Active Plan'} - Expires {expiryText}
-                </span>
-              </Link>
-            ) : (
-              <Link
-                href="/dashboard/subscription"
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-yellow-600/40 bg-yellow-900/20 text-yellow-300 text-xs"
-              >
-                <span className="h-2 w-2 rounded-full bg-yellow-400" />
-                <span>No active subscription</span>
-              </Link>
-            )}
-          </div>
+          {showSubscription && (
+            <div className="hidden lg:block">
+              {subscriptionLoading ? (
+                <div className="h-8 w-52 bg-gray-700 rounded-lg animate-pulse" />
+              ) : isSubscribed ? (
+                <Link
+                  href="/dashboard/subscription"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-600/40 bg-emerald-900/20 text-emerald-300 text-xs"
+                >
+                  <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                  <span>
+                    Subscribed: {subscription?.plan?.name || 'Active Plan'} - Expires {expiryText}
+                  </span>
+                </Link>
+              ) : (
+                <Link
+                  href="/dashboard/subscription"
+                  className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-yellow-600/40 bg-yellow-900/20 text-yellow-300 text-xs"
+                >
+                  <span className="h-2 w-2 rounded-full bg-yellow-400" />
+                  <span>No active subscription</span>
+                </Link>
+              )}
+            </div>
+          )}
 
           {user?.role === 'recruiter' && (
             <VerificationBadge isVerified={user?.isVerified || false} />

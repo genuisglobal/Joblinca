@@ -189,6 +189,136 @@ Market data:
   );
 }
 
+export function buildInterviewPrepSystemPrompt(): string {
+  return withRules(
+    'You are the Joblinca interview coach for subscribed job seekers. Build a practical, evidence-based interview preparation pack using only the candidate and job information provided.',
+    [
+      'Return valid JSON only.',
+      'Use this exact JSON shape: {"summary":"string","elevatorPitch":"string","focusAreas":["string"],"likelyQuestions":[{"question":"string","whyItMatters":"string","talkingPoints":["string"]}],"storiesToPrepare":[{"theme":"string","prompt":"string","proofPoints":["string"]}],"questionsToAsk":["string"],"risksToAddress":["string"],"checklist":["string"]}.',
+      'Keep focusAreas between 3 and 5 items.',
+      'Keep likelyQuestions between 3 and 5 items.',
+      'Keep storiesToPrepare between 2 and 4 items.',
+      'Keep questionsToAsk between 3 and 5 items.',
+      'Ground talking points in the provided application evidence and explicitly reflect uncertainty when evidence is thin.',
+      'Do not invent employers, achievements, certifications, or responsibilities.',
+      'Keep the advice practical for real interviews in Cameroon and Africa.',
+      'Make it clear through the recommendations that guidance is advisory only and does not guarantee outcomes.',
+      'Respond in the same language as the strongest candidate-facing evidence when it is reasonably clear.',
+    ]
+  );
+}
+
+export function buildInterviewPrepUserPrompt(input: {
+  jobTitle: string;
+  companyName?: string | null;
+  jobDescription?: string | null;
+  jobLocation?: string | null;
+  workType?: string | null;
+  candidateName?: string | null;
+  candidateHeadline?: string | null;
+  candidateLocation?: string | null;
+  candidateSkills?: string[];
+  careerGoals?: string[];
+  profileSummary?: string | null;
+  coverLetter?: string | null;
+  hasResume?: boolean;
+  screeningQuestions?: Array<{
+    question: string;
+    required?: boolean;
+    answer?: string | null;
+  }>;
+  nextInterview?: {
+    scheduledAt: string;
+    timezone?: string | null;
+    mode?: string | null;
+    location?: string | null;
+    notes?: string | null;
+  } | null;
+}): string {
+  const screeningQuestionLines =
+    input.screeningQuestions && input.screeningQuestions.length > 0
+      ? input.screeningQuestions
+          .map((item, index) => {
+            const answer = item.answer?.trim() ? item.answer.trim() : 'No saved answer';
+            return `${index + 1}. ${item.question} (${item.required ? 'required' : 'optional'})\n   Candidate answer: ${answer}`;
+          })
+          .join('\n')
+      : 'No saved screening questions or answers.';
+
+  return `Build an interview preparation pack for this candidate.
+
+Job context:
+- Title: ${input.jobTitle}
+- Company: ${input.companyName || 'Not specified'}
+- Location: ${input.jobLocation || 'Not specified'}
+- Work type: ${input.workType || 'Not specified'}
+- Description: ${input.jobDescription || 'Not provided'}
+
+Candidate context:
+- Name: ${input.candidateName || 'Not specified'}
+- Headline: ${input.candidateHeadline || 'Not specified'}
+- Location: ${input.candidateLocation || 'Not specified'}
+- Skills: ${input.candidateSkills?.join(', ') || 'Not specified'}
+- Career goals: ${input.careerGoals?.join(', ') || 'Not specified'}
+- Profile summary: ${input.profileSummary || 'Not provided'}
+- Cover letter: ${input.coverLetter || 'Not provided'}
+- Resume on file: ${input.hasResume ? 'yes' : 'no'}
+
+Interview logistics:
+- Scheduled interview: ${input.nextInterview?.scheduledAt || 'Not scheduled'}
+- Timezone: ${input.nextInterview?.timezone || 'Not specified'}
+- Mode: ${input.nextInterview?.mode || 'Not specified'}
+- Location / link context: ${input.nextInterview?.location || 'Not specified'}
+- Recruiter notes: ${input.nextInterview?.notes || 'Not provided'}
+
+Application screening evidence:
+${screeningQuestionLines}
+
+Output guidance:
+- "summary" should explain the strongest fit signal and the main preparation gap.
+- "elevatorPitch" should sound like a 45-60 second spoken introduction.
+- "likelyQuestions" should blend likely recruiter questions with the role and saved application evidence.
+- "storiesToPrepare" should help the candidate prepare STAR-style examples without inventing facts.
+- "questionsToAsk" should help the candidate look thoughtful and informed.
+- "checklist" should cover final preparation and day-of logistics.`;
+}
+
+export function buildInterviewPrepFollowUpSystemPrompt(context: {
+  jobTitle: string;
+  companyName?: string | null;
+  prepSummary: string;
+  focusAreas: string[];
+  likelyQuestions: string[];
+}): string {
+  return withRules(
+    `You are the Joblinca mock interviewer and interview coach for a subscribed job seeker.
+
+Session context:
+- Job title: ${context.jobTitle}
+- Company: ${context.companyName || 'Not specified'}
+- Prep summary: ${context.prepSummary}
+- Focus areas: ${context.focusAreas.join(', ') || 'Not specified'}
+- Likely interview questions: ${context.likelyQuestions.join(' | ') || 'Not specified'}`,
+    [
+      'Respond as a practical coach, not as a generic chatbot.',
+      'Assume the user may be answering a mock question or asking for help with a stronger answer.',
+      'Return valid JSON only.',
+      'Use this exact JSON shape: {"summary":"string","overallScore":0,"rubric":{"relevance":{"score":0,"note":"string"},"specificity":{"score":0,"note":"string"},"structure":{"score":0,"note":"string"},"confidence":{"score":0,"note":"string"}},"strengths":["string"],"improvements":["string"],"rewrittenAnswer":"string","nextQuestion":"string","coachingTip":"string"}.',
+      'Keep summary under 80 words.',
+      'overallScore must be an integer from 0 to 100.',
+      'Each rubric score must be an integer from 1 to 5.',
+      'Keep strengths between 1 and 3 items.',
+      'Keep improvements between 1 and 3 items.',
+      'Ask only one next question.',
+      'Base feedback on the user message and the prep context only.',
+      'Do not invent facts about the candidate.',
+      'Keep the tone direct and useful.',
+      'rewrittenAnswer should provide a stronger, truthful version of the answer or a tight STAR-style rewrite.',
+      'Respond in the same language as the user.',
+    ]
+  );
+}
+
 export function buildRecruiterDescriptionSystemPrompt(): string {
   return withRules(
     'You are the Joblinca recruiter copilot for job-post drafting. Rewrite recruiter briefs into practical, professional job descriptions in markdown.',

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type Role = "job_seeker" | "talent" | "recruiter" | "admin" | "staff" | null;
+type Role = "job_seeker" | "talent" | "recruiter" | "field_agent" | "admin" | "staff" | null;
 
 export default function NavbarClient() {
   const supabase = useMemo(() => createClient(), []);

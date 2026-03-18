@@ -15,6 +15,7 @@ function RegisterForm() {
   const initialRole = (searchParams.get('role') as UserRole) || 'job_seeker';
   const initialPhone = searchParams.get('phone') || '';
   const referralCode = searchParams.get('ref') || '';
+  const registrationOfficerCode = searchParams.get('officer') || '';
   const whatsappSource = (searchParams.get('source') || '').toLowerCase() === 'whatsapp';
   const isWhatsappPhoneLocked = whatsappSource && initialPhone.trim().length > 0;
   const { t } = useTranslation();
@@ -113,6 +114,7 @@ function RegisterForm() {
             role,
             phone,
             referralCode: referralCode || undefined,
+            registrationOfficerCode: registrationOfficerCode || undefined,
           }),
         });
 

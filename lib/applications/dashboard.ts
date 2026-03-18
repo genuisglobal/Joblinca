@@ -1,4 +1,5 @@
 import type { ApplicationCurrentStage } from '@/lib/hiring-pipeline/types';
+import type { InterviewPrepReadinessSummary } from '@/lib/ai/interviewPrep';
 import {
   formatInterviewDateTimeLabel,
   getInterviewResponseStatusLabel,
@@ -34,6 +35,7 @@ export interface CandidateApplicationRecord {
   nextInterview: CandidateInterviewRecord | null;
   interviewSlots: CandidateInterviewSlotRecord[];
   nextAvailableInterviewSlot: CandidateInterviewSlotRecord | null;
+  interviewPrepReadiness: InterviewPrepReadinessSummary | null;
 }
 
 export interface CandidateInterviewRecord {
@@ -113,6 +115,7 @@ export function normalizeApplicationRow(row: any): CandidateApplicationRecord {
     nextInterview: null,
     interviewSlots: [],
     nextAvailableInterviewSlot: null,
+    interviewPrepReadiness: null,
   };
 }
 
@@ -208,6 +211,16 @@ export function attachInterviewSlotsToApplications(
       nextAvailableInterviewSlot,
     };
   });
+}
+
+export function attachInterviewPrepReadinessToApplications(
+  applications: CandidateApplicationRecord[],
+  readinessByApplication: Map<string, InterviewPrepReadinessSummary>
+) {
+  return applications.map((application) => ({
+    ...application,
+    interviewPrepReadiness: readinessByApplication.get(application.id) || null,
+  }));
 }
 
 export function getApplicationDisplayStatus(application: CandidateApplicationRecord) {

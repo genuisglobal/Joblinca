@@ -96,6 +96,21 @@ export async function getOrCreateWaLead(params: {
   return (await ensureLeadMonthlyReset(data as WaLeadRow)) as WaLeadRow;
 }
 
+export async function findWaLeadByPhone(phone: string): Promise<WaLeadRow | null> {
+  const normalizedPhone = toE164(phone);
+  const { data, error } = await leadDb
+    .from('wa_leads')
+    .select('*')
+    .eq('phone_e164', normalizedPhone)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return ensureLeadMonthlyReset(data as WaLeadRow);
+}
+
 export async function ensureLeadMonthlyReset(lead: WaLeadRow): Promise<WaLeadRow> {
   const nowBucket = monthBucketGmtPlus1();
   if (lead.month_bucket === nowBucket) {
@@ -189,6 +204,23 @@ export async function updateLeadState(
       role_selected: roleSelected,
       state_payload: statePayload ?? {},
       last_seen_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', leadId);
+}
+
+export async function updateLeadStateWithoutTouch(
+  leadId: string,
+  state: WaConversationState,
+  roleSelected: WaRoleSelection,
+  statePayload?: WaStatePayload | Record<string, unknown> | null
+): Promise<void> {
+  await leadDb
+    .from('wa_leads')
+    .update({
+      conversation_state: state,
+      role_selected: roleSelected,
+      state_payload: statePayload ?? {},
       updated_at: new Date().toISOString(),
     })
     .eq('id', leadId);

@@ -41,6 +41,38 @@ function formatDate(date: string | null | undefined) {
   return new Date(date).toLocaleDateString();
 }
 
+function getReadinessTone(score: number | null) {
+  if (score === null) {
+    return 'border-gray-700 bg-gray-900/60 text-gray-300';
+  }
+
+  if (score >= 80) {
+    return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100';
+  }
+
+  if (score >= 60) {
+    return 'border-amber-500/20 bg-amber-500/10 text-amber-100';
+  }
+
+  return 'border-red-500/20 bg-red-500/10 text-red-100';
+}
+
+function getTrendLabel(value: 'improving' | 'steady' | 'needs_work' | null) {
+  if (value === 'improving') {
+    return 'Improving';
+  }
+
+  if (value === 'needs_work') {
+    return 'Needs work';
+  }
+
+  if (value === 'steady') {
+    return 'Steady';
+  }
+
+  return null;
+}
+
 export default function ApplicationProgressCard({
   application,
   compact = false,
@@ -55,6 +87,9 @@ export default function ApplicationProgressCard({
       : application.job?.id
         ? `/jobs/${application.job.id}`
         : '#';
+  const interviewPrepHref = `/dashboard/job-seeker/interview-prep?application=${application.id}${
+    application.nextInterview ? '&suggest=scheduled_interview' : '&suggest=application'
+  }`;
 
   return (
     <div
@@ -87,9 +122,7 @@ export default function ApplicationProgressCard({
           <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold text-white`}>
             {application.job?.title || 'Opportunity'}
           </h3>
-          <p className="text-gray-400">
-            {application.job?.companyName || 'Organization'}
-          </p>
+          <p className="text-gray-400">{application.job?.companyName || 'Organization'}</p>
 
           <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-400">
             {application.job?.location && <span>{application.job.location}</span>}
@@ -105,6 +138,54 @@ export default function ApplicationProgressCard({
           <p className="mt-4 text-sm text-gray-300">
             {getApplicationProgressSummary(application)}
           </p>
+
+          {!application.isDraft && (
+            <div
+              className={`mt-4 rounded-xl border ${compact ? 'p-3' : 'p-4'} ${getReadinessTone(
+                application.interviewPrepReadiness?.latestScore || null
+              )}`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-80">
+                    Interview Readiness
+                  </p>
+                  {application.interviewPrepReadiness ? (
+                    <p className={`mt-2 ${compact ? 'text-xs' : 'text-sm'}`}>
+                      Latest score {application.interviewPrepReadiness.latestScore}/100 across{' '}
+                      {application.interviewPrepReadiness.attemptCount} scored answer
+                      {application.interviewPrepReadiness.attemptCount === 1 ? '' : 's'}.
+                    </p>
+                  ) : (
+                    <p className={`mt-2 ${compact ? 'text-xs' : 'text-sm'}`}>
+                      No scored mock answers yet. Generate a prep session to start tracking readiness.
+                    </p>
+                  )}
+                </div>
+                {application.interviewPrepReadiness && (
+                  <div className="text-right">
+                    <p className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>
+                      {application.interviewPrepReadiness.latestScore}/100
+                    </p>
+                    {getTrendLabel(application.interviewPrepReadiness.trend) && (
+                      <p className="text-xs opacity-80">
+                        {getTrendLabel(application.interviewPrepReadiness.trend)}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {application.interviewPrepReadiness?.weakestAreaLabel && (
+                <p className={`mt-3 ${compact ? 'text-[11px]' : 'text-xs'} opacity-80`}>
+                  Weakest area: {application.interviewPrepReadiness.weakestAreaLabel}
+                  {application.interviewPrepReadiness.weakestAreaAverage !== null
+                    ? ` (${application.interviewPrepReadiness.weakestAreaAverage}/5)`
+                    : ''}
+                </p>
+              )}
+            </div>
+          )}
 
           {application.nextInterview && (
             <div className="mt-4 rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
@@ -122,7 +203,7 @@ export default function ApplicationProgressCard({
                   <p className="mt-1 text-sm text-blue-100/80">
                     {getInterviewModeLabel(application.nextInterview.mode)}
                     {application.nextInterview.location
-                      ? ` · ${application.nextInterview.location}`
+                      ? ` - ${application.nextInterview.location}`
                       : ''}
                   </p>
                 </div>
@@ -132,25 +213,37 @@ export default function ApplicationProgressCard({
               </div>
 
               <p className="mt-3 text-xs uppercase tracking-[0.2em] text-blue-100/70">
-                Attendance: {getInterviewResponseStatusLabel(application.nextInterview.candidateResponseStatus)}
+                Attendance:{' '}
+                {getInterviewResponseStatusLabel(
+                  application.nextInterview.candidateResponseStatus
+                )}
               </p>
 
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link
+                  href={interviewPrepHref}
+                  className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-500"
+                >
+                  Prepare Interview
+                </Link>
+                {application.nextInterview.meetingUrl && (
+                  <a
+                    href={application.nextInterview.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center rounded-lg border border-blue-400/20 px-3.5 py-2 text-sm text-blue-200 transition-colors hover:border-blue-300/40 hover:text-blue-100"
+                  >
+                    Open meeting link
+                  </a>
+                )}
+              </div>
+
               {application.nextInterview.candidateResponseNote && !compact && (
-                <p className="mt-2 rounded-lg bg-gray-900/60 p-3 text-sm text-gray-300">
+                <p className="mt-3 rounded-lg bg-gray-900/60 p-3 text-sm text-gray-300">
                   {application.nextInterview.candidateResponseNote}
                 </p>
               )}
 
-              {application.nextInterview.meetingUrl && (
-                <a
-                  href={application.nextInterview.meetingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 inline-flex text-sm text-blue-300 hover:text-blue-200"
-                >
-                  Open meeting link
-                </a>
-              )}
               <InterviewCalendarActions
                 interviewId={application.nextInterview.id}
                 scheduledAt={application.nextInterview.scheduledAt}
@@ -191,6 +284,14 @@ export default function ApplicationProgressCard({
         </div>
 
         <div className="flex flex-col gap-2">
+          {!application.isDraft && !application.nextInterview && (
+            <Link
+              href={interviewPrepHref}
+              className="rounded-lg bg-teal-600 px-4 py-2 text-center text-sm text-white transition-colors hover:bg-teal-500"
+            >
+              Interview Prep
+            </Link>
+          )}
           <Link
             href={primaryHref}
             className="rounded-lg bg-gray-700 px-4 py-2 text-center text-sm text-white transition-colors hover:bg-gray-600"

@@ -4,12 +4,18 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import ApplicationProgressCard from '@/components/applications/ApplicationProgressCard';
 import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterviewsPanel';
 import {
+  attachInterviewPrepReadinessToApplications,
   attachInterviewSlotsToApplications,
   attachInterviewsToApplications,
   normalizeInterviewSlotRow,
   normalizeApplicationRow,
   normalizeInterviewRow,
 } from '@/lib/applications/dashboard';
+import {
+  buildInterviewPrepReadinessByApplication,
+  isInterviewPrepAttemptsTableMissing,
+  normalizeInterviewPrepAttemptRow,
+} from '@/lib/interview-prep/readiness';
 
 export default async function MyApplicationsPage() {
   const supabase = createServerSupabaseClient();
@@ -22,7 +28,7 @@ export default async function MyApplicationsPage() {
     redirect('/auth/login');
   }
 
-  const [applicationsResult, interviewsResult, slotsResult] = await Promise.all([
+  const [applicationsResult, interviewsResult, slotsResult, attemptsResult] = await Promise.all([
     supabase
       .from('applications')
       .select(
@@ -97,31 +103,70 @@ export default async function MyApplicationsPage() {
       )
       .eq('candidate_user_id', user.id)
       .order('scheduled_at', { ascending: true }),
+    supabase
+      .from('interview_prep_attempts')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false }),
   ]);
 
-  const normalizedApplications = attachInterviewSlotsToApplications(
-    attachInterviewsToApplications(
-      (applicationsResult.data || []).map(normalizeApplicationRow),
-      (interviewsResult.data || []).map(normalizeInterviewRow)
+  if (attemptsResult.error && !isInterviewPrepAttemptsTableMissing(attemptsResult.error)) {
+    console.error('Failed to fetch interview prep attempts:', attemptsResult.error);
+  }
+
+  const normalizedAttempts = ((attemptsResult.error &&
+    isInterviewPrepAttemptsTableMissing(attemptsResult.error))
+    ? []
+    : attemptsResult.data || [])
+    .map(normalizeInterviewPrepAttemptRow)
+    .filter(Boolean) as NonNullable<ReturnType<typeof normalizeInterviewPrepAttemptRow>>[];
+  const readinessByApplication = buildInterviewPrepReadinessByApplication(normalizedAttempts);
+
+  const normalizedApplications = attachInterviewPrepReadinessToApplications(
+    attachInterviewSlotsToApplications(
+      attachInterviewsToApplications(
+        (applicationsResult.data || []).map(normalizeApplicationRow),
+        (interviewsResult.data || []).map(normalizeInterviewRow)
+      ),
+      (slotsResult.data || []).map(normalizeInterviewSlotRow)
     ),
-    (slotsResult.data || []).map(normalizeInterviewSlotRow)
+    readinessByApplication
   );
+  const suggestedPrepApplication =
+    normalizedApplications.find((application) => Boolean(application.nextInterview)) ||
+    normalizedApplications.find((application) => !application.isDraft) ||
+    null;
+  const interviewPrepHref = suggestedPrepApplication
+    ? `/dashboard/job-seeker/interview-prep?application=${suggestedPrepApplication.id}${
+        suggestedPrepApplication.nextInterview
+          ? '&suggest=scheduled_interview'
+          : '&suggest=application'
+      }`
+    : '/dashboard/job-seeker/interview-prep';
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">My Applications</h1>
           <p className="mt-1 text-gray-400">
             Track the current stage, outcome, and next step for every application.
           </p>
         </div>
-        <Link
-          href="/dashboard/job-seeker/browse"
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
-        >
-          Browse More Jobs
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href={interviewPrepHref}
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-white transition-colors hover:bg-teal-500"
+          >
+            Interview Prep
+          </Link>
+          <Link
+            href="/dashboard/job-seeker/browse"
+            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
+          >
+            Browse More Jobs
+          </Link>
+        </div>
       </div>
 
       {normalizedApplications.length === 0 ? (
