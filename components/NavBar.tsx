@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useTranslation } from "@/lib/i18n";
 import { Menu, X, Briefcase, Users, Building2, Globe, FileText, LayoutDashboard, LogOut, LogIn, UserPlus, Languages } from "lucide-react";
 
-type Role = "job_seeker" | "talent" | "recruiter" | "admin" | "staff" | null;
+type Role = "job_seeker" | "talent" | "recruiter" | "field_agent" | "admin" | "staff" | null;
 
 export default function NavBar() {
   const supabase = useMemo(() => createClient(), []);

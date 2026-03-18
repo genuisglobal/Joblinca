@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveApplicationPayload } from '@/lib/applications/server';
 import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
@@ -6,6 +7,11 @@ import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
 type QuestionAnswer = {
   questionId: string;
   answer: string | string[] | boolean;
+};
+
+type DatabaseErrorLike = {
+  code?: string | null;
+  message?: string | null;
 };
 
 function normalizeAnswers(value: unknown): QuestionAnswer[] | null {
@@ -41,6 +47,60 @@ function normalizeAnswers(value: unknown): QuestionAnswer[] | null {
     .filter(Boolean) as QuestionAnswer[];
 
   return normalized.length > 0 ? normalized : null;
+}
+
+function applicationError(
+  error: string,
+  status: number,
+  code: string,
+  extra: Record<string, unknown> = {}
+) {
+  return NextResponse.json({ error, code, ...extra }, { status });
+}
+
+function isRowLevelSecurityError(error: DatabaseErrorLike | null | undefined) {
+  const message = error?.message?.toLowerCase() ?? '';
+  return (
+    error?.code === '42501' ||
+    message.includes('row-level security') ||
+    message.includes('permission denied')
+  );
+}
+
+function resolveApplicationMutationError(
+  error: DatabaseErrorLike | null | undefined,
+  hasDraft: boolean
+) {
+  if (error?.code === '23505') {
+    return {
+      status: 409,
+      code: 'application_duplicate',
+      error: 'You have already applied to this opportunity.',
+    };
+  }
+
+  if ((hasDraft && error?.code === 'PGRST116') || (hasDraft && isRowLevelSecurityError(error))) {
+    return {
+      status: 409,
+      code: 'application_draft_out_of_sync',
+      error:
+        'Your saved application draft could not be finalized. Refresh the page and try submitting again.',
+    };
+  }
+
+  if (isRowLevelSecurityError(error)) {
+    return {
+      status: 500,
+      code: 'application_submission_blocked',
+      error: 'Your application could not be submitted right now. Please try again in a moment.',
+    };
+  }
+
+  return {
+    status: 500,
+    code: 'application_submit_failed',
+    error: 'We could not submit your application right now. Please refresh the page and try again.',
+  };
 }
 
 // GET: List user's applications
@@ -121,7 +181,7 @@ export async function POST(request: NextRequest) {
       ? body.draftApplicationId.trim()
       : null;
 
-  if (['recruiter', 'admin', 'staff'].includes(applicantRole)) {
+  if (['recruiter', 'admin', 'staff', 'field_agent'].includes(applicantRole)) {
     return NextResponse.json(
       { error: 'Only candidate accounts can apply to jobs' },
       { status: 403 }
@@ -137,19 +197,21 @@ export async function POST(request: NextRequest) {
       removed_at: resolved.data.job.removed_at,
     })
   ) {
-    return NextResponse.json(
-      { error: 'This job is not accepting applications' },
-      { status: 400 }
+    return applicationError(
+      'This job is not accepting applications',
+      400,
+      'job_not_accepting_applications'
     );
   }
 
   if (preview.eligibilityStatus === 'ineligible') {
-    return NextResponse.json(
+    return applicationError(
+      preview.blockingReasons[0] || 'This profile is not eligible for the opportunity',
+      422,
+      'application_ineligible',
       {
-        error: preview.blockingReasons[0] || 'This profile is not eligible for the opportunity',
         eligibilityPreview: preview,
-      },
-      { status: 422 }
+      }
     );
   }
 
@@ -161,7 +223,12 @@ export async function POST(request: NextRequest) {
     .order('created_at', { ascending: false });
 
   if (existingError) {
-    return NextResponse.json({ error: existingError.message }, { status: 500 });
+    console.error('Failed to load existing applications', existingError);
+    return applicationError(
+      'We could not verify your existing applications right now. Please try again.',
+      500,
+      'application_lookup_failed'
+    );
   }
 
   const existingSubmitted = (existingApplications || []).find(
@@ -169,9 +236,10 @@ export async function POST(request: NextRequest) {
   );
 
   if (existingSubmitted) {
-    return NextResponse.json(
-      { error: 'You have already applied to this job' },
-      { status: 400 }
+    return applicationError(
+      'You have already applied to this opportunity.',
+      400,
+      'application_duplicate'
     );
   }
 
@@ -212,22 +280,41 @@ export async function POST(request: NextRequest) {
     candidate_snapshot: candidateSnapshot,
   };
 
+  const serviceSupabase = createServiceSupabaseClient();
+
   const query = targetDraft
-    ? supabase
+    ? serviceSupabase
         .from('applications')
         .update(applicationValues)
         .eq('id', targetDraft.id)
+        .eq('applicant_id', user.id)
+        .eq('is_draft', true)
         .select('*')
-        .single()
-    : supabase.from('applications').insert(applicationValues).select('*').single();
+        .maybeSingle()
+    : serviceSupabase.from('applications').insert(applicationValues).select('*').single();
 
   const { data: application, error } = await query;
 
   if (error || !application) {
-    return NextResponse.json(
-      { error: error?.message || 'Failed to create application' },
-      { status: 500 }
-    );
+    if (error) {
+      console.error('Application submission failed', {
+        error,
+        jobId,
+        applicantId: user.id,
+        draftId: targetDraft?.id ?? null,
+      });
+    }
+
+    const failure =
+      !application && targetDraft
+        ? {
+            status: 409,
+            code: 'application_draft_out_of_sync',
+            error:
+              'Your saved application draft could not be finalized. Refresh the page and try submitting again.',
+          }
+        : resolveApplicationMutationError(error, Boolean(targetDraft));
+    return applicationError(failure.error, failure.status, failure.code);
   }
 
   return NextResponse.json(

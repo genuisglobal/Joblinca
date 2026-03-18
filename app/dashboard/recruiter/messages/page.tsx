@@ -28,6 +28,23 @@ interface Message {
   created_at: string;
 }
 
+function getPartnerName(partner: Conversation['partner']): string {
+  const name = partner?.full_name?.trim();
+  if (name) return name;
+  if (partner?.role === 'admin' || partner?.role === 'staff') {
+    return 'JobLinca Agent';
+  }
+  return 'Unknown';
+}
+
+function getPartnerRoleLabel(partner: Conversation['partner']): string {
+  if (!partner?.role) return '';
+  if (partner.role === 'admin' || partner.role === 'staff') {
+    return 'agent';
+  }
+  return partner.role.replace('_', ' ');
+}
+
 export default function RecruiterMessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedPartner, setSelectedPartner] = useState<string | null>(null);
@@ -157,7 +174,7 @@ export default function RecruiterMessagesPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-white truncate">
-                      {conv.partner?.full_name || 'Unknown'}
+                      {getPartnerName(conv.partner)}
                     </span>
                     <span className="text-xs text-gray-500 flex-shrink-0">
                       {formatTime(conv.lastMessage.created_at)}
@@ -203,10 +220,10 @@ export default function RecruiterMessagesPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-white">
-                    {selectedConv?.partner?.full_name || 'Unknown'}
+                    {getPartnerName(selectedConv?.partner || null)}
                   </p>
                   <p className="text-xs text-gray-500 capitalize">
-                    {selectedConv?.partner?.role?.replace('_', ' ') || ''}
+                    {getPartnerRoleLabel(selectedConv?.partner || null)}
                   </p>
                 </div>
               </div>

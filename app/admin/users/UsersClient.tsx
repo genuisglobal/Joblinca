@@ -137,6 +137,11 @@ export default function UsersClient({
         text: 'text-yellow-400',
         label: 'Recruiter',
       },
+      field_agent: {
+        bg: 'bg-indigo-900/50 border-indigo-700',
+        text: 'text-indigo-400',
+        label: 'Field Agent',
+      },
       admin: {
         bg: 'bg-purple-900/50 border-purple-700',
         text: 'text-purple-400',

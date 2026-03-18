@@ -17,6 +17,7 @@
     "test:application-dashboard": "node tests/application-dashboard.test.js",
     "test:application-ranking": "node tests/application-ranking.test.js",
     "test:hiring-pipeline": "node tests/hiring-pipeline.test.js",
+    "test:interview-prep": "node tests/interview-prep.test.js",
     "test:interview-calendar": "node tests/interview-calendar.test.js",
     "test:interview-automation": "node tests/interview-automation.test.js",
     "test:interview-self-schedule": "node tests/interview-self-schedule.test.js",

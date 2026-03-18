@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
+import { sendSignupWelcomeFromAgent } from "@/lib/whatsapp-agent/signup-welcome";
+import { claimRegistrationAttribution } from "@/lib/registration-officers";
 
 /**
  * Creates/updates a profiles row after signup and creates role-specific rows.
  * Uses service role to bypass RLS for initial provisioning.
  *
- * Database uses role_enum: job_seeker, talent, recruiter, vetting_officer, verification_officer, admin, staff
+ * Database uses role_enum: job_seeker, talent, recruiter, field_agent, vetting_officer, verification_officer, admin, staff
  */
 type IncomingRole =
   | "job_seeker"
   | "talent"
   | "recruiter"
+  | "field_agent"
   | "admin"
   | "staff"
   | "vetting_officer"
@@ -23,6 +26,7 @@ function mapRoleToDb(role: IncomingRole): IncomingRole {
     "job_seeker",
     "talent",
     "recruiter",
+    "field_agent",
     "admin",
     "staff",
     "vetting_officer",
@@ -58,6 +62,7 @@ export async function POST(request: Request) {
       graduationYear,
       recruiterType,
       referralCode,
+      registrationOfficerCode,
     } = body as {
       userId?: string;
       role?: IncomingRole;
@@ -75,6 +80,7 @@ export async function POST(request: Request) {
       graduationYear?: string;
       recruiterType?: string;
       referralCode?: string;
+      registrationOfficerCode?: string;
     };
 
     if (!userId || !role) {
@@ -84,6 +90,20 @@ export async function POST(request: Request) {
     const dbRole = mapRoleToDb(role);
 
     const supabase = createServiceSupabaseClient();
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (existingProfileError) {
+      return NextResponse.json(
+        { error: `profiles lookup failed: ${existingProfileError.message}` },
+        { status: 500 }
+      );
+    }
+
+    const isFirstProfileProvision = !existingProfile?.id;
 
     // Resolve referral: look up who referred this user (only if referral columns exist)
     let referredBy: string | null = null;
@@ -220,6 +240,41 @@ export async function POST(request: Request) {
           success: true,
           warning: `recruiter_profiles upsert failed (non-blocking): ${recruiterProfilesError.message}`,
         });
+      }
+    }
+
+    if (
+      registrationOfficerCode &&
+      !["field_agent", "admin", "staff", "vetting_officer", "verification_officer"].includes(role)
+    ) {
+      try {
+        await claimRegistrationAttribution(supabase, {
+          userId,
+          officerCode: registrationOfficerCode,
+          source: "prefilled_link",
+          confirmedByUser: true,
+          actorUserId: userId,
+        });
+      } catch (attributionError) {
+        console.error(
+          "registration officer attribution failed (non-blocking):",
+          attributionError instanceof Error ? attributionError.message : attributionError
+        );
+      }
+    }
+
+    if (isFirstProfileProvision && role === "job_seeker" && phone?.trim()) {
+      try {
+        await sendSignupWelcomeFromAgent({
+          phone,
+          userId,
+          fullName: fullName ?? null,
+        });
+      } catch (welcomeError) {
+        console.error(
+          "signup WhatsApp welcome failed (non-blocking):",
+          welcomeError instanceof Error ? welcomeError.message : welcomeError
+        );
       }
     }
 
