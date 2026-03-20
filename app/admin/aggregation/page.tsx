@@ -6,6 +6,7 @@ import {
   isMissingAggregationRelationError,
   normalizeSingle,
 } from '@/lib/aggregation/admin';
+import RunScrapersButton from './RunScrapersButton';
 
 type SourceSummary = {
   name: string;
@@ -219,6 +220,10 @@ export default async function AdminAggregationPage() {
           href="/admin/aggregation/discovered-jobs?queue=claims"
           muted="Discovered jobs awaiting recruiter claim review."
         />
+      </div>
+
+      <div className="mb-8">
+        <RunScrapersButton />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
