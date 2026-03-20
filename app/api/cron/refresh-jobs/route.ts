@@ -85,6 +85,13 @@ export async function GET(request: NextRequest) {
         remotive: jobs.filter(j => j.source === 'remotive').length,
         jobicy: jobs.filter(j => j.source === 'jobicy').length,
         findwork: jobs.filter(j => j.source === 'findwork').length,
+        reliefweb: jobs.filter(j => j.source === 'reliefweb').length,
+        kamerpower: jobs.filter(j => j.source === 'kamerpower').length,
+        minajobs: jobs.filter(j => j.source === 'minajobs').length,
+        cameroonjobs: jobs.filter(j => j.source === 'cameroonjobs').length,
+        jobincamer: jobs.filter(j => j.source === 'jobincamer').length,
+        emploicm: jobs.filter(j => j.source === 'emploicm').length,
+        facebook: jobs.filter(j => j.source === 'facebook').length,
       },
       timestamp: new Date().toISOString(),
     };
