@@ -8,6 +8,8 @@
  */
 
 import { fetchRemoteJobs } from '@/lib/remoteJobs';
+import { runAllScrapers, deduplicateJobs, deduplicateCrossSources } from '@/lib/scrapers/registry';
+import type { ScrapedJob } from '@/lib/scrapers/types';
 
 export interface ExternalJob {
   external_id: string;
@@ -190,11 +192,37 @@ export async function fetchUpworkExternalJobs(): Promise<ExternalJob[]> {
 }
 
 // ───────────────────────────────────────────────
-// Aggregate all providers
+// Aggregate all providers (remote + Cameroon local)
 // ───────────────────────────────────────────────
+
+/** Convert a ScrapedJob (from Cameroon scrapers) to ExternalJob for DB insertion. */
+function scrapedToExternal(job: ScrapedJob): ExternalJob {
+  return {
+    external_id: job.external_id,
+    source: job.source,
+    title: job.title,
+    company_name: job.company_name,
+    company_logo: job.company_logo,
+    location: job.location,
+    salary: job.salary,
+    job_type: job.job_type,
+    category: job.category,
+    description: job.description,
+    url: job.url,
+    fetched_at: job.fetched_at,
+    // Extra fields for Cameroon jobs (stored if DB columns exist)
+    ...(job.region ? { region: job.region } : {}),
+    ...(job.language ? { language: job.language } : {}),
+    ...(job.is_cameroon_local ? { is_cameroon_local: job.is_cameroon_local } : {}),
+    ...(job.posted_at ? { posted_at: job.posted_at } : {}),
+    ...(job.closing_at ? { closing_at: job.closing_at } : {}),
+  } as ExternalJob;
+}
 
 export async function fetchAllExternalJobs(): Promise<ExternalJob[]> {
   const results: ExternalJob[] = [];
+
+  // 1. Existing remote/international providers
   const providers = [
     fetchRemotiveExternalJobs,
     fetchJobicyExternalJobs,
@@ -209,6 +237,24 @@ export async function fetchAllExternalJobs(): Promise<ExternalJob[]> {
     } catch (err) {
       console.error('Failed to fetch external jobs from provider', provider.name, err);
     }
+  }
+
+  // 2. Cameroon local scrapers (ReliefWeb, KamerPower, MinaJobs, CameroonJobs, JobInCamer, Emploi.cm)
+  try {
+    console.log('[externalJobs] Running Cameroon scrapers...');
+    const aggregate = await runAllScrapers();
+    const sameSourceDeduped = deduplicateJobs(aggregate.results);
+
+    // 3. Cross-source dedup (same job on multiple platforms)
+    const crossDedup = deduplicateCrossSources(sameSourceDeduped);
+    const cameroonJobs = crossDedup.unique.map(scrapedToExternal);
+    results.push(...cameroonJobs);
+
+    console.log(
+      `[externalJobs] Cameroon scrapers: ${aggregate.total_jobs} raw → ${sameSourceDeduped.length} same-source deduped → ${crossDedup.unique.length} cross-source deduped (${crossDedup.stats.duplicates_removed} dupes removed) in ${aggregate.duration_ms}ms`
+    );
+  } catch (err) {
+    console.error('[externalJobs] Cameroon scrapers failed:', err);
   }
 
   return results;
