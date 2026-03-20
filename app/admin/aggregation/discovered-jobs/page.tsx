@@ -4,6 +4,7 @@ import {
   formatShortDate,
   isMissingAggregationRelationError,
 } from '@/lib/aggregation/admin';
+import { PublishButton, BulkPublishButton, HideButton } from './JobActions';
 
 type QueueName = 'review' | 'suspicious' | 'claims' | 'published' | 'all';
 
@@ -18,6 +19,8 @@ type DiscoveredJobRow = {
   trust_score: number;
   scam_score: number;
   discovered_at: string;
+  native_job_id: string | null;
+  original_job_url: string | null;
 };
 
 const queueLabels: Record<QueueName, string> = {
@@ -73,7 +76,9 @@ export default async function AdminDiscoveredJobsPage({
       ingestion_status,
       trust_score,
       scam_score,
-      discovered_at
+      discovered_at,
+      native_job_id,
+      original_job_url
       `
     )
     .order('discovered_at', { ascending: false })
@@ -93,6 +98,16 @@ export default async function AdminDiscoveredJobsPage({
 
   const migrationMissing = isMissingAggregationRelationError(error);
   const rows = (data || []) as DiscoveredJobRow[];
+
+  // Jobs eligible for bulk publish: trust >= 50, scam < 50, not already published/hidden
+  const publishableJobs = rows.filter(
+    (r) =>
+      !r.native_job_id &&
+      r.trust_score >= 50 &&
+      r.scam_score < 50 &&
+      r.ingestion_status !== 'hidden' &&
+      r.ingestion_status !== 'published'
+  );
 
   return (
     <div className="p-6">
@@ -141,10 +156,16 @@ export default async function AdminDiscoveredJobsPage({
         </div>
       )}
 
-      <div className="mb-6 rounded-xl border border-gray-700 bg-gray-800/80 p-4 text-sm text-gray-300">
-        This queue stays separate from the native verified jobs marketplace. No discovered jobs are published to
-        the public product from this scaffolding alone.
-      </div>
+      {/* Bulk actions bar */}
+      {publishableJobs.length > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-gray-700 bg-gray-800/80 p-4">
+          <p className="text-sm text-gray-300">
+            {publishableJobs.length} job{publishableJobs.length !== 1 ? 's' : ''} ready to publish
+            (trust {'>'}= 50, scam {'<'} 50, not yet published)
+          </p>
+          <BulkPublishButton jobIds={publishableJobs.map((j) => j.id)} />
+        </div>
+      )}
 
       <div className="bg-gray-800 rounded-xl overflow-hidden">
         <table className="w-full">
@@ -153,9 +174,9 @@ export default async function AdminDiscoveredJobsPage({
               <th className="p-4 text-left text-gray-400 font-medium">Job</th>
               <th className="p-4 text-left text-gray-400 font-medium hidden md:table-cell">Source</th>
               <th className="p-4 text-left text-gray-400 font-medium">Verification</th>
-              <th className="p-4 text-left text-gray-400 font-medium hidden lg:table-cell">Claim</th>
               <th className="p-4 text-left text-gray-400 font-medium hidden xl:table-cell">Scores</th>
               <th className="p-4 text-left text-gray-400 font-medium hidden md:table-cell">Seen</th>
+              <th className="p-4 text-left text-gray-400 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -173,18 +194,25 @@ export default async function AdminDiscoveredJobsPage({
                   <p className="text-sm text-gray-400">
                     {row.company_name || 'Unknown company'}
                   </p>
-                  <p className="text-xs text-gray-500 mt-1">Status: {row.ingestion_status}</p>
+                  {row.original_job_url && (
+                    <a
+                      href={row.original_job_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      View original
+                    </a>
+                  )}
                 </td>
                 <td className="p-4 text-gray-300 hidden md:table-cell">{row.source_name}</td>
                 <td className="p-4">
                   <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${badgeClass(row.verification_status)}`}>
                     {row.verification_status}
                   </span>
-                </td>
-                <td className="p-4 hidden lg:table-cell">
-                  <span className={`inline-flex rounded-full border px-2 py-1 text-xs ${badgeClass(row.claim_status)}`}>
-                    {row.claim_status}
-                  </span>
+                  {row.native_job_id && (
+                    <span className="block mt-1 text-xs text-green-400">Published</span>
+                  )}
                 </td>
                 <td className="p-4 text-gray-300 hidden xl:table-cell">
                   <p>Trust: {row.trust_score}</p>
@@ -192,6 +220,23 @@ export default async function AdminDiscoveredJobsPage({
                 </td>
                 <td className="p-4 text-gray-400 hidden md:table-cell">
                   {formatShortDate(row.discovered_at)}
+                </td>
+                <td className="p-4">
+                  {row.native_job_id ? (
+                    <Link
+                      href={`/jobs/${row.native_job_id}`}
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      View listing
+                    </Link>
+                  ) : row.ingestion_status === 'hidden' ? (
+                    <span className="text-xs text-gray-500">Hidden</span>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <PublishButton jobId={row.id} title={row.title} />
+                      <HideButton jobId={row.id} />
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
