@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runAllScrapers, runScraper, listScraperSources, deduplicateJobs } from '@/lib/scrapers/registry';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
+import { ingestAllResults, ingestScrapeResult } from '@/lib/scrapers/ingestion';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -44,6 +45,9 @@ export async function POST(request: NextRequest) {
       const aggregate = await runAllScrapers(overrides);
       const dedupedJobs = deduplicateJobs(aggregate.results);
 
+      // Ingest into aggregation tracking system
+      const ingestionResults = await ingestAllResults(aggregate.results, 'manual');
+
       return NextResponse.json({
         total_jobs: dedupedJobs.length,
         total_before_dedup: aggregate.total_jobs,
@@ -54,6 +58,18 @@ export async function POST(request: NextRequest) {
           errors: r.errors,
           duration_ms: r.duration_ms,
         })),
+        ingestion: {
+          runs: ingestionResults.length,
+          total_inserted: ingestionResults.reduce((s, r) => s + r.inserted, 0),
+          total_duplicates: ingestionResults.reduce((s, r) => s + r.duplicates, 0),
+          details: ingestionResults.map((r) => ({
+            runId: r.runId,
+            status: r.status,
+            inserted: r.inserted,
+            duplicates: r.duplicates,
+            suspicious: r.suspicious,
+          })),
+        },
         sample_jobs: dedupedJobs.slice(0, 5).map((j) => ({
           title: j.title,
           company: j.company_name,
@@ -68,12 +84,22 @@ export async function POST(request: NextRequest) {
     const config = maxPages ? { maxPages } : undefined;
     const result = await runScraper(source, config);
 
+    // Ingest into aggregation tracking system
+    const ingested = await ingestScrapeResult(result, 'manual');
+
     return NextResponse.json({
       source: result.source,
       jobs: result.jobs.length,
       errors: result.errors,
       duration_ms: result.duration_ms,
       pages_scraped: result.pages_scraped,
+      ingestion: ingested ? {
+        runId: ingested.runId,
+        status: ingested.status,
+        inserted: ingested.inserted,
+        duplicates: ingested.duplicates,
+        suspicious: ingested.suspicious,
+      } : null,
       sample_jobs: result.jobs.slice(0, 5).map((j) => ({
         title: j.title,
         company: j.company_name,

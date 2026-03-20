@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { FacebookScraper } from '@/lib/scrapers/providers/facebook';
 import type { FacebookRawPost } from '@/lib/scrapers/providers/facebook';
+import { ingestScrapeResult } from '@/lib/scrapers/ingestion';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 min — LLM extraction can be slow
@@ -125,12 +126,28 @@ export async function POST(request: NextRequest) {
       console.log(`[apify-webhook] Inserted ${inserted} jobs from ${extractablePosts.length} posts`);
     }
 
+    // Ingest into aggregation tracking system
+    let ingestionInfo: any = null;
+    if (result.jobs.length > 0) {
+      const ingested = await ingestScrapeResult(result, 'manual');
+      if (ingested) {
+        ingestionInfo = {
+          runId: ingested.runId,
+          status: ingested.status,
+          inserted: ingested.inserted,
+          duplicates: ingested.duplicates,
+          suspicious: ingested.suspicious,
+        };
+      }
+    }
+
     return NextResponse.json({
       received: items.length,
       extractable: extractablePosts.length,
       jobs_extracted: result.jobs.length,
       errors: result.errors,
       duration_ms: result.duration_ms,
+      ingestion: ingestionInfo,
     });
   } catch (err) {
     console.error('[apify-webhook] Fatal error:', err);
