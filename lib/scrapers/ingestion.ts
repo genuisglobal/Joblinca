@@ -51,13 +51,37 @@ function getSupabase(): SupabaseClient | null {
   return createClient(url, key);
 }
 
-/** Generate a dedupe hash from job title + company + location. */
+/**
+ * Normalize text for dedup: lowercase, strip accents/punctuation, collapse
+ * whitespace, and remove filler words so slight variations across sources
+ * still produce the same hash.
+ */
+function normalizeForDedup(text: string): string {
+  const skipWords = new Set([
+    'recrutement', 'recruitment', 'hiring', 'avis', 'offre',
+    'de', 'du', 'un', 'une', 'des', 'le', 'la', 'les', 'et',
+    'a', 'the', 'an', 'for', 'of', 'at', 'and', 'is', 'are',
+    'looking', 'recherche', 'cherche', 'recrute',
+  ]);
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accents
+    .replace(/[^a-z0-9\s]/g, ' ')   // strip punctuation
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter((w) => w.length > 1 && !skipWords.has(w))
+    .join(' ');
+}
+
+/** Generate a dedupe hash from normalized title + company. */
 function generateDedupeHash(job: ScrapedJob): string {
-  const normalized = [
-    job.title.toLowerCase().trim(),
-    (job.company_name || '').toLowerCase().trim(),
-    (job.location || '').toLowerCase().trim(),
-  ].join('|');
+  const title = normalizeForDedup(job.title);
+  const company = normalizeForDedup(job.company_name || '');
+  // Use only significant words from title + company (location varies too much
+  // across sources to be reliable for dedup).
+  const normalized = `${title}|${company}`;
   return createHash('sha256').update(normalized).digest('hex').slice(0, 32);
 }
 
