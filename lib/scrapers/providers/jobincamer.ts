@@ -87,6 +87,9 @@ export class JobInCamerScraper extends BaseScraper {
 
           const location = locationRaw || 'Cameroon';
 
+          // Extract contacts from the listing card text
+          const cardContacts = this.extractContacts(bodyText);
+
           allJobs.push({
             external_id: this.makeId(href),
             source: this.source,
@@ -105,6 +108,9 @@ export class JobInCamerScraper extends BaseScraper {
             posted_at: postedAt,
             closing_at: closingAt,
             fetched_at: new Date().toISOString(),
+            contact_email: cardContacts.email,
+            contact_phone: cardContacts.phone,
+            contact_whatsapp: cardContacts.whatsapp,
           });
         });
 
@@ -114,6 +120,24 @@ export class JobInCamerScraper extends BaseScraper {
       } catch (err) {
         console.error(`[scraper:jobincamer] Page ${page} error:`, err);
         break;
+      }
+    }
+
+    // Fetch detail pages for contact extraction (limit to first 10)
+    const detailLimit = Math.min(allJobs.length, 10);
+    for (let i = 0; i < detailLimit; i++) {
+      const job = allJobs[i];
+      try {
+        const details = await this.fetchJobDetails(job.url);
+        if (details) {
+          if (details.description && !job.description) job.description = details.description;
+          if (details.email && !job.contact_email) job.contact_email = details.email;
+          if (details.phone && !job.contact_phone) job.contact_phone = details.phone;
+          if (details.whatsapp && !job.contact_whatsapp) job.contact_whatsapp = details.whatsapp;
+        }
+        await this.delay(1500);
+      } catch {
+        // Non-fatal
       }
     }
 

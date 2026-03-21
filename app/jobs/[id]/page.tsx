@@ -285,6 +285,16 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                     Talent only
                   </span>
                 )}
+                {/* Origin badge */}
+                {job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered' ? (
+                  <span className="inline-flex rounded-full border border-orange-500/30 bg-orange-500/10 px-3 py-1 text-xs font-medium text-orange-300">
+                    External Source
+                  </span>
+                ) : (
+                  <span className="inline-flex rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-xs font-medium text-blue-300">
+                    Joblinca
+                  </span>
+                )}
               </div>
 
               <h1 className="mb-2 text-2xl font-bold text-white">{job.title}</h1>
@@ -380,6 +390,45 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                 )}
               </div>
             </div>
+
+            {/* External source attribution + trust indicator */}
+            {(job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered') && job.source_attribution_json && (
+              <div className="mb-6 rounded-lg border border-orange-500/20 bg-orange-500/5 p-5">
+                <div className="flex items-start gap-3">
+                  <svg className="h-5 w-5 text-orange-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-orange-300">External Job Listing</p>
+                    <p className="text-sm text-gray-400 mt-1">
+                      This job was sourced from{' '}
+                      <span className="text-white font-medium">
+                        {(job.source_attribution_json as any)?.source_name || 'an external platform'}
+                      </span>
+                      . You can apply through Joblinca or on the original source.
+                    </p>
+                    {(() => {
+                      const trust = (job.source_attribution_json as any)?.trust_score;
+                      if (trust == null) return null;
+                      const level = trust >= 80 ? 'High' : trust >= 60 ? 'Moderate' : 'Low';
+                      const color = trust >= 80 ? 'text-green-400' : trust >= 60 ? 'text-yellow-400' : 'text-red-400';
+                      const barColor = trust >= 80 ? 'bg-green-500' : trust >= 60 ? 'bg-yellow-500' : 'bg-red-500';
+                      return (
+                        <div className="mt-3 flex items-center gap-3">
+                          <span className="text-xs text-gray-500">Trust Level:</span>
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-20 rounded-full bg-gray-700">
+                              <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${trust}%` }} />
+                            </div>
+                            <span className={`text-xs font-medium ${color}`}>{level} ({trust}/100)</span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {job.requirements && (
               <div className="mb-6 rounded-lg border border-gray-700 bg-gray-800 p-6">
@@ -537,6 +586,8 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                   apply_phone: job.apply_phone,
                   apply_whatsapp: job.apply_whatsapp,
                   closes_at: job.closes_at,
+                  origin_type: job.origin_type ?? null,
+                  source_name: (job.source_attribution_json as any)?.source_name ?? null,
                 }}
                 isAuthenticated={!!user}
                 userRole={userRole}

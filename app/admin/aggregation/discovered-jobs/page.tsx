@@ -21,6 +21,8 @@ type DiscoveredJobRow = {
   discovered_at: string;
   native_job_id: string | null;
   original_job_url: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
 };
 
 const queueLabels: Record<QueueName, string> = {
@@ -78,7 +80,9 @@ export default async function AdminDiscoveredJobsPage({
       scam_score,
       discovered_at,
       native_job_id,
-      original_job_url
+      original_job_url,
+      contact_email,
+      contact_phone
       `
     )
     .order('discovered_at', { ascending: false })
@@ -203,6 +207,20 @@ export default async function AdminDiscoveredJobsPage({
                     >
                       View original
                     </a>
+                  )}
+                  {(row.contact_email || row.contact_phone) && (
+                    <div className="mt-1 flex flex-wrap gap-2">
+                      {row.contact_email && (
+                        <span className="text-xs text-green-400" title={row.contact_email}>
+                          {row.contact_email}
+                        </span>
+                      )}
+                      {row.contact_phone && (
+                        <span className="text-xs text-yellow-400" title={row.contact_phone}>
+                          {row.contact_phone}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </td>
                 <td className="p-4 text-gray-300 hidden md:table-cell">{row.source_name}</td>

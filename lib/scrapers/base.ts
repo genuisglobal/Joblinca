@@ -164,4 +164,117 @@ export abstract class BaseScraper {
 
     return null;
   }
+
+  /**
+   * Extract contact info (emails, phones, WhatsApp) from text.
+   * Works on HTML body text or plain text from job detail pages.
+   */
+  protected extractContacts(text: string): {
+    email: string | null;
+    phone: string | null;
+    whatsapp: string | null;
+  } {
+    let email: string | null = null;
+    let phone: string | null = null;
+    let whatsapp: string | null = null;
+
+    // Email extraction — skip common non-contact emails
+    const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+    const emails = text.match(emailRegex) || [];
+    const skipDomains = ['example.com', 'test.com', 'sentry.io', 'w3.org', 'schema.org', 'googleapis.com'];
+    for (const e of emails) {
+      const domain = e.split('@')[1]?.toLowerCase();
+      if (domain && !skipDomains.some((d) => domain.includes(d))) {
+        email = e.toLowerCase();
+        break;
+      }
+    }
+
+    // Phone extraction — Cameroon numbers: +237, 6XX XXX XXX, 2XX XXX XXX
+    const phonePatterns = [
+      /(?:\+237[\s.-]?)(\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d)/g,
+      /\b(6\d{1}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2})\b/g,
+      /\b(2\d{1}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2})\b/g,
+      /(?:Tel|Tél|Phone|Téléphone|Contact|Appel|Call)[\s:]*(?:\+?237[\s.-]?)?(\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d)/gi,
+    ];
+
+    for (const pattern of phonePatterns) {
+      const match = pattern.exec(text);
+      if (match) {
+        const raw = (match[0].includes('+237') ? match[0] : match[1]).replace(/[\s.-]/g, '');
+        if (raw.length >= 9) {
+          phone = raw.startsWith('+') ? raw : raw.startsWith('237') ? `+${raw}` : `+237${raw}`;
+          break;
+        }
+      }
+    }
+
+    // WhatsApp extraction
+    const waPatterns = [
+      /whatsapp[\s:]*(?:\+?237[\s.-]?)?(\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d[\s.-]?\d)/gi,
+      /wa\.me\/(\d+)/gi,
+    ];
+
+    for (const pattern of waPatterns) {
+      const match = pattern.exec(text);
+      if (match) {
+        const raw = match[1].replace(/[\s.-]/g, '');
+        if (raw.length >= 9) {
+          whatsapp = raw.startsWith('237') ? `+${raw}` : raw.length === 9 ? `+237${raw}` : `+${raw}`;
+          break;
+        }
+      }
+    }
+
+    return { email, phone, whatsapp };
+  }
+
+  /**
+   * Fetch a job detail page and extract description + contacts.
+   * Returns null if fetch fails (non-fatal).
+   */
+  protected async fetchJobDetails(
+    jobUrl: string
+  ): Promise<{ description: string | null; email: string | null; phone: string | null; whatsapp: string | null } | null> {
+    try {
+      const res = await this.fetchPage(jobUrl, { retries: 1 });
+      const html = await res.text();
+      const cheerio = require('cheerio/slim') as typeof import('cheerio');
+      const $ = cheerio.load(html);
+
+      // Remove scripts and styles for cleaner text
+      $('script, style, nav, header, footer').remove();
+      const bodyText = $('body').text().replace(/\s+/g, ' ');
+
+      // Try common description selectors
+      const descriptionSelectors = [
+        'article .entry-content',
+        '.job-description',
+        '.post-content',
+        '.field-name-body',
+        '.job-detail-content',
+        'article .content',
+        '.description',
+        'main .content',
+      ];
+
+      let description: string | null = null;
+      for (const selector of descriptionSelectors) {
+        const el = $(selector);
+        if (el.length > 0) {
+          description = el.text().trim().slice(0, 2000);
+          break;
+        }
+      }
+
+      const contacts = this.extractContacts(bodyText);
+
+      return {
+        description,
+        ...contacts,
+      };
+    } catch {
+      return null;
+    }
+  }
 }
