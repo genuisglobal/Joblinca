@@ -20,6 +20,8 @@ import {
 } from '@/lib/opportunities';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import { getRequestBaseUrl } from '@/lib/app-url';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { normalizeLocale, type Locale } from '@/lib/i18n/locale';
 import JobSearchBar from './JobSearchBar';
 
 interface Job {
@@ -36,6 +38,7 @@ interface Job {
   salary: number | null;
   created_at: string;
   work_type: string | null;
+  language: Locale | null;
   closes_at: string | null;
   lifecycle_status: string | null;
   origin_type: string | null;
@@ -46,7 +49,13 @@ interface Job {
 }
 
 interface JobsPageProps {
-  searchParams: Promise<{ type?: string; q?: string; location?: string; remote?: string }>;
+  searchParams: Promise<{
+    type?: string;
+    q?: string;
+    location?: string;
+    remote?: string;
+    language?: string;
+  }>;
 }
 
 const FILTERS: Array<{
@@ -58,6 +67,15 @@ const FILTERS: Array<{
   { key: 'internship_education', label: 'Educational Internships' },
   { key: 'internship_professional', label: 'Professional Internships' },
   { key: 'gig', label: 'Gigs' },
+];
+
+const LANGUAGE_FILTERS: Array<{
+  key: 'recommended' | Locale;
+  label: string;
+}> = [
+  { key: 'recommended', label: 'Recommended' },
+  { key: 'en', label: 'English only' },
+  { key: 'fr', label: 'French only' },
 ];
 
 export const metadata = {
@@ -110,11 +128,29 @@ function badgeClasses(label: string) {
   return 'bg-primary-600/10 text-primary-300 border border-primary-600/30';
 }
 
+function getLanguageBadge(locale: Locale | null, preferredLocale: Locale) {
+  if (!locale) {
+    return null;
+  }
+
+  const matchesPreference = locale === preferredLocale;
+
+  return {
+    label: locale.toUpperCase(),
+    description: locale === 'fr' ? 'French posting' : 'English posting',
+    className: matchesPreference
+      ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+      : 'border border-neutral-700 bg-neutral-800 text-neutral-300',
+  };
+}
+
 export default async function JobsPage({ searchParams }: JobsPageProps) {
   noStore();
 
   const query = await searchParams;
+  const preferredLocale = getRequestLocale();
   const activeFilter = resolveOpportunityBrowseFilter(query.type);
+  const activeLanguageFilter = normalizeLocale(query.language);
   const searchQuery = (query.q || '').trim();
   const locationQuery = (query.location || '').trim();
   const remoteOnly = query.remote === '1';
@@ -125,7 +161,14 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   let error: { message: string } | null = null;
 
   try {
-    const response = await fetch(`${getRequestBaseUrl()}/api/jobs`, {
+    const jobsParams = new URLSearchParams({
+      preferred_language: preferredLocale,
+    });
+    if (activeLanguageFilter) {
+      jobsParams.set('language', activeLanguageFilter);
+    }
+
+    const response = await fetch(`${getRequestBaseUrl()}/api/jobs?${jobsParams.toString()}`, {
       cache: 'no-store',
     });
 
@@ -225,6 +268,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
               if (searchQuery) tabParams.set('q', searchQuery);
               if (locationQuery) tabParams.set('location', locationQuery);
               if (remoteOnly) tabParams.set('remote', '1');
+              if (activeLanguageFilter) tabParams.set('language', activeLanguageFilter);
               const href = tabParams.toString() ? `/jobs?${tabParams.toString()}` : '/jobs';
               const count = counts[filter.key];
 
@@ -243,6 +287,39 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                 </Link>
               );
             })}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {LANGUAGE_FILTERS.map((filter) => {
+              const isActive =
+                filter.key === 'recommended'
+                  ? !activeLanguageFilter
+                  : activeLanguageFilter === filter.key;
+              const languageParams = new URLSearchParams();
+              if (activeFilter !== 'all') languageParams.set('type', activeFilter);
+              if (searchQuery) languageParams.set('q', searchQuery);
+              if (locationQuery) languageParams.set('location', locationQuery);
+              if (remoteOnly) languageParams.set('remote', '1');
+              if (filter.key !== 'recommended') languageParams.set('language', filter.key);
+              const href = languageParams.toString() ? `/jobs?${languageParams.toString()}` : '/jobs';
+
+              return (
+                <Link
+                  key={filter.key}
+                  href={href}
+                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
+                      : 'border border-neutral-700 bg-neutral-900/80 text-neutral-400 hover:border-neutral-500 hover:text-white'
+                  }`}
+                >
+                  {filter.label}
+                </Link>
+              );
+            })}
+            <span className="text-sm text-neutral-400">
+              Prioritized for {preferredLocale === 'fr' ? 'French' : 'English'} readers.
+            </span>
           </div>
 
           <Suspense>
@@ -285,6 +362,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                 job.internship_track,
                 job.visibility
               );
+              const languageBadge = getLanguageBadge(job.language, preferredLocale);
 
               return (
                 <Link
@@ -306,6 +384,14 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                         <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${badgeClasses(opportunityLabel)}`}>
                           {opportunityLabel}
                         </span>
+                        {languageBadge && (
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${languageBadge.className}`}
+                            title={languageBadge.description}
+                          >
+                            {languageBadge.label}
+                          </span>
+                        )}
                         {job.work_type === 'remote' && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400">
                             <Globe className="h-3 w-3" />

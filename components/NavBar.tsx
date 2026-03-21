@@ -98,7 +98,9 @@ export default function NavBar() {
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
   const toggleLocale = () => {
-    setLocale(locale === "en" ? "fr" : "en");
+    void setLocale(locale === "en" ? "fr" : "en").then(() => {
+      router.refresh();
+    });
   };
 
   // Close menu on route change

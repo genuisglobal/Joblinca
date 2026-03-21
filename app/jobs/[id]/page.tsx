@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
 import { notFound } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { detectContentLanguage, normalizeLocale, type Locale } from '@/lib/i18n/locale';
 import ApplyOptions from './ApplyOptions';
 import {
   describeEligibleRoles,
@@ -86,6 +88,21 @@ function opportunityBadgeClasses(opportunityLabel: string) {
   return 'border border-blue-500/30 bg-blue-500/10 text-blue-300';
 }
 
+function getJobLanguageBadge(language: Locale | null, preferredLocale: Locale) {
+  if (!language) {
+    return null;
+  }
+
+  return {
+    label: language === 'fr' ? 'French posting' : 'English posting',
+    shortLabel: language.toUpperCase(),
+    className:
+      language === preferredLocale
+        ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+        : 'border border-neutral-700 bg-neutral-800 text-neutral-300',
+  };
+}
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
   const supabase = createServerSupabaseClient();
@@ -117,6 +134,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
 
   const { id } = await params;
   const query = await searchParams;
+  const preferredLocale = getRequestLocale();
   const supabase = createServerSupabaseClient();
 
   const { data: job, error } = await supabase
@@ -130,6 +148,10 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
   }
 
   const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
+  const jobLanguage =
+    normalizeLocale(job.language) ||
+    detectContentLanguage(`${job.title} ${job.description || ''}`);
+  const languageBadge = getJobLanguageBadge(jobLanguage, preferredLocale);
   const eligibleRoleSummary = describeEligibleRoles(
     job.eligible_roles,
     job.job_type,
@@ -260,6 +282,14 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
           </div>
         )}
 
+        {jobLanguage && jobLanguage !== preferredLocale && (
+          <div className="mb-6 rounded-lg border border-cyan-700 bg-cyan-900/40 p-4 text-cyan-200">
+            {preferredLocale === 'fr'
+              ? `Cette offre est publiee en ${jobLanguage === 'fr' ? 'francais' : 'anglais'}. Le contenu original est affiche pour rester fiable.`
+              : `This posting is published in ${jobLanguage === 'fr' ? 'French' : 'English'}. The original content is shown to keep the listing accurate.`}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           <div className="lg:col-span-2">
             <div className="mb-6 rounded-lg border border-gray-700 bg-gray-800 p-6">
@@ -275,6 +305,14 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                 <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${opportunityBadgeClasses(opportunityLabel)}`}>
                   {opportunityLabel}
                 </span>
+                {languageBadge && (
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${languageBadge.className}`}
+                    title={languageBadge.label}
+                  >
+                    {languageBadge.shortLabel}
+                  </span>
+                )}
                 {job.work_type === 'remote' && (
                   <span className="inline-flex rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-xs font-medium text-green-300">
                     Remote-friendly
