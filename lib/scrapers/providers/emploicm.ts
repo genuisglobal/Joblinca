@@ -105,6 +105,10 @@ export class EmploiCmScraper extends BaseScraper {
             ? `${details.region}, Cameroon`
             : 'Cameroon';
 
+          // Extract contacts from card text
+          const cardText = $card.text();
+          const cardContacts = this.extractContacts(cardText);
+
           allJobs.push({
             external_id: this.makeId(jobId),
             source: this.source,
@@ -123,6 +127,9 @@ export class EmploiCmScraper extends BaseScraper {
             posted_at: postedAt,
             closing_at: null,
             fetched_at: new Date().toISOString(),
+            contact_email: cardContacts.email,
+            contact_phone: cardContacts.phone,
+            contact_whatsapp: cardContacts.whatsapp,
           });
         });
 

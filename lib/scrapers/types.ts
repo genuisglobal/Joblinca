@@ -20,6 +20,12 @@ export interface ScrapedJob {
   posted_at: string | null;
   closing_at: string | null;
   fetched_at: string;
+  /** Contact email extracted from the job posting */
+  contact_email: string | null;
+  /** Contact phone extracted from the job posting */
+  contact_phone: string | null;
+  /** WhatsApp number extracted from the job posting */
+  contact_whatsapp: string | null;
 }
 
 export interface ScrapeResult {

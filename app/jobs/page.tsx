@@ -38,6 +38,11 @@ interface Job {
   work_type: string | null;
   closes_at: string | null;
   lifecycle_status: string | null;
+  origin_type: string | null;
+  source_attribution_json: {
+    source_name?: string;
+    trust_score?: number;
+  } | null;
 }
 
 interface JobsPageProps {
@@ -305,6 +310,37 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                           <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400">
                             <Globe className="h-3 w-3" />
                             Remote
+                          </span>
+                        )}
+                        {/* Origin badge: Joblinca vs External */}
+                        {job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered' ? (
+                          <>
+                            <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-300 border border-orange-500/20">
+                              External
+                            </span>
+                            {(() => {
+                              const trust = job.source_attribution_json?.trust_score;
+                              if (trust == null) return null;
+                              if (trust >= 80) return (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400 border border-green-500/20">
+                                  High Trust
+                                </span>
+                              );
+                              if (trust >= 60) return (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-400 border border-yellow-500/20">
+                                  Moderate Trust
+                                </span>
+                              );
+                              return (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400 border border-red-500/20">
+                                  Low Trust
+                                </span>
+                              );
+                            })()}
+                          </>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300 border border-blue-500/20">
+                            Joblinca
                           </span>
                         )}
                       </div>

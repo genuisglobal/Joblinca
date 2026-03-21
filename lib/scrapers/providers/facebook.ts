@@ -83,6 +83,9 @@ export class FacebookScraper extends BaseScraper {
         const postUrl = post.url || post.post_url || `https://facebook.com/${post.id}`;
         const postedAt = post.timestamp || post.time || null;
 
+        // Extract contacts from the original post text
+        const contacts = this.extractContacts(post.text || '');
+
         allJobs.push({
           external_id: this.makeId(post.id),
           source: this.source,
@@ -101,6 +104,9 @@ export class FacebookScraper extends BaseScraper {
           posted_at: postedAt,
           closing_at: extraction.deadline,
           fetched_at: new Date().toISOString(),
+          contact_email: extraction.contact || contacts.email,
+          contact_phone: contacts.phone,
+          contact_whatsapp: contacts.whatsapp,
         });
 
         processed++;

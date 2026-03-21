@@ -67,17 +67,20 @@ export async function POST(request: NextRequest) {
 
       const nowIso = new Date().toISOString();
 
+      // Determine the original apply URL
+      const originalApplyUrl = dj.apply_url || dj.original_job_url || null;
+
       // Insert into jobs table
       const { data: newJob, error: insertErr } = await supabase
         .from('jobs')
         .insert({
           title: dj.title,
-          description: dj.description_raw || dj.description_clean || `${dj.title}\n\nApply at: ${dj.original_job_url || dj.apply_url || ''}`,
+          description: dj.description_raw || dj.description_clean || `${dj.title}\n\nApply at: ${originalApplyUrl || ''}`,
           location: dj.location || 'Cameroon',
           company_name: dj.company_name || null,
           company_logo_url: null,
           work_type: dj.remote_type || 'onsite',
-          external_url: dj.apply_url || dj.original_job_url || null,
+          external_url: originalApplyUrl,
           salary: dj.salary_min || null,
           published: true,
           approval_status: 'approved',
@@ -85,6 +88,11 @@ export async function POST(request: NextRequest) {
           approved_by: adminUserId,
           visibility: 'public',
           lifecycle_status: 'live',
+          // Enable both "Apply with Joblinca" and "Apply on Original Source"
+          apply_method: originalApplyUrl ? 'multiple' : 'joblinca',
+          external_apply_url: originalApplyUrl,
+          apply_email: dj.contact_email || null,
+          apply_phone: dj.contact_phone || null,
           origin_type: 'admin_import',
           origin_discovered_job_id: dj.id,
           source_attribution_json: {

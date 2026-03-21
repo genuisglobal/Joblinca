@@ -109,6 +109,10 @@ export class ReliefWebScraper extends BaseScraper {
             ? `${city}, Cameroon`
             : 'Cameroon';
 
+          // Extract contacts from description/how_to_apply
+          const contactText = `${f.body || ''} ${f.how_to_apply || ''}`;
+          const contacts = this.extractContacts(contactText);
+
           allJobs.push({
             external_id: this.makeId(item.id),
             source: this.source,
@@ -127,6 +131,9 @@ export class ReliefWebScraper extends BaseScraper {
             posted_at: f.date?.created || null,
             closing_at: f.date?.closing || null,
             fetched_at: new Date().toISOString(),
+            contact_email: contacts.email,
+            contact_phone: contacts.phone,
+            contact_whatsapp: contacts.whatsapp,
           });
         }
 

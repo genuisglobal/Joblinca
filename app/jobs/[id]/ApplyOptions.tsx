@@ -28,6 +28,8 @@ type Job = {
   apply_phone: string | null;
   apply_whatsapp: string | null;
   closes_at: string | null;
+  origin_type: string | null;
+  source_name: string | null;
 };
 
 type ExistingApplication = {
@@ -84,6 +86,7 @@ export default function ApplyOptions({
   const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track).toLowerCase();
   const applicationsHref = applicationDashboardHrefForRole(userRole);
   const companyName = job.company_name || 'the company';
+  const isExternalJob = job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered';
 
   const trackExternalClick = async (method: string) => {
     try {
@@ -281,7 +284,7 @@ export default function ApplyOptions({
           {showExternalUrl && (!isAuthenticated || canApply) && (
             <button
               onClick={handleExternalApply}
-              className="w-full px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full px-6 py-3 bg-orange-600/80 hover:bg-orange-600 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -291,7 +294,9 @@ export default function ApplyOptions({
                   d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
                 />
               </svg>
-              Apply on Company Website
+              {isExternalJob
+                ? `Apply on Original Source${job.source_name ? ` (${job.source_name})` : ''}`
+                : 'Apply on Company Website'}
             </button>
           )}
 

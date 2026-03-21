@@ -80,6 +80,9 @@ export class KamerPowerScraper extends BaseScraper {
             posted_at: dateStr || null,
             closing_at: null,
             fetched_at: new Date().toISOString(),
+            contact_email: null,
+            contact_phone: null,
+            contact_whatsapp: null,
           });
         });
 
@@ -96,6 +99,24 @@ export class KamerPowerScraper extends BaseScraper {
       } catch (err) {
         console.error(`[scraper:kamerpower] Page ${page} error:`, err);
         break;
+      }
+    }
+
+    // Fetch detail pages for contact extraction (limit to first 10 to stay polite)
+    const detailLimit = Math.min(allJobs.length, 10);
+    for (let i = 0; i < detailLimit; i++) {
+      const job = allJobs[i];
+      try {
+        const details = await this.fetchJobDetails(job.url);
+        if (details) {
+          if (details.description && !job.description) job.description = details.description;
+          if (details.email) job.contact_email = details.email;
+          if (details.phone) job.contact_phone = details.phone;
+          if (details.whatsapp) job.contact_whatsapp = details.whatsapp;
+        }
+        await this.delay(1500);
+      } catch {
+        // Non-fatal — continue with other jobs
       }
     }
 
