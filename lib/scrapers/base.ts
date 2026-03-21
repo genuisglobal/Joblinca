@@ -100,18 +100,52 @@ export abstract class BaseScraper {
     return `${this.source}:${key}`;
   }
 
-  /** Detect language from text (simple heuristic). */
+  /** Detect language from text (heuristic for French vs English). */
   protected detectLanguage(text: string): 'fr' | 'en' {
     const lower = text.toLowerCase();
-    const frWords = ['recrutement', 'emploi', 'poste', 'offre', 'candidature', 'société', 'entreprise', 'profil', 'recherche', 'contrat', 'stage', 'avis', 'pourvoir'];
-    const enWords = ['recruitment', 'hiring', 'position', 'vacancy', 'apply', 'company', 'opportunity', 'looking for', 'contract', 'internship', 'job'];
+
+    // French indicators — verbs, articles, prepositions, and job-specific terms
+    const frWords = [
+      // Common French articles/prepositions (strong signal when combined)
+      'recrute', 'recrutement', 'recherche', 'cherche',
+      'emploi', 'offre', 'poste', 'candidature', 'pourvoir',
+      'société', 'societe', 'entreprise', 'agence',
+      'contrat', 'stage', 'mission', 'disponible',
+      'profil', 'expérience', 'experience', 'compétences', 'competences',
+      'candidat', 'diplôme', 'diplome', 'formation',
+      'travail', 'salaire', 'rémunération', 'remuneration',
+      'envoyez', 'envoyer', 'postuler', 'postulez',
+      'responsable', 'directeur', 'gestionnaire', 'comptable',
+      'commercial', 'technicien', 'ingénieur', 'ingenieur',
+      'secrétaire', 'secretaire', 'chauffeur', 'caissier',
+      'avis', 'appel', 'urgent',
+    ];
+
+    // French structural words — articles/prepositions that strongly indicate French text
+    const frStructural = [
+      ' des ', ' les ', ' une ', ' pour ', ' dans ', ' aux ',
+      ' sur ', ' est ', ' sont ', ' avec ', ' cette ', ' votre ',
+      ' nous ', ' notre ', ' leur ', " l'", " d'", " n'", " s'", " qu'",
+    ];
+
+    const enWords = [
+      'recruitment', 'hiring', 'position', 'vacancy', 'apply',
+      'company', 'opportunity', 'looking for', 'contract', 'internship',
+      'job', 'requirements', 'required', 'experience', 'qualified',
+      'candidate', 'resume', 'salary', 'deadline', 'submit',
+      'responsible', 'manager', 'officer', 'engineer', 'accountant',
+      'secretary', 'driver', 'assistant', 'supervisor',
+      'the ', 'this ', 'that ', 'with ', 'from ', 'have ',
+    ];
 
     let frScore = 0;
     let enScore = 0;
     for (const w of frWords) if (lower.includes(w)) frScore++;
+    for (const w of frStructural) if (lower.includes(w)) frScore += 2; // structural words are strong signals
     for (const w of enWords) if (lower.includes(w)) enScore++;
 
-    return frScore > enScore ? 'fr' : 'en';
+    // Default to French for Cameroon job boards (bilingual country, French-majority)
+    return enScore > frScore ? 'en' : 'fr';
   }
 
   /** Map common Cameroon location strings to regions. */

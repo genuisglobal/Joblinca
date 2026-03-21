@@ -7,6 +7,7 @@ import {
   normalizeSingle,
 } from '@/lib/aggregation/admin';
 import RunScrapersButton from './RunScrapersButton';
+import DedupPanel from './DedupPanel';
 
 type SourceSummary = {
   name: string;
@@ -222,8 +223,9 @@ export default async function AdminAggregationPage() {
         />
       </div>
 
-      <div className="mb-8">
+      <div className="mb-8 space-y-4">
         <RunScrapersButton />
+        <DedupPanel />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

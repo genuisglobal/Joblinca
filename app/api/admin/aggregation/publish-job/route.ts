@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { detectContentLanguage, normalizeLocale } from '@/lib/i18n/locale';
+import { findDuplicateJob } from '@/lib/jobs/dedup';
 
 function isMissingJobLanguageColumnError(error: { message?: string | null } | null) {
   return Boolean(error?.message?.includes('column jobs.language does not exist'));
@@ -81,6 +82,31 @@ export async function POST(request: NextRequest) {
       const language =
         normalizeLocale(dj.language) ||
         detectContentLanguage(`${dj.title} ${description}`);
+
+      // Check for duplicate in published jobs
+      const duplicate = await findDuplicateJob(supabase, dj.title, dj.company_name);
+      if (duplicate) {
+        // Link discovered job to existing published job instead of creating duplicate
+        await supabase
+          .from('discovered_jobs')
+          .update({
+            native_job_id: duplicate.id,
+            ingestion_status: 'published',
+            published_at: nowIso,
+            verification_status: 'verified',
+          })
+          .eq('id', dj.id);
+
+        results.push({
+          discoveredJobId: dj.id,
+          jobId: duplicate.id,
+          title: dj.title,
+          deduplicated: true,
+          matchedTitle: duplicate.title,
+          similarity: duplicate.similarity,
+        } as any);
+        continue;
+      }
 
       // Insert into jobs table
       const insertPayload = {

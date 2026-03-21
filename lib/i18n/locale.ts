@@ -47,40 +47,36 @@ export function detectContentLanguage(text: string | null | undefined): Locale |
   }
 
   const lower = text.toLowerCase();
+
+  // French keyword indicators
   const frWords = [
-    'recrutement',
-    'emploi',
-    'poste',
-    'offre',
-    'candidature',
-    'societe',
-    'société',
-    'entreprise',
-    'profil',
-    'recherche',
-    'contrat',
-    'stage',
-    'pourvoir',
-    'mission',
-    'disponible',
-    'francais',
-    'français',
+    'recrute', 'recrutement', 'recherche', 'cherche',
+    'emploi', 'offre', 'poste', 'candidature', 'pourvoir',
+    'société', 'societe', 'entreprise', 'agence',
+    'contrat', 'stage', 'mission', 'disponible',
+    'profil', 'expérience', 'compétences', 'competences',
+    'candidat', 'diplôme', 'diplome', 'formation',
+    'travail', 'salaire', 'rémunération', 'remuneration',
+    'envoyez', 'envoyer', 'postuler', 'postulez',
+    'responsable', 'directeur', 'gestionnaire', 'comptable',
+    'commercial', 'technicien', 'ingénieur', 'ingenieur',
+    'secrétaire', 'secretaire', 'chauffeur', 'caissier',
+    'francais', 'français',
   ];
+
+  // French structural words — articles/prepositions that strongly indicate French
+  const frStructural = [
+    ' des ', ' les ', ' une ', ' pour ', ' dans ', ' aux ',
+    ' sur ', ' est ', ' sont ', ' avec ', ' cette ', ' votre ',
+    ' nous ', ' notre ', ' leur ', " l'", " d'", " n'", " s'", " qu'",
+  ];
+
   const enWords = [
-    'recruitment',
-    'hiring',
-    'position',
-    'vacancy',
-    'apply',
-    'company',
-    'opportunity',
-    'looking for',
-    'contract',
-    'internship',
-    'job',
-    'available',
-    'english',
-    'requirements',
+    'recruitment', 'hiring', 'position', 'vacancy', 'apply',
+    'company', 'opportunity', 'looking for', 'contract', 'internship',
+    'job', 'available', 'english', 'requirements', 'required',
+    'qualified', 'candidate', 'resume', 'salary', 'deadline',
+    'submit', 'manager', 'officer', 'engineer', 'accountant',
   ];
 
   let frScore = 0;
@@ -89,6 +85,12 @@ export function detectContentLanguage(text: string | null | undefined): Locale |
   for (const word of frWords) {
     if (lower.includes(word)) {
       frScore += 1;
+    }
+  }
+
+  for (const phrase of frStructural) {
+    if (lower.includes(phrase)) {
+      frScore += 2; // structural words are strong language signals
     }
   }
 
@@ -102,7 +104,8 @@ export function detectContentLanguage(text: string | null | undefined): Locale |
     return null;
   }
 
-  return frScore > enScore ? 'fr' : 'en';
+  // Default to French on tie — Cameroon is French-majority
+  return enScore > frScore ? 'en' : 'fr';
 }
 
 export function getLocalePreferenceRank(
