@@ -8,6 +8,13 @@ import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 import { checkJobForScam } from '@/lib/scam-detection';
 import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
+import {
+  LOCALE_COOKIE_NAME,
+  detectContentLanguage,
+  getLocalePreferenceRank,
+  normalizeLocale,
+  resolveLocalePreference,
+} from '@/lib/i18n/locale';
 
 function normalizeOptionalId(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -18,22 +25,62 @@ function normalizeOptionalId(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function resolveJobLanguage(input: unknown, title: unknown, description: unknown) {
+  return (
+    normalizeLocale(input) ||
+    detectContentLanguage(
+      [title, description].filter((value): value is string => typeof value === 'string').join(' ')
+    )
+  );
+}
+
+function isMissingJobLanguageColumnError(error: { message?: string | null } | null) {
+  return Boolean(error?.message?.includes('column jobs.language does not exist'));
+}
+
 // Handle GET /api/jobs and POST /api/jobs
-export async function GET() {
+export async function GET(request: NextRequest) {
   const supabase = createServiceSupabaseClient();
-  // Closed jobs can remain publicly viewable on direct links, but the public
-  // jobs feed should only return still-open listings.
-  const { data: jobs, error } = await supabase
+  const preferredLocale = resolveLocalePreference({
+    queryLocale: request.nextUrl.searchParams.get('preferred_language'),
+    cookieLocale: request.cookies.get(LOCALE_COOKIE_NAME)?.value,
+    acceptLanguage: request.headers.get('accept-language'),
+  });
+  const languageFilter = normalizeLocale(request.nextUrl.searchParams.get('language'));
+  const query = supabase
     .from('jobs')
     .select('*')
     .eq('published', true)
     .eq('approval_status', 'approved')
-    .eq('visibility', 'public')
-    .order('created_at', { ascending: false });
+    .eq('visibility', 'public');
+
+  // Closed jobs can remain publicly viewable on direct links, but the public
+  // jobs feed should only return still-open listings.
+  const { data: jobs, error } = await query.order('created_at', { ascending: false });
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json((jobs || []).filter((job) => isJobPubliclyListable(job)));
+
+  const sortedJobs = (jobs || [])
+    .filter((job) => isJobPubliclyListable(job))
+    .map((job) => ({
+      ...job,
+      language: resolveJobLanguage(job.language, job.title, job.description),
+    }))
+    .filter((job) => !languageFilter || job.language === languageFilter)
+    .sort((left, right) => {
+      const rankDifference =
+        getLocalePreferenceRank(left.language, preferredLocale) -
+        getLocalePreferenceRank(right.language, preferredLocale);
+
+      if (rankDifference !== 0) {
+        return rankDifference;
+      }
+
+      return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+    });
+
+  return NextResponse.json(sortedJobs);
 }
 
 export async function POST(request: NextRequest) {
@@ -243,6 +290,7 @@ export async function POST(request: NextRequest) {
 
   // Scam detection: score the job content
   const scamResult = checkJobForScam(title, description || '', companyName || null);
+  const language = resolveJobLanguage(body.language, title, description);
 
   const shouldPublishImmediately = isActiveAdmin && !scamResult.isSuspicious;
   const approvalStatus = isActiveAdmin && !scamResult.isSuspicious ? 'approved' : 'pending';
@@ -255,43 +303,58 @@ export async function POST(request: NextRequest) {
     filled_at: null,
   });
 
-  const { data: insertedJob, error } = await supabase
+  const insertPayload = {
+    title,
+    description,
+    language,
+    location,
+    salary: salary ? Number(salary) : null,
+    recruiter_id: assignedRecruiterId,
+    published: shouldPublishImmediately,
+    approval_status: approvalStatus,
+    lifecycle_status: lifecycleStatus,
+    scam_score: scamResult.score,
+    approved_at: isActiveAdmin ? new Date().toISOString() : null,
+    approved_by: isActiveAdmin ? user.id : null,
+    posted_by: user.id,
+    posted_by_role: isActiveAdmin ? `admin_${profile.admin_type}` : 'recruiter',
+    company_name: companyName || null,
+    company_logo_url: companyLogoUrl || null,
+    work_type: workType || 'onsite',
+    job_type: opportunityValidation.normalized.jobType,
+    internship_track: opportunityValidation.normalized.internshipTrack,
+    visibility: opportunityValidation.normalized.visibility,
+    eligible_roles: opportunityValidation.normalized.eligibleRoles,
+    custom_questions: customQuestions || null,
+    apply_method: applyMethod || 'joblinca',
+    apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
+    external_apply_url: externalApplyUrl || null,
+    apply_email: applyEmail || null,
+    apply_phone: applyPhone || null,
+    apply_whatsapp: applyWhatsapp || null,
+    closes_at: normalizedClosesAt,
+    target_hire_date: normalizedTargetHireDate,
+    wa_ai_screening_enabled:
+      typeof waAiScreeningEnabled === 'boolean' ? waAiScreeningEnabled : null,
+  };
+
+  let { data: insertedJob, error } = await supabase
     .from('jobs')
-    .insert({
-      title,
-      description,
-      location,
-      salary: salary ? Number(salary) : null,
-      recruiter_id: assignedRecruiterId,
-      published: shouldPublishImmediately,
-      approval_status: approvalStatus,
-      lifecycle_status: lifecycleStatus,
-      scam_score: scamResult.score,
-      approved_at: isActiveAdmin ? new Date().toISOString() : null,
-      approved_by: isActiveAdmin ? user.id : null,
-      posted_by: user.id,
-      posted_by_role: isActiveAdmin ? `admin_${profile.admin_type}` : 'recruiter',
-      company_name: companyName || null,
-      company_logo_url: companyLogoUrl || null,
-      work_type: workType || 'onsite',
-      job_type: opportunityValidation.normalized.jobType,
-      internship_track: opportunityValidation.normalized.internshipTrack,
-      visibility: opportunityValidation.normalized.visibility,
-      eligible_roles: opportunityValidation.normalized.eligibleRoles,
-      custom_questions: customQuestions || null,
-      apply_method: applyMethod || 'joblinca',
-      apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
-      external_apply_url: externalApplyUrl || null,
-      apply_email: applyEmail || null,
-      apply_phone: applyPhone || null,
-      apply_whatsapp: applyWhatsapp || null,
-      closes_at: normalizedClosesAt,
-      target_hire_date: normalizedTargetHireDate,
-      wa_ai_screening_enabled:
-        typeof waAiScreeningEnabled === 'boolean' ? waAiScreeningEnabled : null,
-    })
+    .insert(insertPayload)
     .select('*')
     .single();
+
+  if (isMissingJobLanguageColumnError(error)) {
+    const { language: _language, ...fallbackInsertPayload } = insertPayload;
+    const fallbackResult = await supabase
+      .from('jobs')
+      .insert(fallbackInsertPayload)
+      .select('*')
+      .single();
+
+    insertedJob = fallbackResult.data;
+    error = fallbackResult.error;
+  }
   if (error || !insertedJob) {
     return NextResponse.json({ error: error?.message || 'Failed to create job' }, { status: 500 });
   }

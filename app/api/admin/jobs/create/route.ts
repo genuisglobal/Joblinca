@@ -5,6 +5,11 @@ import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 import { validateOpportunityConfiguration } from '@/lib/opportunities';
 import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
 import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
+import { detectContentLanguage, normalizeLocale } from '@/lib/i18n/locale';
+
+function isMissingJobLanguageColumnError(error: { message?: string | null } | null) {
+  return Boolean(error?.message?.includes('column jobs.language does not exist'));
+}
 
 export async function POST(request: Request) {
   try {
@@ -77,6 +82,9 @@ export async function POST(request: Request) {
       );
     }
 
+    const language =
+      normalizeLocale(body.language) || detectContentLanguage(`${title} ${description}`);
+
     const supabase = createServerSupabaseClient();
     const requestedRecruiterId =
       typeof recruiterId === 'string' && recruiterId.trim().length > 0
@@ -142,35 +150,50 @@ export async function POST(request: Request) {
       filled_at: null,
     });
 
-    const { data: job, error } = await supabase
+    const insertPayload = {
+      recruiter_id: assignedRecruiterId,
+      title,
+      description,
+      language,
+      location: location || null,
+      salary: salary || null,
+      company_name: companyName,
+      company_logo_url: companyLogoUrl || null,
+      work_type: workType || 'onsite',
+      job_type: opportunityValidation.normalized.jobType,
+      internship_track: opportunityValidation.normalized.internshipTrack,
+      visibility: opportunityValidation.normalized.visibility,
+      eligible_roles: opportunityValidation.normalized.eligibleRoles,
+      apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
+      custom_questions: customQuestions || null,
+      closes_at: normalizedClosesAt,
+      target_hire_date: normalizedTargetHireDate,
+      published: publishedState,
+      approval_status: approvalStatus,
+      lifecycle_status: lifecycleStatus,
+      approved_at: autoApprove ? new Date().toISOString() : null,
+      approved_by: autoApprove ? userId : null,
+      posted_by: userId,
+      posted_by_role: `admin_${adminType}`,
+    };
+
+    let { data: job, error } = await supabase
       .from('jobs')
-      .insert({
-        recruiter_id: assignedRecruiterId,
-        title,
-        description,
-        location: location || null,
-        salary: salary || null,
-        company_name: companyName,
-        company_logo_url: companyLogoUrl || null,
-        work_type: workType || 'onsite',
-        job_type: opportunityValidation.normalized.jobType,
-        internship_track: opportunityValidation.normalized.internshipTrack,
-        visibility: opportunityValidation.normalized.visibility,
-        eligible_roles: opportunityValidation.normalized.eligibleRoles,
-        apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
-        custom_questions: customQuestions || null,
-        closes_at: normalizedClosesAt,
-        target_hire_date: normalizedTargetHireDate,
-        published: publishedState,
-        approval_status: approvalStatus,
-        lifecycle_status: lifecycleStatus,
-        approved_at: autoApprove ? new Date().toISOString() : null,
-        approved_by: autoApprove ? userId : null,
-        posted_by: userId,
-        posted_by_role: `admin_${adminType}`,
-      })
+      .insert(insertPayload)
       .select()
       .single();
+
+    if (isMissingJobLanguageColumnError(error)) {
+      const { language: _language, ...fallbackInsertPayload } = insertPayload;
+      const fallbackResult = await supabase
+        .from('jobs')
+        .insert(fallbackInsertPayload)
+        .select()
+        .single();
+
+      job = fallbackResult.data;
+      error = fallbackResult.error;
+    }
 
     if (error) {
       console.error('Error creating job:', error);

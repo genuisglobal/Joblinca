@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createServerClient, type CookieOptions } from '@supabase/ssr';
-import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
+import { ACTIVE_ADMIN_TYPES, type AdminType } from '@/lib/admin';
+import {
+  LOCALE_COOKIE_NAME,
+  normalizeLocale,
+  resolveLocalePreference,
+} from '@/lib/i18n/locale';
 
 export async function middleware(req: NextRequest) {
   let res = NextResponse.next({
@@ -51,6 +56,61 @@ export async function middleware(req: NextRequest) {
   // IMPORTANT: This refreshes the session and ensures cookies are properly set
   // This must be called for every request to maintain the session
   const { data: { user }, error } = await supabase.auth.getUser();
+  const queryLocale = normalizeLocale(req.nextUrl.searchParams.get('lang'));
+  const cookieLocale = normalizeLocale(req.cookies.get(LOCALE_COOKIE_NAME)?.value);
+  let profile:
+    | {
+        role?: string | null;
+        admin_type?: AdminType | null;
+        preferred_locale?: string | null;
+      }
+    | null = null;
+
+  if (user) {
+    const { data } = await supabase
+      .from('profiles')
+      .select('role, admin_type')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    profile = data
+      ? {
+          ...data,
+          preferred_locale: null,
+        }
+      : null;
+
+    const { data: localeData } = await supabase
+      .from('profiles')
+      .select('preferred_locale')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (profile && localeData) {
+      profile.preferred_locale = localeData.preferred_locale ?? null;
+    }
+  }
+
+  const resolvedLocale = resolveLocalePreference({
+    queryLocale,
+    cookieLocale,
+    profileLocale: profile?.preferred_locale,
+    acceptLanguage: req.headers.get('accept-language'),
+  });
+
+  if (req.cookies.get(LOCALE_COOKIE_NAME)?.value !== resolvedLocale) {
+    req.cookies.set({
+      name: LOCALE_COOKIE_NAME,
+      value: resolvedLocale,
+    });
+    res.cookies.set({
+      name: LOCALE_COOKIE_NAME,
+      value: resolvedLocale,
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+    });
+  }
 
   // Protect admin routes
   if (req.nextUrl.pathname.startsWith('/admin')) {
@@ -59,12 +119,6 @@ export async function middleware(req: NextRequest) {
       redirectUrl.searchParams.set('redirect', req.nextUrl.pathname);
       return NextResponse.redirect(redirectUrl);
     }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('admin_type')
-      .eq('id', user.id)
-      .maybeSingle();
 
     const isActiveAdmin = profile?.admin_type &&
       ACTIVE_ADMIN_TYPES.includes(profile.admin_type);
@@ -79,12 +133,6 @@ export async function middleware(req: NextRequest) {
     if (!user) {
       return NextResponse.redirect(new URL('/auth/login', req.url));
     }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, admin_type')
-      .eq('id', user.id)
-      .maybeSingle();
 
     const canUseAdminPostJob =
       req.nextUrl.pathname === '/recruiter/post-job' &&

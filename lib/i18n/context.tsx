@@ -3,35 +3,56 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import en from "./translations/en";
 import fr from "./translations/fr";
-
-type Locale = "en" | "fr";
+import {
+  LOCALE_COOKIE_NAME,
+  type Locale,
+} from "./locale";
 
 const dictionaries: Record<Locale, Record<string, string>> = { en, fr };
 
 interface LanguageContextValue {
   locale: Locale;
-  setLocale: (locale: Locale) => void;
+  setLocale: (locale: Locale) => Promise<void>;
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
 const LanguageContext = createContext<LanguageContextValue | undefined>(undefined);
 
-export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("en");
-  const [mounted, setMounted] = useState(false);
+export function LanguageProvider({
+  children,
+  initialLocale,
+}: {
+  children: React.ReactNode;
+  initialLocale: Locale;
+}) {
+  const [locale, setLocaleState] = useState<Locale>(initialLocale);
 
   useEffect(() => {
-    const saved = localStorage.getItem("lang") as Locale | null;
-    if (saved === "en" || saved === "fr") {
-      setLocaleState(saved);
-    }
-    setMounted(true);
-  }, []);
+    setLocaleState(initialLocale);
+  }, [initialLocale]);
 
-  const setLocale = useCallback((newLocale: Locale) => {
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    localStorage.setItem(LOCALE_COOKIE_NAME, locale);
+  }, [locale]);
+
+  const setLocale = useCallback(async (newLocale: Locale) => {
     setLocaleState(newLocale);
-    localStorage.setItem("lang", newLocale);
+    localStorage.setItem(LOCALE_COOKIE_NAME, newLocale);
+    document.cookie = `${LOCALE_COOKIE_NAME}=${newLocale}; path=/; max-age=31536000; samesite=lax`;
     document.documentElement.lang = newLocale;
+    try {
+      await fetch("/api/preferences/locale", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ locale: newLocale }),
+      });
+    } catch {
+      // Cookie/local state are already updated, so a profile persistence failure
+      // should not block the locale switch in the current session.
+    }
   }, []);
 
   const t = useCallback(
@@ -48,17 +69,9 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   );
 
   const contextValue: LanguageContextValue = {
-    locale: mounted ? locale : "en",
+    locale,
     setLocale,
-    t: mounted ? t : (key: string, vars?: Record<string, string | number>) => {
-      let value = dictionaries.en[key] ?? key;
-      if (vars) {
-        for (const [k, v] of Object.entries(vars)) {
-          value = value.replace(new RegExp(`\\{${k}\\}`, "g"), String(v));
-        }
-      }
-      return value;
-    },
+    t,
   };
 
   return (

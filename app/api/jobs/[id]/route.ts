@@ -7,6 +7,7 @@ import {
   persistJobOpportunityMetadata,
 } from '@/lib/opportunities-server';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
+import { detectContentLanguage, normalizeLocale } from '@/lib/i18n/locale';
 
 interface RouteContext {
   params: {
@@ -45,6 +46,17 @@ function normalizeOptionalId(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function resolveJobLanguage(input: unknown, title: string | null, description: string | null) {
+  return (
+    normalizeLocale(input) ||
+    detectContentLanguage([title, description].filter(Boolean).join(' '))
+  );
+}
+
+function isMissingJobLanguageColumnError(error: { message?: string | null } | null) {
+  return Boolean(error?.message?.includes('column jobs.language does not exist'));
 }
 
 async function getAuthorizedJobEditor(jobId: string) {
@@ -156,6 +168,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
   return NextResponse.json({
     job: {
       ...job,
+      language: resolveJobLanguage(null, job.title, job.description),
       internship_requirements: metadata.data,
     },
   });
@@ -189,6 +202,8 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
       { status: 400 }
     );
   }
+
+  const language = resolveJobLanguage(body.language, title, description);
 
   if (body.waAiScreeningEnabled !== undefined && waAiScreeningEnabled === undefined) {
     return NextResponse.json(
@@ -358,29 +373,32 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     }
   }
 
-  const { data: job, error } = await access.serviceClient
+  const updatePayload = {
+    title,
+    company_name: companyName,
+    company_logo_url: companyLogoUrl,
+    location,
+    salary,
+    work_type: workType,
+    job_type: opportunityValidation.normalized.jobType,
+    internship_track: opportunityValidation.normalized.internshipTrack,
+    visibility: opportunityValidation.normalized.visibility,
+    language,
+    eligible_roles: opportunityValidation.normalized.eligibleRoles,
+    apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
+    description,
+    closes_at: closesAtUpdate === undefined ? undefined : closesAtUpdate,
+    target_hire_date:
+      targetHireDateUpdate === undefined ? undefined : targetHireDateUpdate,
+    recruiter_id: recruiterIdUpdate,
+    wa_ai_screening_enabled:
+      waAiScreeningEnabled === undefined ? undefined : waAiScreeningEnabled,
+    updated_at: new Date().toISOString(),
+  };
+
+  let { data: job, error } = await access.serviceClient
     .from('jobs')
-    .update({
-      title,
-      company_name: companyName,
-      company_logo_url: companyLogoUrl,
-      location,
-      salary,
-      work_type: workType,
-      job_type: opportunityValidation.normalized.jobType,
-      internship_track: opportunityValidation.normalized.internshipTrack,
-      visibility: opportunityValidation.normalized.visibility,
-      eligible_roles: opportunityValidation.normalized.eligibleRoles,
-      apply_intake_mode: opportunityValidation.normalized.applyIntakeMode,
-      description,
-      closes_at: closesAtUpdate === undefined ? undefined : closesAtUpdate,
-      target_hire_date:
-        targetHireDateUpdate === undefined ? undefined : targetHireDateUpdate,
-      recruiter_id: recruiterIdUpdate,
-      wa_ai_screening_enabled:
-        waAiScreeningEnabled === undefined ? undefined : waAiScreeningEnabled,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', params.id)
     .select(
       `
@@ -409,6 +427,43 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     )
     .single();
 
+  if (isMissingJobLanguageColumnError(error)) {
+    const { language: _language, ...fallbackUpdatePayload } = updatePayload;
+    const fallbackResult = await access.serviceClient
+      .from('jobs')
+      .update(fallbackUpdatePayload)
+      .eq('id', params.id)
+      .select(
+        `
+        id,
+        posted_by,
+        recruiter_id,
+        title,
+        company_name,
+        company_logo_url,
+        location,
+        salary,
+        work_type,
+        job_type,
+        internship_track,
+        eligible_roles,
+        apply_intake_mode,
+        visibility,
+        description,
+        closes_at,
+        target_hire_date,
+        lifecycle_status,
+        reopen_count,
+        last_reopened_at,
+        wa_ai_screening_enabled
+      `
+      )
+      .single();
+
+    job = fallbackResult.data;
+    error = fallbackResult.error;
+  }
+
   if (error || !job) {
     console.error('Job update error:', error);
     return NextResponse.json({ error: 'Failed to update job.' }, { status: 500 });
@@ -434,6 +489,7 @@ export async function PATCH(request: NextRequest, { params }: RouteContext) {
     success: true,
     job: {
       ...job,
+      language,
       internship_requirements: refreshedMetadata.data,
     },
   });

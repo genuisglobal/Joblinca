@@ -13,6 +13,7 @@ export default function JobSearchBar() {
 
   const currentRemote = searchParams.get('remote') === '1';
   const currentType = searchParams.get('type') || '';
+  const currentLanguage = searchParams.get('language') || '';
 
   const buildUrl = useCallback(
     (overrides: Record<string, string | null>) => {
@@ -47,7 +48,18 @@ export default function JobSearchBar() {
   function clearAll() {
     setQuery('');
     setLocation('');
-    router.push(currentType ? `/jobs?type=${currentType}` : '/jobs');
+    const params = new URLSearchParams();
+
+    if (currentType) {
+      params.set('type', currentType);
+    }
+
+    if (currentLanguage) {
+      params.set('language', currentLanguage);
+    }
+
+    const queryString = params.toString();
+    router.push(queryString ? `/jobs?${queryString}` : '/jobs');
   }
 
   const hasFilters = query || location || currentRemote;

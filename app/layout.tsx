@@ -2,6 +2,7 @@ import "@/app/globals.css";
 import type { Metadata, Viewport } from "next";
 import dynamic from "next/dynamic";
 import ClientLayout from "@/components/ClientLayout";
+import { getRequestLocale } from "@/lib/i18n/server";
 
 // Client-only NavBar (uses Supabase browser client)
 const NavBar = dynamic(() => import("../components/NavBar"), { ssr: false });
@@ -41,10 +42,12 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = getRequestLocale();
+
   return (
-    <html lang="en">
+    <html lang={locale}>
       <body className="bg-gray-900 text-gray-100 relative">
-        <ClientLayout>
+        <ClientLayout initialLocale={locale}>
           <header className="sticky top-0 w-full z-50 bg-neutral-950/90 backdrop-blur-lg border-b border-neutral-800/50">
             <NavBar />
           </header>
