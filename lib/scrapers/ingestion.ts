@@ -291,6 +291,7 @@ export async function ingestScrapeResult(
             language: job.language,
             contact_email: job.contact_email || null,
             contact_phone: job.contact_phone || null,
+            contact_whatsapp: job.contact_whatsapp || null,
             ingestion_status: scamScore >= 50 ? 'review_required' : 'normalized',
             verification_status: scamScore >= 50 ? 'suspicious' : 'discovered',
           })
