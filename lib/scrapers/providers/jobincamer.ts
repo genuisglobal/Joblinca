@@ -41,7 +41,7 @@ export class JobInCamerScraper extends BaseScraper {
 
           // Title and URL
           const $titleLink = $el.find('.media-heading a');
-          const title = $titleLink.text().trim();
+          const title = this.clean($titleLink.text());
           const href = $titleLink.attr('href') || '';
           if (!title || !href || seenUrls.has(href)) return;
           seenUrls.add(href);
@@ -50,7 +50,7 @@ export class JobInCamerScraper extends BaseScraper {
 
           // Company from employer link
           const $companyLink = $el.find('.media-body a[href*="/employer/"]');
-          const company = $companyLink.text().trim() || null;
+          const company = this.clean($companyLink.text()) || null;
 
           // Logo
           const logoSrc = $el.find('.pull-left img').attr('src') || null;
@@ -124,7 +124,7 @@ export class JobInCamerScraper extends BaseScraper {
     }
 
     // Fetch detail pages for contact extraction (limit to first 10)
-    const detailLimit = Math.min(allJobs.length, 10);
+    const detailLimit = Math.min(allJobs.length, 30);
     for (let i = 0; i < detailLimit; i++) {
       const job = allJobs[i];
       try {

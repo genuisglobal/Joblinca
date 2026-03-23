@@ -5,6 +5,33 @@
 import type { ScrapedJob, ScrapeResult, ScraperConfig } from './types';
 import { DEFAULT_SCRAPER_CONFIG } from './types';
 
+/** Decode common HTML entities that cheerio may leave behind. */
+const HTML_ENTITIES: Record<string, string> = {
+  '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&apos;': "'",
+  '&nbsp;': ' ', '&ndash;': '\u2013', '&mdash;': '\u2014',
+  '&laquo;': '\u00AB', '&raquo;': '\u00BB',
+  '&eacute;': '\u00E9', '&egrave;': '\u00E8', '&ecirc;': '\u00EA',
+  '&agrave;': '\u00E0', '&acirc;': '\u00E2', '&ocirc;': '\u00F4',
+  '&ucirc;': '\u00FB', '&ugrave;': '\u00F9', '&iuml;': '\u00EF',
+  '&ccedil;': '\u00E7', '&Eacute;': '\u00C9', '&Egrave;': '\u00C8',
+};
+
+function decodeHtmlEntities(text: string): string {
+  let result = text;
+  // Named entities
+  for (const [entity, char] of Object.entries(HTML_ENTITIES)) {
+    result = result.replaceAll(entity, char);
+  }
+  // Numeric entities: &#xe9; &#233; etc.
+  result = result.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+  result = result.replace(/&#(\d+);/g, (_, dec) =>
+    String.fromCharCode(parseInt(dec, 10))
+  );
+  return result;
+}
+
 export abstract class BaseScraper {
   readonly source: string;
   protected config: ScraperConfig;
@@ -12,6 +39,12 @@ export abstract class BaseScraper {
   constructor(source: string, config?: Partial<ScraperConfig>) {
     this.source = source;
     this.config = { ...DEFAULT_SCRAPER_CONFIG, ...config };
+  }
+
+  /** Clean text: decode HTML entities, collapse whitespace. */
+  protected clean(text: string | null | undefined): string {
+    if (!text) return '';
+    return decodeHtmlEntities(text).replace(/\s+/g, ' ').trim();
   }
 
   /** Subclasses implement the actual scraping logic. */
@@ -296,7 +329,7 @@ export abstract class BaseScraper {
       for (const selector of descriptionSelectors) {
         const el = $(selector);
         if (el.length > 0) {
-          description = el.text().trim().slice(0, 2000);
+          description = this.clean(el.text()).slice(0, 2000);
           break;
         }
       }

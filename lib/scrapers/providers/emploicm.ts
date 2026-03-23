@@ -70,7 +70,7 @@ export class EmploiCmScraper extends BaseScraper {
 
           // Title and URL
           const $titleLink = $card.find('h2.node-title a');
-          const title = $titleLink.text().trim();
+          const title = this.clean($titleLink.text());
           const href = $titleLink.attr('href') || '';
           if (!title || !href || seenUrls.has(href)) return;
           seenUrls.add(href);
@@ -82,7 +82,7 @@ export class EmploiCmScraper extends BaseScraper {
           const jobId = idMatch ? idMatch[1] : href;
 
           // Company
-          const company = $card.find('span.company-name a').text().trim() || null;
+          const company = this.clean($card.find('span.company-name a').text()) || null;
 
           // Logo
           const logoSrc = $card.find('.field-name-field-offre-image img').attr('src') || null;
@@ -91,7 +91,7 @@ export class EmploiCmScraper extends BaseScraper {
             : null;
 
           // Description excerpt
-          const description = $card.find('.field-name-body .field-item').text().trim().slice(0, 500) || null;
+          const description = this.clean($card.find('.field-name-body .field-item').text()).slice(0, 500) || null;
 
           // Posted date (DD.MM.YYYY format)
           const dateStr = $card.find('.posted-on').text().trim();

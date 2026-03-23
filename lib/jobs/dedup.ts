@@ -87,7 +87,7 @@ export async function findDuplicateJob(
     .select('id, title, company_name')
     .eq('published', true)
     .eq('approval_status', 'approved')
-    .in('lifecycle_status', ['live', 'on_hold'])
+    .not('lifecycle_status', 'eq', 'removed')
     .order('created_at', { ascending: false })
     .limit(500);
 
@@ -161,7 +161,7 @@ export async function findAllDuplicateGroups(
     .select('id, title, company_name, created_at, origin_type')
     .eq('published', true)
     .eq('approval_status', 'approved')
-    .in('lifecycle_status', ['live', 'on_hold'])
+    .not('lifecycle_status', 'eq', 'removed')
     .order('created_at', { ascending: true });
 
   if (!jobs || jobs.length < 2) return [];
