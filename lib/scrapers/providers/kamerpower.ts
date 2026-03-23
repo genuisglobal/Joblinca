@@ -35,7 +35,7 @@ export class KamerPowerScraper extends BaseScraper {
         articles.each((_, el) => {
           const $el = $(el);
           const $titleLink = $el.find('h2.post-title a');
-          const title = $titleLink.text().trim();
+          const title = this.clean($titleLink.text());
           const jobUrl = $titleLink.attr('href') || '';
           const dateStr = $el.find('p.post-date time.published').attr('datetime') || null;
           const thumbnail = $el.find('.post-thumbnail img').attr('data-src')
@@ -103,7 +103,7 @@ export class KamerPowerScraper extends BaseScraper {
     }
 
     // Fetch detail pages for contact extraction (limit to first 10 to stay polite)
-    const detailLimit = Math.min(allJobs.length, 10);
+    const detailLimit = Math.min(allJobs.length, 30);
     for (let i = 0; i < detailLimit; i++) {
       const job = allJobs[i];
       try {

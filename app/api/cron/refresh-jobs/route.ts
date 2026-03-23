@@ -2,11 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { fetchAllExternalJobs } from '@/lib/externalJobs';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
-import { runAllScrapers } from '@/lib/scrapers/registry';
-import { ingestAllResults } from '@/lib/scrapers/ingestion';
+import { runAutoPipeline } from '@/lib/scrapers/auto-pipeline';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 300; // 5 minutes for full pipeline
 
 /**
  * Cron endpoint to refresh external jobs daily.
@@ -78,31 +77,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // --- Aggregation tracking: run scrapers and ingest into discovered_jobs ---
-    let ingestionSummary: any = null;
+    // --- Full auto pipeline: scrape → ingest → auto-publish → dedup cleanup ---
+    let pipelineSummary: any = null;
     try {
-      console.log('[cron] Running scrapers for aggregation tracking...');
-      const aggregate = await runAllScrapers();
-      const ingestionResults = await ingestAllResults(aggregate.results, 'cron');
-      ingestionSummary = {
-        runs: ingestionResults.length,
-        total_inserted: ingestionResults.reduce((s, r) => s + r.inserted, 0),
-        total_updated: ingestionResults.reduce((s, r) => s + r.updated, 0),
-        total_duplicates: ingestionResults.reduce((s, r) => s + r.duplicates, 0),
-        total_suspicious: ingestionResults.reduce((s, r) => s + r.suspicious, 0),
-        total_errors: ingestionResults.reduce((s, r) => s + r.errors, 0),
-        sources: ingestionResults.map((r) => ({
-          sourceId: r.sourceId,
-          runId: r.runId,
-          status: r.status,
-          inserted: r.inserted,
-          duplicates: r.duplicates,
-        })),
-      };
-      console.log('[cron] Aggregation ingestion complete:', ingestionSummary);
-    } catch (ingestionErr) {
-      console.error('[cron] Aggregation ingestion error (non-fatal):', ingestionErr);
-      ingestionSummary = { error: String(ingestionErr) };
+      console.log('[cron] Running auto pipeline (scrape → ingest → publish → dedup)...');
+      const pipelineResult = await runAutoPipeline('cron', 2);
+      pipelineSummary = pipelineResult;
+      console.log('[cron] Auto pipeline complete:', pipelineSummary);
+    } catch (pipelineErr) {
+      console.error('[cron] Auto pipeline error (non-fatal):', pipelineErr);
+      pipelineSummary = { error: String(pipelineErr) };
     }
 
     const summary = {
@@ -122,7 +106,7 @@ export async function GET(request: NextRequest) {
         emploicm: jobs.filter(j => j.source === 'emploicm').length,
         facebook: jobs.filter(j => j.source === 'facebook').length,
       },
-      ingestion: ingestionSummary,
+      pipeline: pipelineSummary,
       timestamp: new Date().toISOString(),
     };
 

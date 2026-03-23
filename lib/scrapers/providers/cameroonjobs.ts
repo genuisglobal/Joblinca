@@ -40,7 +40,7 @@ export class CameroonJobsScraper extends BaseScraper {
 
           // Title and URL
           const $titleLink = $el.find('h4.attachment-heading a');
-          const title = $titleLink.text().trim();
+          const title = this.clean($titleLink.text());
           const href = $titleLink.attr('href') || '';
           if (!title || !href || seenUrls.has(href)) return;
           seenUrls.add(href);
@@ -125,7 +125,7 @@ export class CameroonJobsScraper extends BaseScraper {
     }
 
     // Fetch detail pages for contact extraction (limit to first 10)
-    const detailLimit = Math.min(allJobs.length, 10);
+    const detailLimit = Math.min(allJobs.length, 30);
     for (let i = 0; i < detailLimit; i++) {
       const job = allJobs[i];
       try {

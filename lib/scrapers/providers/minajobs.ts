@@ -48,7 +48,7 @@ export class MinaJobsScraper extends BaseScraper {
 
           // Title from .listing-title (strip "Nouveau" badge, take first text only)
           const $titleEl = $content.find('.listing-title').first();
-          const titleRaw = $titleEl.text().trim();
+          const titleRaw = this.clean($titleEl.text());
           const title = titleRaw.replace(/Nouveau\s*/i, '').replace(/New\s*/i, '').trim();
 
           // Company logo
@@ -122,7 +122,7 @@ export class MinaJobsScraper extends BaseScraper {
     }
 
     // Fetch detail pages for contact extraction (limit to first 10)
-    const detailLimit = Math.min(allJobs.length, 10);
+    const detailLimit = Math.min(allJobs.length, 30);
     for (let i = 0; i < detailLimit; i++) {
       const job = allJobs[i];
       try {

@@ -52,7 +52,14 @@ export default function RunScrapersButton() {
         body: JSON.stringify({ source, maxPages: 1 }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        setError(`Server returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`);
+        return;
+      }
 
       if (!res.ok) {
         setError(data.error || `HTTP ${res.status}`);
