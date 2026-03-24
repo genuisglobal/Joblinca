@@ -20,6 +20,8 @@ interface Job {
   created_at: string;
   closes_at: string | null;
   lifecycle_status: string | null;
+  published?: boolean;
+  approval_status?: string | null;
 }
 
 export default async function BrowseJobsPage() {
@@ -43,7 +45,11 @@ export default async function BrowseJobsPage() {
   let jobs: Job[] = [];
   if (jobsResponse.ok) {
     const payload = await jobsResponse.json();
-    jobs = Array.isArray(payload) ? (payload as Job[]) : [];
+    jobs = Array.isArray(payload.jobs)
+      ? (payload.jobs as Job[])
+      : Array.isArray(payload)
+        ? (payload as Job[])
+        : [];
   }
 
   const liveJobs = jobs.filter(

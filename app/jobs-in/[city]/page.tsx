@@ -102,6 +102,8 @@ interface Job {
   created_at: string;
   closes_at: string | null;
   lifecycle_status: string | null;
+  published?: boolean;
+  approval_status?: string | null;
 }
 
 export const dynamic = 'force-dynamic';
@@ -154,7 +156,11 @@ export default async function CityJobsPage({ params }: CityPageProps) {
 
     if (response.ok) {
       const payload = await response.json();
-      jobs = Array.isArray(payload) ? (payload as Job[]) : [];
+      jobs = Array.isArray(payload.jobs)
+        ? (payload.jobs as Job[])
+        : Array.isArray(payload)
+          ? (payload as Job[])
+          : [];
     }
   } catch {
     jobs = [];

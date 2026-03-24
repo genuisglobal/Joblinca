@@ -46,6 +46,8 @@ interface Job {
   work_type: string | null;
   closes_at?: string | null;
   lifecycle_status?: string | null;
+  published?: boolean;
+  approval_status?: string | null;
   isSample?: boolean;
 }
 
@@ -87,7 +89,7 @@ export default function HomePage() {
       // Fetch only the 6 most recent jobs — never fetch the full table
       const { data: fetchedJobs } = await supabase
         .from('jobs')
-        .select('id, title, company_name, location, job_type, salary, created_at, work_type, closes_at, lifecycle_status')
+        .select('id, title, company_name, location, job_type, salary, created_at, work_type, closes_at, lifecycle_status, published, approval_status')
         .eq('published', true)
         .eq('approval_status', 'approved')
         .order('created_at', { ascending: false })
