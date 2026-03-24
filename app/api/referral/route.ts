@@ -56,8 +56,22 @@ export async function GET() {
     .select('id', { count: 'exact', head: true })
     .eq('referred_by', user.id);
 
+  // Count total reward days earned
+  let totalRewardDays = 0;
+  try {
+    const { data: rewards } = await supabase
+      .from('referral_rewards')
+      .select('reward_value')
+      .eq('referrer_id', user.id)
+      .eq('status', 'granted');
+    totalRewardDays = (rewards || []).reduce((sum, r) => sum + (r.reward_value || 0), 0);
+  } catch {
+    // referral_rewards table may not exist yet
+  }
+
   return NextResponse.json({
     code: profile.referral_code,
     referralCount: count ?? 0,
+    totalRewardDays,
   });
 }

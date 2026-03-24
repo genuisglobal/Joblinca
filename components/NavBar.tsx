@@ -7,6 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useTranslation } from "@/lib/i18n";
 import { Menu, X, Briefcase, Users, Building2, Globe, FileText, LayoutDashboard, LogOut, LogIn, UserPlus, Languages } from "lucide-react";
+import NotificationBell from "@/components/NotificationBell";
 
 type Role = "job_seeker" | "talent" | "recruiter" | "field_agent" | "admin" | "staff" | null;
 
@@ -196,6 +197,7 @@ export default function NavBar() {
 
           {isAuthenticated ? (
             <>
+              <NotificationBell />
               <Link
                 href="/dashboard"
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"

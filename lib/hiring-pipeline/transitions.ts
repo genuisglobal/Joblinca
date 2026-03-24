@@ -6,6 +6,7 @@ import {
   type LegacyApplicationStatus,
 } from '@/lib/hiring-pipeline/mapping';
 import { sendApplicationStatusAlertWhatsapp } from '@/lib/messaging/whatsapp';
+import { isEmailDeliveryConfigured, sendApplicationStatusEmail } from '@/lib/messaging/email';
 
 export type { LegacyApplicationStatus } from '@/lib/hiring-pipeline/mapping';
 
@@ -274,6 +275,32 @@ async function sendCandidateStageNotification(params: {
       applicationsUrl: buildApplicationsUrl(context.applicantRole),
       userId: context.applicantId,
     });
+
+    // Also send email notification if configured
+    if (isEmailDeliveryConfigured()) {
+      try {
+        const db = createServiceSupabaseClient();
+        const { data: emailProfile } = await db
+          .from('profiles')
+          .select('email')
+          .eq('id', context.applicantId)
+          .maybeSingle();
+
+        if (emailProfile?.email) {
+          await sendApplicationStatusEmail({
+            to: emailProfile.email,
+            userName: context.applicantName,
+            jobTitle: context.jobTitle,
+            companyName: context.companyName,
+            stageLabel: params.toStage.label,
+            stageType: params.toStage.stage_type,
+            applicationsUrl: buildApplicationsUrl(context.applicantRole),
+          });
+        }
+      } catch {
+        // Email failure is non-blocking
+      }
+    }
 
     return {
       channel: 'whatsapp',

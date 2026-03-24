@@ -1,4 +1,5 @@
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import { grantReferralReward } from '@/lib/referral-rewards';
 
 type FinalizeSource = 'webhook' | 'status_poll';
 
@@ -298,6 +299,13 @@ export async function finalizeSuccessfulPayment(params: FinalizeSuccessParams) {
   }
 
   await applyPromoRedemption(transaction as Record<string, unknown>);
+
+  // Grant referral reward if applicable (first payment triggers reward for referrer)
+  try {
+    await grantReferralReward(transaction.user_id as string);
+  } catch (err) {
+    console.error('Referral reward grant failed (non-blocking)', err);
+  }
 }
 
 export async function finalizeFailedPayment(params: FinalizeFailureParams) {

@@ -154,6 +154,59 @@ export async function sendMatchedJobAlertEmail(opts: {
   });
 }
 
+export async function sendApplicationStatusEmail(opts: {
+  to: string;
+  userName: string;
+  jobTitle: string;
+  companyName: string;
+  stageLabel: string;
+  stageType: string;
+  applicationsUrl: string;
+}): Promise<void> {
+  const safeName = escapeHtml(opts.userName || 'there');
+  const safeTitle = escapeHtml(opts.jobTitle || 'your application');
+  const safeCompany = escapeHtml(opts.companyName || 'the hiring team');
+  const safeStage = escapeHtml(opts.stageLabel || 'updated');
+  const safeUrl = escapeHtml(opts.applicationsUrl);
+
+  let subjectVerb = 'moved to a new stage';
+  if (opts.stageType === 'interview') subjectVerb = 'moved to interview stage';
+  if (opts.stageType === 'offer') subjectVerb = 'received an offer';
+  if (opts.stageType === 'hire') subjectVerb = 'been selected';
+  if (opts.stageType === 'rejected') subjectVerb = 'been updated';
+
+  const subject = `Application update: ${opts.jobTitle || 'your application'} has ${subjectVerb}`;
+  const text = [
+    `Hi ${opts.userName || 'there'},`,
+    '',
+    `Your application for ${opts.jobTitle || 'this role'} at ${opts.companyName || 'Joblinca'} has been updated.`,
+    `New status: ${opts.stageLabel}`,
+    '',
+    `Track your application: ${opts.applicationsUrl}`,
+    '',
+    '— Joblinca',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;">
+      <h2 style="margin:0 0 12px;">Application Update</h2>
+      <p style="margin:0 0 12px;">Hi ${safeName},</p>
+      <p style="margin:0 0 12px;">
+        Your application for <strong>${safeTitle}</strong> at <strong>${safeCompany}</strong> has been updated.
+      </p>
+      <p style="margin:0 0 16px;">New status: <strong>${safeStage}</strong></p>
+      <p style="margin:0 0 16px;">
+        <a href="${safeUrl}" style="background:#2563eb;color:#ffffff;padding:10px 14px;border-radius:6px;text-decoration:none;display:inline-block;">
+          Track Your Application
+        </a>
+      </p>
+      <p style="margin:0;color:#6b7280;font-size:12px;">— Joblinca</p>
+    </div>
+  `;
+
+  await sendEmailViaResend({ to: opts.to, subject, text, html });
+}
+
 export async function sendInterviewScheduledEmail(opts: {
   to: string;
   userName: string;
@@ -455,6 +508,91 @@ export async function sendInterviewOutcomeFollowupEmail(opts: {
     html,
     replyTo: process.env.MATCHING_EMAIL_REPLY_TO || null,
   });
+}
+
+export async function sendSubscriptionExpiryEmail(opts: {
+  to: string;
+  userName: string;
+  planName: string;
+  daysLeft: number;
+  autoRenew: boolean;
+  billingUrl: string;
+}): Promise<void> {
+  const safeName = escapeHtml(opts.userName || 'there');
+  const safePlan = escapeHtml(opts.planName || 'your subscription');
+  const safeUrl = escapeHtml(opts.billingUrl);
+  const daysText = opts.daysLeft === 1 ? '1 day' : `${opts.daysLeft} days`;
+  const renewNote = opts.autoRenew
+    ? 'Auto-renewal is enabled — no action needed.'
+    : 'Renew now to keep your premium features.';
+
+  const subject = `Your Joblinca ${opts.planName} expires in ${daysText}`;
+  const text = [
+    `Hi ${opts.userName || 'there'},`,
+    '',
+    `Your ${opts.planName || 'subscription'} expires in ${daysText}.`,
+    renewNote,
+    '',
+    opts.autoRenew ? '' : `Renew here: ${opts.billingUrl}`,
+    '',
+    '— Joblinca',
+  ].filter(Boolean).join('\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;">
+      <h2 style="margin:0 0 12px;">Subscription expiring soon</h2>
+      <p style="margin:0 0 12px;">Hi ${safeName},</p>
+      <p style="margin:0 0 12px;">
+        Your <strong>${safePlan}</strong> expires in <strong>${daysText}</strong>.
+      </p>
+      <p style="margin:0 0 16px;">${escapeHtml(renewNote)}</p>
+      ${!opts.autoRenew ? `<p style="margin:0 0 16px;">
+        <a href="${safeUrl}" style="background:#2563eb;color:#ffffff;padding:10px 14px;border-radius:6px;text-decoration:none;display:inline-block;">
+          Renew Subscription
+        </a>
+      </p>` : ''}
+      <p style="margin:0;color:#6b7280;font-size:12px;">— Joblinca</p>
+    </div>
+  `;
+
+  await sendEmailViaResend({ to: opts.to, subject, text, html });
+}
+
+export async function sendReferralRewardEmail(opts: {
+  to: string;
+  userName: string;
+  rewardDays: number;
+}): Promise<void> {
+  const safeName = escapeHtml(opts.userName || 'there');
+
+  const subject = `You earned ${opts.rewardDays} bonus days on Joblinca!`;
+  const text = [
+    `Hi ${opts.userName || 'there'},`,
+    '',
+    `Someone you referred just subscribed to Joblinca!`,
+    `You earned ${opts.rewardDays} bonus days added to your subscription.`,
+    '',
+    'Keep sharing your referral link to earn more rewards.',
+    '',
+    '— Joblinca',
+  ].join('\n');
+
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;">
+      <h2 style="margin:0 0 12px;">Referral reward earned!</h2>
+      <p style="margin:0 0 12px;">Hi ${safeName},</p>
+      <p style="margin:0 0 12px;">
+        Someone you referred just subscribed to Joblinca!
+      </p>
+      <p style="margin:0 0 12px;">
+        You earned <strong>${opts.rewardDays} bonus days</strong> added to your subscription.
+      </p>
+      <p style="margin:0 0 12px;">Keep sharing your referral link to earn more rewards.</p>
+      <p style="margin:0;color:#6b7280;font-size:12px;">— Joblinca</p>
+    </div>
+  `;
+
+  await sendEmailViaResend({ to: opts.to, subject, text, html });
 }
 
 export async function sendInterviewSelfScheduleInviteEmail(opts: {

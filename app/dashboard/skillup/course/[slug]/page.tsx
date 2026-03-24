@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import QuizModal from '../../components/QuizModal';
 import { difficultyColor } from '@/lib/skillup/helpers';
+import { sanitizeHtml } from '@/lib/sanitize';
 import type { LearningModule } from '@/lib/skillup/types';
 
 interface CourseData {
@@ -263,7 +264,7 @@ export default function CoursePlayerPage() {
                       prose-table:text-sm prose-th:text-gray-200 prose-td:text-gray-300
                       prose-th:border-gray-600 prose-td:border-gray-700"
                     dangerouslySetInnerHTML={{
-                      __html: markdownToHtml(activeModule.article_body || ''),
+                      __html: sanitizeHtml(markdownToHtml(activeModule.article_body || '')),
                     }}
                   />
                 </div>

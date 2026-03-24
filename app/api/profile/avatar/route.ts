@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
+import { validateUploadedFile, validateFileBuffer } from '@/lib/file-validation';
 
 // POST: Upload avatar image
 export async function POST(request: NextRequest) {
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Validate file type
+  // Validate file type — extension whitelist
   const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
   if (!allowedTypes.includes(file.type)) {
     return NextResponse.json(
@@ -43,15 +44,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Validate extension against whitelist (not just MIME)
+  const fileCheck = validateUploadedFile(file, 'avatar');
+  if (!fileCheck.valid) {
+    return NextResponse.json({ error: fileCheck.error }, { status: 400 });
+  }
+
   try {
-    // Generate unique file name
-    const ext = file.name.split('.').pop() || 'jpg';
+    const ext = fileCheck.ext;
     const filePath = `avatars/${user.id}/avatar-${Date.now()}.${ext}`;
 
     // Use service-role client for storage so RLS never blocks the upload
     const serviceClient = createServiceSupabaseClient();
 
     const buffer = await file.arrayBuffer();
+
+    // Validate magic bytes match declared MIME type
+    const bufferCheck = validateFileBuffer(buffer, file.type);
+    if (!bufferCheck.valid) {
+      return NextResponse.json({ error: bufferCheck.error }, { status: 400 });
+    }
+
     const { error: uploadError } = await serviceClient.storage
       .from('avatars')
       .upload(filePath, buffer, {

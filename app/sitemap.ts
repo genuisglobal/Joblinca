@@ -65,7 +65,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     .limit(200);
 
   const companyPages: MetadataRoute.Sitemap = (recruiters || []).map((r) => ({
-    url: `${baseUrl}/companies/${r.id}`,
+    url: `${baseUrl}/company/${r.id}`,
     lastModified: new Date(r.created_at),
     changeFrequency: 'weekly' as const,
     priority: 0.5,
