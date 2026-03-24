@@ -19,6 +19,7 @@ export interface UserSubscription {
   expiresAt: string | null;
   daysRemaining: number;
   subscriptionId: string | null;
+  autoRenew: boolean;
 }
 
 /**
@@ -38,6 +39,7 @@ export async function getUserSubscription(
       status,
       end_date,
       plan_id,
+      auto_renew,
       pricing_plans (
         id,
         slug,
@@ -62,6 +64,7 @@ export async function getUserSubscription(
       expiresAt: null,
       daysRemaining: 0,
       subscriptionId: null,
+      autoRenew: false,
     };
   }
 
@@ -89,6 +92,7 @@ export async function getUserSubscription(
     expiresAt: sub.end_date,
     daysRemaining,
     subscriptionId: sub.id,
+    autoRenew: sub.auto_renew ?? false,
   };
 }
 

@@ -39,6 +39,12 @@ export const metadata: Metadata = {
     description:
       "Find jobs, internships, and gigs in Cameroon. Free for job seekers.",
   },
+  twitter: {
+    card: "summary_large_image",
+    title: "Joblinca — Cameroon's Job Marketplace",
+    description:
+      "Find jobs, internships, and gigs in Cameroon. Free for job seekers.",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

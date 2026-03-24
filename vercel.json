@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/job-match-dispatch-daily",
+      "schedule": "45 2 * * *"
+    },
+    {
       "path": "/api/cron/job-cleanup",
       "schedule": "30 5 * * *"
     },
@@ -9,16 +13,20 @@
       "schedule": "0 6 * * *"
     },
     {
-      "path": "/api/cron/whatsapp-matched-jobs",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/job-match-dispatch-daily",
-      "schedule": "45 2 * * *"
+      "path": "/api/cron/subscription-renewal",
+      "schedule": "15 6 * * *"
     },
     {
       "path": "/api/cron/skillup-weekly-leaderboard",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/cron/subscription-expiry-notify",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/whatsapp-matched-jobs",
+      "schedule": "0 9 * * *"
     }
   ]
 }

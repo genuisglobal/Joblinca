@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { timingSafeEqual } from 'crypto';
 import { FacebookScraper } from '@/lib/scrapers/providers/facebook';
 import type { FacebookRawPost } from '@/lib/scrapers/providers/facebook';
 import { ingestScrapeResult } from '@/lib/scrapers/ingestion';
@@ -7,13 +8,23 @@ import { ingestScrapeResult } from '@/lib/scrapers/ingestion';
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 min — LLM extraction can be slow
 
+/** Constant-time string comparison to prevent timing attacks. */
+function safeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * POST /api/webhooks/apify
  *
  * Receives scraped Facebook group posts from Apify actors.
  * Stores raw posts, then runs LLM extraction to produce structured jobs.
  *
- * Auth: APIFY_WEBHOOK_SECRET header or query param.
+ * Auth: APIFY_WEBHOOK_SECRET header (required).
  *
  * Expected body (Apify dataset items):
  * [
@@ -23,14 +34,16 @@ export const maxDuration = 300; // 5 min — LLM extraction can be slow
  * Apify field names vary by actor — we normalize on ingestion.
  */
 export async function POST(request: NextRequest) {
-  // Auth check
+  // Auth check — secret is REQUIRED
   const secret = process.env.APIFY_WEBHOOK_SECRET;
-  if (secret) {
-    const provided = request.headers.get('x-apify-secret')
-      || request.nextUrl.searchParams.get('secret');
-    if (provided !== secret) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  if (!secret) {
+    console.error('[apify-webhook] APIFY_WEBHOOK_SECRET is not configured — rejecting request');
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
+  }
+
+  const provided = request.headers.get('x-apify-secret') || '';
+  if (!provided || !safeCompare(provided, secret)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

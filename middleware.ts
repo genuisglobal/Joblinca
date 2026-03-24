@@ -66,28 +66,55 @@ export async function middleware(req: NextRequest) {
       }
     | null = null;
 
+  // Optimization: cache profile in a cookie to avoid a DB query on every request.
+  // The cookie is keyed by user ID and invalidated on sign-out or user change.
+  const PROFILE_CACHE_COOKIE = 'jl_profile_cache';
+
   if (user) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('role, admin_type')
-      .eq('id', user.id)
-      .maybeSingle();
+    const cached = req.cookies.get(PROFILE_CACHE_COOKIE)?.value;
+    let cacheHit = false;
 
-    profile = data
-      ? {
-          ...data,
-          preferred_locale: null,
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed._uid === user.id) {
+          profile = parsed;
+          cacheHit = true;
         }
-      : null;
+      } catch {
+        // Invalid cache — will re-fetch
+      }
+    }
 
-    const { data: localeData } = await supabase
-      .from('profiles')
-      .select('preferred_locale')
-      .eq('id', user.id)
-      .maybeSingle();
+    if (!cacheHit) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('role, admin_type, preferred_locale')
+        .eq('id', user.id)
+        .maybeSingle();
 
-    if (profile && localeData) {
-      profile.preferred_locale = localeData.preferred_locale ?? null;
+      profile = data ?? null;
+
+      // Cache for 5 minutes — avoids DB hit on every navigation
+      const cachePayload = JSON.stringify({ ...profile, _uid: user.id });
+      res.cookies.set({
+        name: PROFILE_CACHE_COOKIE,
+        value: cachePayload,
+        path: '/',
+        maxAge: 300,
+        sameSite: 'lax',
+        httpOnly: true,
+      });
+    }
+  } else {
+    // Clear cache on sign-out
+    if (req.cookies.get(PROFILE_CACHE_COOKIE)) {
+      res.cookies.set({
+        name: PROFILE_CACHE_COOKIE,
+        value: '',
+        path: '/',
+        maxAge: 0,
+      });
     }
   }
 

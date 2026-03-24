@@ -1,0 +1,22 @@
+# Fly.io config for Joblinca cron worker
+# Deploy: cd infra/cron-worker && fly deploy
+
+app = "joblinca-cron"
+primary_region = "cdg"  # Paris — closest to Cameroon
+
+[build]
+  dockerfile = "Dockerfile"
+
+# No HTTP service needed — this is a background worker
+[processes]
+  cron = ""
+
+# Minimal machine — cron + curl is very lightweight
+[[vm]]
+  memory = "256mb"
+  cpus = 1
+  cpu_kind = "shared"
+
+# Auto-stop disabled — must stay running for cron to fire
+[processes.cron]
+  auto_stop = false

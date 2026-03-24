@@ -1,0 +1,25 @@
+# Joblinca cron jobs — calls Next.js API routes via curl
+# All times are UTC
+
+# Job cleanup: archive expired/filled jobs
+30 5 * * *  /app/call-cron.sh /api/cron/job-cleanup >> /var/log/cron.log 2>&1
+
+# Refresh external jobs from scrapers
+0 6 * * *   /app/call-cron.sh /api/cron/refresh-jobs >> /var/log/cron.log 2>&1
+
+# WhatsApp matched jobs digest
+0 9 * * *   /app/call-cron.sh /api/cron/whatsapp-matched-jobs >> /var/log/cron.log 2>&1
+
+# Daily job match dispatch
+45 2 * * *  /app/call-cron.sh /api/cron/job-match-dispatch-daily >> /var/log/cron.log 2>&1
+
+# SkillUp weekly leaderboard (Mondays)
+0 6 * * 1   /app/call-cron.sh /api/cron/skillup-weekly-leaderboard >> /var/log/cron.log 2>&1
+
+# Subscription auto-renewal
+0 6 * * *   /app/call-cron.sh /api/cron/subscription-renewal >> /var/log/cron.log 2>&1
+
+# Subscription expiry notifications (3-day warning)
+0 8 * * *   /app/call-cron.sh /api/cron/subscription-expiry-notify >> /var/log/cron.log 2>&1
+
+# IMPORTANT: crontab must end with a newline

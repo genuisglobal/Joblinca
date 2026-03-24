@@ -55,6 +55,7 @@ interface JobsPageProps {
     location?: string;
     remote?: string;
     language?: string;
+    page?: string;
   }>;
 }
 
@@ -154,18 +155,30 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   const searchQuery = (query.q || '').trim();
   const locationQuery = (query.location || '').trim();
   const remoteOnly = query.remote === '1';
-  const searchNeedle = searchQuery.toLowerCase();
-  const locationNeedle = locationQuery.toLowerCase();
+  const currentPage = Math.max(1, parseInt(query.page || '1', 10) || 1);
+  const PAGE_SIZE = 24;
 
   let jobs: Job[] = [];
+  let totalCount = 0;
   let error: { message: string } | null = null;
 
   try {
     const jobsParams = new URLSearchParams({
       preferred_language: preferredLocale,
+      limit: String(PAGE_SIZE),
+      offset: String((currentPage - 1) * PAGE_SIZE),
     });
     if (activeLanguageFilter) {
       jobsParams.set('language', activeLanguageFilter);
+    }
+    if (searchQuery) {
+      jobsParams.set('search', searchQuery);
+    }
+    if (locationQuery) {
+      jobsParams.set('location', locationQuery);
+    }
+    if (remoteOnly) {
+      jobsParams.set('work_type', 'remote');
     }
 
     const response = await fetch(`${getRequestBaseUrl()}/api/jobs?${jobsParams.toString()}`, {
@@ -176,7 +189,8 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
       error = { message: `Failed to load jobs (${response.status})` };
     } else {
       const payload = await response.json();
-      jobs = Array.isArray(payload) ? (payload as Job[]) : [];
+      jobs = Array.isArray(payload.jobs) ? (payload.jobs as Job[]) : Array.isArray(payload) ? (payload as Job[]) : [];
+      totalCount = typeof payload.total === 'number' ? payload.total : jobs.length;
     }
   } catch (fetchError) {
     error = {
@@ -185,29 +199,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   }
 
   const allJobs = jobs
-    .filter((job) => job.visibility === 'public' && isJobPubliclyListable(job))
-    .filter((job) => {
-      if (searchNeedle) {
-        const haystack = [job.title, job.company_name, job.description]
-          .filter(Boolean)
-          .join(' ')
-          .toLowerCase();
-
-        if (!haystack.includes(searchNeedle)) {
-          return false;
-        }
-      }
-
-      if (locationNeedle && !job.location?.toLowerCase().includes(locationNeedle)) {
-        return false;
-      }
-
-      if (remoteOnly && job.work_type !== 'remote') {
-        return false;
-      }
-
-      return true;
-    });
+    .filter((job) => job.visibility === 'public' && isJobPubliclyListable(job));
   const filteredJobs = allJobs.filter((job) =>
     matchesOpportunityBrowseFilter(activeFilter, job.job_type, job.internship_track)
   );
@@ -353,126 +345,170 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
             </Link>
           </div>
         ) : (
-          <div className="space-y-4">
-            {filteredJobs.map((job) => {
-              const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
-              const eligibleRoleSummary = describeEligibleRoles(
-                job.eligible_roles,
-                job.job_type,
-                job.internship_track,
-                job.visibility
-              );
-              const languageBadge = getLanguageBadge(job.language, preferredLocale);
+          <>
+            <div className="space-y-4">
+              {filteredJobs.map((job) => {
+                const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
+                const eligibleRoleSummary = describeEligibleRoles(
+                  job.eligible_roles,
+                  job.job_type,
+                  job.internship_track,
+                  job.visibility
+                );
+                const languageBadge = getLanguageBadge(job.language, preferredLocale);
+
+                return (
+                  <Link
+                    key={job.id}
+                    href={`/jobs/${job.id}`}
+                    className="group block rounded-2xl border border-neutral-800 bg-neutral-900 p-6 transition-all hover:border-primary-600/40 hover:bg-neutral-900/90"
+                  >
+                    <div className="flex flex-col gap-4 md:flex-row md:items-start">
+                      <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-800">
+                        {opportunityLabel === 'Educational Internship' ? (
+                          <GraduationCap className="h-7 w-7 text-emerald-300" />
+                        ) : (
+                          <Building2 className="h-7 w-7 text-primary-400" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${badgeClasses(opportunityLabel)}`}>
+                            {opportunityLabel}
+                          </span>
+                          {languageBadge && (
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${languageBadge.className}`}
+                              title={languageBadge.description}
+                            >
+                              {languageBadge.label}
+                            </span>
+                          )}
+                          {job.work_type === 'remote' && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400">
+                              <Globe className="h-3 w-3" />
+                              Remote
+                            </span>
+                          )}
+                          {/* Origin badge: Joblinca vs External */}
+                          {job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered' ? (
+                            <>
+                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-300 border border-orange-500/20">
+                                External
+                              </span>
+                              {(() => {
+                                const trust = job.source_attribution_json?.trust_score;
+                                if (trust == null) return null;
+                                if (trust >= 80) return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400 border border-green-500/20">
+                                    High Trust
+                                  </span>
+                                );
+                                if (trust >= 60) return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-400 border border-yellow-500/20">
+                                    Moderate Trust
+                                  </span>
+                                );
+                                return (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400 border border-red-500/20">
+                                    Low Trust
+                                  </span>
+                                );
+                              })()}
+                            </>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300 border border-blue-500/20">
+                              Joblinca
+                            </span>
+                          )}
+                        </div>
+
+                        <h2 className="text-xl font-semibold text-white transition-colors group-hover:text-primary-300">
+                          {job.title}
+                        </h2>
+                        {job.company_name && (
+                          <p className="mt-1 font-medium text-neutral-300">{job.company_name}</p>
+                        )}
+
+                        <p className="mt-3 line-clamp-2 text-sm text-neutral-400">
+                          {job.description || 'No description provided yet.'}
+                        </p>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-neutral-500">
+                          {job.location && (
+                            <div className="flex items-center gap-1.5">
+                              <MapPin className="h-4 w-4" />
+                              <span>{job.location}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1.5">
+                            <Briefcase className="h-4 w-4" />
+                            <span>{eligibleRoleSummary}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Clock className="h-4 w-4" />
+                            <span>{formatDate(job.created_at)}</span>
+                          </div>
+                        </div>
+
+                        <p className="mt-4 text-sm font-medium text-neutral-300">{formatCompensation(job)}</p>
+                      </div>
+
+                      <div className="flex-shrink-0 md:text-right">
+                        <span className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 font-medium text-white transition-all group-hover:bg-primary-500">
+                          View Opportunity
+                          <ArrowRight className="h-4 w-4" />
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* Pagination */}
+            {(() => {
+              const totalPages = Math.ceil(totalCount / PAGE_SIZE);
+              if (totalPages <= 1) return null;
+
+              function buildPageUrl(page: number) {
+                const params = new URLSearchParams();
+                if (query.type) params.set('type', query.type);
+                if (query.q) params.set('q', query.q);
+                if (query.location) params.set('location', query.location);
+                if (query.remote) params.set('remote', query.remote);
+                if (query.language) params.set('language', query.language);
+                if (page > 1) params.set('page', String(page));
+                const qs = params.toString();
+                return `/jobs${qs ? `?${qs}` : ''}`;
+              }
 
               return (
-                <Link
-                  key={job.id}
-                  href={`/jobs/${job.id}`}
-                  className="group block rounded-2xl border border-neutral-800 bg-neutral-900 p-6 transition-all hover:border-primary-600/40 hover:bg-neutral-900/90"
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start">
-                    <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-800">
-                      {opportunityLabel === 'Educational Internship' ? (
-                        <GraduationCap className="h-7 w-7 text-emerald-300" />
-                      ) : (
-                        <Building2 className="h-7 w-7 text-primary-400" />
-                      )}
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-3 flex flex-wrap items-center gap-2">
-                        <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${badgeClasses(opportunityLabel)}`}>
-                          {opportunityLabel}
-                        </span>
-                        {languageBadge && (
-                          <span
-                            className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${languageBadge.className}`}
-                            title={languageBadge.description}
-                          >
-                            {languageBadge.label}
-                          </span>
-                        )}
-                        {job.work_type === 'remote' && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400">
-                            <Globe className="h-3 w-3" />
-                            Remote
-                          </span>
-                        )}
-                        {/* Origin badge: Joblinca vs External */}
-                        {job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered' ? (
-                          <>
-                            <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-300 border border-orange-500/20">
-                              External
-                            </span>
-                            {(() => {
-                              const trust = job.source_attribution_json?.trust_score;
-                              if (trust == null) return null;
-                              if (trust >= 80) return (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400 border border-green-500/20">
-                                  High Trust
-                                </span>
-                              );
-                              if (trust >= 60) return (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-400 border border-yellow-500/20">
-                                  Moderate Trust
-                                </span>
-                              );
-                              return (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400 border border-red-500/20">
-                                  Low Trust
-                                </span>
-                              );
-                            })()}
-                          </>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300 border border-blue-500/20">
-                            Joblinca
-                          </span>
-                        )}
-                      </div>
-
-                      <h2 className="text-xl font-semibold text-white transition-colors group-hover:text-primary-300">
-                        {job.title}
-                      </h2>
-                      {job.company_name && (
-                        <p className="mt-1 font-medium text-neutral-300">{job.company_name}</p>
-                      )}
-
-                      <p className="mt-3 line-clamp-2 text-sm text-neutral-400">
-                        {job.description || 'No description provided yet.'}
-                      </p>
-
-                      <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-neutral-500">
-                        {job.location && (
-                          <div className="flex items-center gap-1.5">
-                            <MapPin className="h-4 w-4" />
-                            <span>{job.location}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-1.5">
-                          <Briefcase className="h-4 w-4" />
-                          <span>{eligibleRoleSummary}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="h-4 w-4" />
-                          <span>{formatDate(job.created_at)}</span>
-                        </div>
-                      </div>
-
-                      <p className="mt-4 text-sm font-medium text-neutral-300">{formatCompensation(job)}</p>
-                    </div>
-
-                    <div className="flex-shrink-0 md:text-right">
-                      <span className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 font-medium text-white transition-all group-hover:bg-primary-500">
-                        View Opportunity
-                        <ArrowRight className="h-4 w-4" />
-                      </span>
-                    </div>
-                  </div>
-                </Link>
+                <nav className="mt-10 flex items-center justify-center gap-2" aria-label="Pagination">
+                  {currentPage > 1 && (
+                    <Link
+                      href={buildPageUrl(currentPage - 1)}
+                      className="px-4 py-2 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 text-sm"
+                    >
+                      Previous
+                    </Link>
+                  )}
+                  <span className="px-3 py-2 text-sm text-neutral-400">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  {currentPage < totalPages && (
+                    <Link
+                      href={buildPageUrl(currentPage + 1)}
+                      className="px-4 py-2 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 text-sm"
+                    >
+                      Next
+                    </Link>
+                  )}
+                </nav>
               );
-            })}
-          </div>
+            })()}
+          </>
         )}
       </section>
     </main>

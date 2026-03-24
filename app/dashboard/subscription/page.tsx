@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getUserSubscription } from '@/lib/subscriptions';
+import AutoRenewToggle from './AutoRenewToggle';
 
 interface TransactionRow {
   id: string;
@@ -134,6 +135,9 @@ export default async function DashboardSubscriptionPage() {
                   {subscription.expiresAt ? subscription.daysRemaining : '-'}
                 </span>
               </div>
+              {subscription.expiresAt && (
+                <AutoRenewToggle initialValue={subscription.autoRenew} />
+              )}
             </div>
           ) : (
             <div className="space-y-4">

@@ -126,6 +126,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       description,
       type: 'article',
     },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+    },
   };
 }
 
@@ -245,7 +250,43 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
     }
   }
 
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://joblinca.com';
+  const jobUrl = `${appUrl}/jobs/${id}`;
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'JobPosting',
+    title: job.title,
+    description: job.description || '',
+    datePosted: job.created_at,
+    ...(job.closes_at && { validThrough: job.closes_at }),
+    employmentType: job.work_type === 'remote' ? 'FULL_TIME' : (job.job_type || 'FULL_TIME').toUpperCase().replace(/-/g, '_'),
+    jobLocationType: job.work_type === 'remote' ? 'TELECOMMUTE' : undefined,
+    applicantLocationRequirements: job.work_type === 'remote' ? { '@type': 'Country', name: 'Cameroon' } : undefined,
+    jobLocation: job.location ? {
+      '@type': 'Place',
+      address: { '@type': 'PostalAddress', addressLocality: job.location, addressCountry: 'CM' },
+    } : undefined,
+    hiringOrganization: {
+      '@type': 'Organization',
+      name: job.company_name || 'Joblinca',
+      ...(job.company_logo_url && { logo: job.company_logo_url }),
+    },
+    ...(job.salary && {
+      baseSalary: {
+        '@type': 'MonetaryAmount',
+        currency: 'XAF',
+        value: { '@type': 'QuantitativeValue', value: job.salary, unitText: 'MONTH' },
+      },
+    }),
+    url: jobUrl,
+  };
+
   return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
     <div className="min-h-screen bg-gray-900">
       <div className="mx-auto max-w-6xl px-4 py-8">
         <Link
@@ -638,5 +679,6 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
         </div>
       </div>
     </div>
+    </>
   );
 }

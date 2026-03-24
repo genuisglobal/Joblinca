@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { rateLimit, getRateLimitIdentifier } from '@/lib/rate-limit';
 
 /**
  * API Route: /api/external-jobs
@@ -8,14 +9,19 @@ import { NextRequest, NextResponse } from 'next/server';
  * Supports search, category, source, job_type filters and pagination.
  */
 export async function GET(request: NextRequest) {
+  // Rate limit: 60 requests per minute per IP
+  const rlKey = getRateLimitIdentifier(request);
+  const rl = await rateLimit(`external-jobs:${rlKey}`, { requests: 60, window: '1m' });
+  if (!rl.allowed) return rl.response!;
+
   const supabase = createServerSupabaseClient();
   const { searchParams } = new URL(request.url);
   const search = searchParams.get('search');
   const category = searchParams.get('category');
   const source = searchParams.get('source');
   const jobType = searchParams.get('job_type');
-  const limit = parseInt(searchParams.get('limit') || '200', 10);
-  const offset = parseInt(searchParams.get('offset') || '0', 10);
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 500);
+  const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0);
 
   let query = supabase
     .from('external_jobs')
@@ -33,7 +39,9 @@ export async function GET(request: NextRequest) {
     query = query.ilike('job_type', `%${jobType}%`);
   }
   if (search) {
-    query = query.ilike('title', `%${search}%`);
+    query = query.or(
+      `title.ilike.%${search}%,company_name.ilike.%${search}%`
+    );
   }
 
   const { data, error, count } = await query;
@@ -41,7 +49,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ jobs: data || [], total: count || 0 });
+  const response = NextResponse.json({ jobs: data || [], total: count || 0 });
+  response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+  return response;
 }
 
 /**

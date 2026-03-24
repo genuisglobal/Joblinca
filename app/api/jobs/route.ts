@@ -41,26 +41,54 @@ function isMissingJobLanguageColumnError(error: { message?: string | null } | nu
 // Handle GET /api/jobs and POST /api/jobs
 export async function GET(request: NextRequest) {
   const supabase = createServiceSupabaseClient();
+  const { searchParams } = request.nextUrl;
   const preferredLocale = resolveLocalePreference({
-    queryLocale: request.nextUrl.searchParams.get('preferred_language'),
+    queryLocale: searchParams.get('preferred_language'),
     cookieLocale: request.cookies.get(LOCALE_COOKIE_NAME)?.value,
     acceptLanguage: request.headers.get('accept-language'),
   });
-  const languageFilter = normalizeLocale(request.nextUrl.searchParams.get('language'));
-  const query = supabase
+  const languageFilter = normalizeLocale(searchParams.get('language'));
+  const search = searchParams.get('search')?.trim() || '';
+  const locationFilter = searchParams.get('location')?.trim() || '';
+  const workTypeFilter = searchParams.get('work_type')?.trim() || '';
+  const jobTypeFilter = searchParams.get('job_type')?.trim() || '';
+
+  // Pagination — default 50, max 200
+  const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0);
+
+  let query = supabase
     .from('jobs')
-    .select('*')
+    .select('id, title, description, location, salary, company_name, company_logo_url, work_type, job_type, language, created_at, closes_at, lifecycle_status, visibility, apply_method, external_apply_url, image_url, internship_track, boost_until', { count: 'exact' })
     .eq('published', true)
     .eq('approval_status', 'approved')
-    .eq('visibility', 'public');
+    .eq('visibility', 'public')
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
 
-  // Closed jobs can remain publicly viewable on direct links, but the public
-  // jobs feed should only return still-open listings.
-  const { data: jobs, error } = await query.order('created_at', { ascending: false });
+  // Full-text search using Postgres tsvector (falls back to ILIKE)
+  if (search) {
+    const tsQuery = search.split(/\s+/).filter(Boolean).join(' & ');
+    query = query.or(
+      `title.ilike.%${search}%,company_name.ilike.%${search}%,description.ilike.%${search}%`
+    );
+  }
+  if (locationFilter) {
+    query = query.ilike('location', `%${locationFilter}%`);
+  }
+  if (workTypeFilter) {
+    query = query.eq('work_type', workTypeFilter);
+  }
+  if (jobTypeFilter) {
+    query = query.eq('job_type', jobTypeFilter);
+  }
+
+  const { data: jobs, error, count } = await query;
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const now = Date.now();
   const sortedJobs = (jobs || [])
     .filter((job) => isJobPubliclyListable(job))
     .map((job) => ({
@@ -69,6 +97,13 @@ export async function GET(request: NextRequest) {
     }))
     .filter((job) => !languageFilter || job.language === languageFilter)
     .sort((left, right) => {
+      // Boosted jobs appear first
+      const leftBoosted = left.boost_until && new Date(left.boost_until).getTime() > now ? 1 : 0;
+      const rightBoosted = right.boost_until && new Date(right.boost_until).getTime() > now ? 1 : 0;
+      if (leftBoosted !== rightBoosted) {
+        return rightBoosted - leftBoosted;
+      }
+
       const rankDifference =
         getLocalePreferenceRank(left.language, preferredLocale) -
         getLocalePreferenceRank(right.language, preferredLocale);
@@ -80,7 +115,9 @@ export async function GET(request: NextRequest) {
       return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
     });
 
-  return NextResponse.json(sortedJobs);
+  const response = NextResponse.json({ jobs: sortedJobs, total: count || 0, limit, offset });
+  response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+  return response;
 }
 
 export async function POST(request: NextRequest) {
