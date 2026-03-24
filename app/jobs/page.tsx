@@ -41,6 +41,8 @@ interface Job {
   language: Locale | null;
   closes_at: string | null;
   lifecycle_status: string | null;
+  published?: boolean;
+  approval_status?: string | null;
   origin_type: string | null;
   source_attribution_json: {
     source_name?: string;

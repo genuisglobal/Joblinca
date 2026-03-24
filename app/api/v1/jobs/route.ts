@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
   let query = supabase
     .from('jobs')
     .select(
-      'id, title, company_name, location, salary, job_type, work_type, description, created_at, closes_at, lifecycle_status',
+      'id, title, company_name, location, salary, job_type, work_type, description, created_at, closes_at, lifecycle_status, published, approval_status',
       { count: 'exact' }
     )
     .eq('published', true)

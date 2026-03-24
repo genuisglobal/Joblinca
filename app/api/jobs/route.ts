@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('jobs')
-    .select('id, title, description, location, salary, company_name, company_logo_url, work_type, job_type, language, created_at, closes_at, lifecycle_status, visibility, apply_method, external_apply_url, image_url, internship_track, boost_until', { count: 'exact' })
+    .select('id, title, description, location, salary, company_name, company_logo_url, work_type, job_type, language, created_at, closes_at, lifecycle_status, visibility, published, approval_status, apply_method, external_apply_url, image_url, internship_track, boost_until', { count: 'exact' })
     .eq('published', true)
     .eq('approval_status', 'approved')
     .eq('visibility', 'public')
