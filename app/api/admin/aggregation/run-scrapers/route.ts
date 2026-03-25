@@ -4,7 +4,7 @@ import { runAllScrapers, runScraper, listScraperSources } from '@/lib/scrapers/r
 import { ingestAllResults, ingestScrapeResult } from '@/lib/scrapers/ingestion';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 /**
  * POST /api/admin/aggregation/run-scrapers

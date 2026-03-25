@@ -57,6 +57,24 @@ export interface AutoPipelineResult {
   total_duration_ms: number;
 }
 
+export interface AutoPipelineMaintenanceResult {
+  auto_publish: {
+    eligible: number;
+    published: number;
+    deduplicated: number;
+    skipped_duplicate: number;
+    errors: number;
+  };
+  dedup_cleanup: {
+    groups_found: number;
+    duplicates_hidden: number;
+  };
+  stale_cleanup: {
+    expired: number;
+  };
+  total_duration_ms: number;
+}
+
 /**
  * Run the complete automated pipeline:
  *   1. Scrape all sources
@@ -131,6 +149,32 @@ export async function runAutoPipeline(
   );
 
   return result;
+}
+
+export async function runAutoPipelineMaintenance(): Promise<AutoPipelineMaintenanceResult | null> {
+  const start = Date.now();
+  const supabase = getSupabase();
+
+  if (!supabase) {
+    console.error('[auto-pipeline] Supabase not configured');
+    return null;
+  }
+
+  console.log('[auto-pipeline] Maintenance step 1: Auto-publishing trustworthy jobs...');
+  const publishResult = await autoPublishDiscoveredJobs(supabase);
+
+  console.log('[auto-pipeline] Maintenance step 2: Cleaning up duplicates...');
+  const dedupResult = await autoCleanDuplicates(supabase);
+
+  console.log('[auto-pipeline] Maintenance step 3: Cleaning up expired jobs...');
+  const staleResult = await cleanupExpiredJobs(supabase);
+
+  return {
+    auto_publish: publishResult,
+    dedup_cleanup: dedupResult,
+    stale_cleanup: staleResult,
+    total_duration_ms: Date.now() - start,
+  };
 }
 
 /**
