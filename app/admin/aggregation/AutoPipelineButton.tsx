@@ -2,6 +2,15 @@
 
 import { useState } from 'react';
 
+const PIPELINE_SOURCES = [
+  { value: 'reliefweb', label: 'ReliefWeb' },
+  { value: 'kamerpower', label: 'KamerPower' },
+  { value: 'minajobs', label: 'MinaJobs' },
+  { value: 'cameroonjobs', label: 'CameroonJobs' },
+  { value: 'jobincamer', label: 'JobInCamer' },
+  { value: 'emploicm', label: 'Emploi.cm' },
+] as const;
+
 interface PipelineResult {
   scraping: {
     sources_run: number;
@@ -31,41 +40,132 @@ interface PipelineResult {
   total_duration_ms: number;
 }
 
+interface ScraperIngestionResult {
+  runId: string;
+  status: string;
+  inserted: number;
+  duplicates: number;
+  suspicious: number;
+}
+
+interface SingleScraperResult {
+  success?: boolean;
+  source?: string;
+  jobs?: number;
+  duration_ms?: number;
+  ingestion?: ScraperIngestionResult | null;
+  error?: string;
+}
+
+interface PipelineMaintenanceResult {
+  success?: boolean;
+  auto_publish?: PipelineResult['auto_publish'];
+  dedup_cleanup?: PipelineResult['dedup_cleanup'];
+  stale_cleanup?: PipelineResult['stale_cleanup'];
+  total_duration_ms?: number;
+  error?: string;
+}
+
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Server returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
+  }
+}
+
 export default function AutoPipelineButton() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PipelineResult | null>(null);
   const [error, setError] = useState('');
+  const [progress, setProgress] = useState('');
 
   async function runPipeline() {
     setLoading(true);
     setResult(null);
     setError('');
+    setProgress('Preparing pipeline...');
 
     try {
-      const res = await fetch('/api/admin/aggregation/auto-pipeline', {
+      const startedAt = Date.now();
+      const aggregate: PipelineResult = {
+        scraping: {
+          sources_run: 0,
+          total_jobs_fetched: 0,
+          duration_ms: 0,
+        },
+        ingestion: {
+          runs: 0,
+          inserted: 0,
+          duplicates: 0,
+          suspicious: 0,
+        },
+        auto_publish: {
+          eligible: 0,
+          published: 0,
+          deduplicated: 0,
+          skipped_duplicate: 0,
+          errors: 0,
+        },
+        dedup_cleanup: {
+          groups_found: 0,
+          duplicates_hidden: 0,
+        },
+        stale_cleanup: {
+          expired: 0,
+        },
+        total_duration_ms: 0,
+      };
+
+      for (const [index, source] of PIPELINE_SOURCES.entries()) {
+        setProgress(`Scraping ${source.label} (${index + 1}/${PIPELINE_SOURCES.length})...`);
+
+        const scraperRes = await fetch('/api/admin/aggregation/run-scrapers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ source: source.value, maxPages: 2 }),
+        });
+        const scraperData = await parseJsonResponse<SingleScraperResult>(scraperRes);
+
+        if (!scraperRes.ok) {
+          throw new Error(`${source.label}: ${scraperData.error || `HTTP ${scraperRes.status}`}`);
+        }
+
+        aggregate.scraping.sources_run += 1;
+        aggregate.scraping.total_jobs_fetched += scraperData.jobs || 0;
+        aggregate.scraping.duration_ms += scraperData.duration_ms || 0;
+
+        if (scraperData.ingestion) {
+          aggregate.ingestion.runs += 1;
+          aggregate.ingestion.inserted += scraperData.ingestion.inserted || 0;
+          aggregate.ingestion.duplicates += scraperData.ingestion.duplicates || 0;
+          aggregate.ingestion.suspicious += scraperData.ingestion.suspicious || 0;
+        }
+      }
+
+      setProgress('Publishing trustworthy jobs and cleaning duplicates...');
+
+      const maintenanceRes = await fetch('/api/admin/aggregation/pipeline-maintenance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ maxPages: 2 }),
       });
+      const maintenanceData = await parseJsonResponse<PipelineMaintenanceResult>(maintenanceRes);
 
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        setError(`Server returned non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`);
-        return;
+      if (!maintenanceRes.ok) {
+        throw new Error(maintenanceData.error || `HTTP ${maintenanceRes.status}`);
       }
 
-      if (!res.ok) {
-        setError(data.error || `HTTP ${res.status}`);
-        return;
-      }
+      aggregate.auto_publish = maintenanceData.auto_publish || aggregate.auto_publish;
+      aggregate.dedup_cleanup = maintenanceData.dedup_cleanup || aggregate.dedup_cleanup;
+      aggregate.stale_cleanup = maintenanceData.stale_cleanup || aggregate.stale_cleanup;
+      aggregate.total_duration_ms = Date.now() - startedAt;
 
-      setResult(data);
+      setResult(aggregate);
     } catch (err) {
       setError(String(err));
     } finally {
+      setProgress('');
       setLoading(false);
     }
   }
@@ -76,7 +176,7 @@ export default function AutoPipelineButton() {
         <div>
           <h2 className="text-lg font-semibold text-white">Auto Pipeline</h2>
           <p className="text-sm text-gray-400">
-            Scrape all sources, ingest, auto-publish trustworthy jobs, and clean duplicates — all in one click.
+            Runs each source separately to avoid request timeouts, then auto-publishes trustworthy jobs and cleans duplicates.
           </p>
         </div>
         <button
@@ -94,7 +194,7 @@ export default function AutoPipelineButton() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          Running full pipeline — scraping, ingesting, publishing, deduplicating... this may take 2-3 minutes.
+          {progress || 'Running full pipeline...'}
         </div>
       )}
 
@@ -147,9 +247,7 @@ export default function AutoPipelineButton() {
             />
             <StepCard
               title="5. Expired"
-              stats={[
-                { label: 'Archived', value: result.stale_cleanup.expired },
-              ]}
+              stats={[{ label: 'Archived', value: result.stale_cleanup.expired }]}
               color="blue"
             />
           </div>
@@ -182,10 +280,10 @@ function StepCard({
   return (
     <div className={`rounded-lg border ${border} bg-gray-900/50 p-3`}>
       <p className="text-xs text-gray-400 mb-2 font-medium">{title}</p>
-      {stats.map((s) => (
-        <div key={s.label} className="flex justify-between text-sm">
-          <span className="text-gray-500">{s.label}</span>
-          <span className="text-white font-medium">{s.value}</span>
+      {stats.map((stat) => (
+        <div key={stat.label} className="flex justify-between text-sm">
+          <span className="text-gray-500">{stat.label}</span>
+          <span className="text-white font-medium">{stat.value}</span>
         </div>
       ))}
     </div>
