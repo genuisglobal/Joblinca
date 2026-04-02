@@ -209,7 +209,11 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
       const nowIso = new Date().toISOString();
 
       // Check for duplicate in already-published jobs
-      const duplicate = await findDuplicateJob(supabase, dj.title, dj.company_name);
+      const duplicate = await findDuplicateJob(supabase, {
+        title: dj.title,
+        companyName: dj.company_name,
+        urls: [dj.apply_url, dj.original_job_url],
+      });
       if (duplicate) {
         // Link to existing job instead of creating new
         await supabase

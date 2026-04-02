@@ -78,7 +78,7 @@ export default function RunScrapersButton() {
     <div className="bg-gray-800 rounded-xl p-5">
       <h2 className="text-lg font-semibold text-white mb-2">Run Scrapers</h2>
       <p className="text-sm text-gray-400 mb-4">
-        Manually trigger scrapers to populate aggregation runs and discovered jobs.
+        Manually trigger scrapers to populate aggregation runs and discovered jobs. "Duplicates" below means a row matched an existing discovered job.
       </p>
 
       <div className="flex items-center gap-3 mb-4">
@@ -142,7 +142,7 @@ export default function RunScrapersButton() {
                   <p className="font-semibold">{result.ingestion.total_inserted}</p>
                 </div>
                 <div>
-                  <p className="text-gray-500 text-xs">Duplicates</p>
+                  <p className="text-gray-500 text-xs">Matched Existing</p>
                   <p className="font-semibold">{result.ingestion.total_duplicates}</p>
                 </div>
               </div>
@@ -156,7 +156,7 @@ export default function RunScrapersButton() {
                         d.status === 'partial' ? 'border-yellow-700 text-yellow-300' :
                         'border-red-700 text-red-300'
                       }`}>
-                        {d.status} — {d.inserted} new, {d.duplicates} dupes
+                        {d.status} — {d.inserted} new, {d.duplicates} matched
                       </span>
                     </div>
                   ))}

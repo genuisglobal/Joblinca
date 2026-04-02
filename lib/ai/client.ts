@@ -2,9 +2,19 @@ import { z, type ZodType } from 'zod';
 
 export type AiChatRole = 'system' | 'user' | 'assistant';
 
+export type AiChatContentPart =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image_url';
+      image_url: {
+        url: string;
+        detail?: 'auto' | 'low' | 'high';
+      };
+    };
+
 export interface AiChatMessage {
   role: AiChatRole;
-  content: string;
+  content: string | AiChatContentPart[];
 }
 
 interface BaseAiCallOptions {
@@ -49,6 +59,32 @@ export function isAiConfigured(): boolean {
 }
 
 function normalizeContent(raw: unknown): string {
+  if (Array.isArray(raw)) {
+    const textContent = raw
+      .map((item) => {
+        if (typeof item === 'string') {
+          return item;
+        }
+
+        if (
+          item &&
+          typeof item === 'object' &&
+          'text' in item &&
+          typeof (item as { text?: unknown }).text === 'string'
+        ) {
+          return (item as { text: string }).text;
+        }
+
+        return '';
+      })
+      .join('\n')
+      .trim();
+
+    if (textContent) {
+      raw = textContent;
+    }
+  }
+
   if (typeof raw !== 'string') {
     throw new Error('OpenAI returned empty content');
   }
@@ -68,7 +104,20 @@ function normalizeContent(raw: unknown): string {
 function toOpenAiMessages(messages: AiChatMessage[]) {
   return messages.map((message) => ({
     role: message.role,
-    content: message.content,
+    content:
+      typeof message.content === 'string'
+        ? message.content
+        : message.content.map((part) =>
+            part.type === 'text'
+              ? { type: 'text', text: part.text }
+              : {
+                  type: 'image_url',
+                  image_url: {
+                    url: part.image_url.url,
+                    ...(part.image_url.detail ? { detail: part.image_url.detail } : {}),
+                  },
+                }
+          ),
   }));
 }
 

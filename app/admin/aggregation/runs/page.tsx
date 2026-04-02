@@ -80,7 +80,7 @@ export default async function AdminAggregationRunsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Aggregation Runs</h1>
           <p className="text-gray-400 mt-1">
-            Recent source executions, parse counts, and operational failures.
+            Recent source executions. Duplicate counts mean matched existing discovered jobs, not duplicate public listings.
           </p>
         </div>
         <Link
@@ -145,8 +145,8 @@ export default async function AdminAggregationRunsPage() {
                     <p>Parsed: {row.parsed_count}</p>
                     <p>Normalized: {row.normalized_count}</p>
                     <p>Inserted: {row.inserted_count}</p>
-                    <p>Updated: {row.updated_count}</p>
-                    <p>Duplicates: {row.duplicate_count}</p>
+                    <p>Updated existing: {row.updated_count}</p>
+                    <p>Matched existing: {row.duplicate_count}</p>
                     <p>Errors: {row.error_count}</p>
                     <p>Suspicious: {row.suspicious_count}</p>
                   </td>
