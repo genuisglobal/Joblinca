@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { checkAdminStatus } from '@/lib/admin';
+import { listLatestJobMarketingImages } from '@/lib/job-image-generator/service';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import JobActions from './JobActions';
@@ -67,6 +68,11 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
     fetchProfile(job.recruiter_id),
     fetchProfile(job.approved_by),
   ]);
+
+  const marketingImages = await listLatestJobMarketingImages(id).catch((error) => {
+    console.error('Failed to load marketing images', error);
+    return [];
+  });
 
   // Get application count
   const { count: applicationCount } = await supabase
@@ -161,6 +167,65 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
             <div className="bg-red-900/20 border border-red-700/50 rounded-xl p-6">
               <h2 className="text-lg font-semibold text-red-400 mb-2">Rejection Reason</h2>
               <p className="text-gray-300">{job.rejection_reason}</p>
+            </div>
+          )}
+
+          {marketingImages.length > 0 && (
+            <div className="bg-gray-800 rounded-xl p-6">
+              <div className="flex items-center justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-white">Marketing Images</h2>
+                  <p className="text-sm text-gray-400">
+                    Latest approved variants stored for this job.
+                  </p>
+                </div>
+                <Link
+                  href={`/api/admin/jobs/${job.id}/marketing-images`}
+                  target="_blank"
+                  className="text-sm text-blue-400 hover:text-blue-300"
+                >
+                  Open JSON
+                </Link>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {marketingImages.map((image) => (
+                  <div
+                    key={image.variation}
+                    className="rounded-xl border border-gray-700 bg-gray-900/60 overflow-hidden"
+                  >
+                    <img
+                      src={image.imageUrl}
+                      alt={image.headline}
+                      className="w-full h-64 object-cover"
+                    />
+                    <div className="p-4 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-white capitalize">
+                          {image.variation.replace(/-/g, ' ')}
+                        </p>
+                        {job.image_url === image.imageUrl && (
+                          <span className="inline-flex items-center rounded-full bg-green-900/40 border border-green-700 px-2 py-1 text-xs font-medium text-green-300">
+                            Primary
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-300">{image.headline}</p>
+                      <div className="flex items-center justify-between gap-3 text-xs text-gray-500">
+                        <span>{image.templateVersion}</span>
+                        <span>{new Date(image.createdAt).toLocaleString()}</span>
+                      </div>
+                      <Link
+                        href={image.imageUrl}
+                        target="_blank"
+                        className="inline-flex items-center gap-2 text-sm text-blue-400 hover:text-blue-300"
+                      >
+                        View image
+                      </Link>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

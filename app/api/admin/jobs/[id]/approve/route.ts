@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
+import { generateAndPersistApprovedJobImage } from '@/lib/job-image-generator/service';
 import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 
 export async function POST(
@@ -16,7 +17,7 @@ export async function POST(
 
     const { data: existingJob, error: loadError } = await supabase
       .from('jobs')
-      .select('id, closes_at')
+      .select('id, closes_at, approval_status')
       .eq('id', jobId)
       .single();
 
@@ -59,6 +60,19 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to approve job' }, { status: 500 });
     }
 
+    let marketingImages: Awaited<ReturnType<typeof generateAndPersistApprovedJobImage>> = null;
+    if (existingJob.approval_status !== 'approved') {
+      marketingImages = await generateAndPersistApprovedJobImage({
+        jobId,
+        title: data.title,
+        company: data.company_name,
+        salary: data.salary ? String(data.salary) : null,
+        location: data.location,
+        type: data.work_type || data.job_type,
+        jobUrl: `${new URL(request.url).origin}/jobs/${jobId}`,
+      });
+    }
+
     if (isJobPubliclyListable(data)) {
       try {
         await dispatchJobMatchNotifications({
@@ -70,7 +84,11 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({ success: true, job: data });
+    return NextResponse.json({
+      success: true,
+      job: data,
+      marketing_images: marketingImages?.variants ?? [],
+    });
   } catch (err) {
     console.error('Admin error:', err);
     return NextResponse.json(

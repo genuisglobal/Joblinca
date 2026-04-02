@@ -23,6 +23,7 @@
     "test:interview-self-schedule": "node tests/interview-self-schedule.test.js",
     "test:interview-scheduling": "node tests/interview-scheduling.test.js",
     "test:matching-agent": "node tests/job-matching-agent.test.js",
+    "test:job-image-generator": "tsx tests/job-image-generator.test.ts",
     "test:skillup-challenges": "node tests/skillup-challenges.test.js",
     "test:wa-screening": "node tests/wa-screening-state-machine.test.js && node tests/wa-screening-ai.test.js",
     "test:wa-agent": "node tests/wa-job-agent-parser.test.js && node tests/wa-job-agent-limits-state.test.js && node tests/wa-matched-jobs-policy.test.js && node tests/wa-intent-nlp.test.js && node tests/wa-ai-screening-policy.test.js && node tests/wa-phone-match.test.js"
