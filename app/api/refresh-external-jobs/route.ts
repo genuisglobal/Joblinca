@@ -1,15 +1,17 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { fetchAllExternalJobs } from '@/lib/externalJobs';
+import {
+  clearRetiredExternalFeedSources,
+  fetchExternalFeedJobs,
+  replaceExternalJobsBySource,
+} from '@/lib/externalJobs';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * API Route: /api/refresh-external-jobs
  *
- * This endpoint triggers a refresh of the `external_jobs` table by
- * fetching jobs from all configured external providers and upserting
- * them into the database.  Only administrators are permitted to run
- * this endpoint.  It is intended to be called by a scheduled job or
- * manually by an admin via a management interface.
+ * This endpoint refreshes the legacy `external_jobs` feed with the
+ * remote/international providers only. Cameroon aggregation sources are
+ * handled separately by the discovered_jobs pipeline.
  */
 export async function POST(request: NextRequest) {
   const supabase = createServerSupabaseClient();
@@ -30,17 +32,27 @@ export async function POST(request: NextRequest) {
   if (profileError || !profile || profile.role !== 'admin') {
     return new NextResponse('Forbidden', { status: 403 });
   }
-  // Fetch external jobs from providers
-  const jobs = await fetchAllExternalJobs();
-  let inserted = 0;
-  for (const job of jobs) {
-    // Upsert by external_id and source to avoid duplicates
-    const { error: upsertError } = await supabase.from('external_jobs').upsert(job, {
-      onConflict: 'external_id,source',
-    });
-    if (!upsertError) {
-      inserted += 1;
-    }
+  const jobs = await fetchExternalFeedJobs();
+  let retiredCameroonSourcesCleared = true;
+  let retiredCameroonSourcesError: string | null = null;
+
+  try {
+    await clearRetiredExternalFeedSources(supabase);
+  } catch (err) {
+    retiredCameroonSourcesCleared = false;
+    retiredCameroonSourcesError = String(err);
   }
-  return NextResponse.json({ total: jobs.length, inserted });
+
+  const result = await replaceExternalJobsBySource(supabase, jobs);
+
+  return NextResponse.json({
+    total: jobs.length,
+    inserted: result.inserted,
+    errors: result.errors,
+    sources: result.sources,
+    retired_cameroon_sources: {
+      cleared: retiredCameroonSourcesCleared,
+      error: retiredCameroonSourcesError,
+    },
+  });
 }

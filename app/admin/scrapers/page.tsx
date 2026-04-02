@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { isMissingAggregationRelationError, normalizeSingle } from '@/lib/aggregation/admin';
 import ScraperDashboard from './ScraperDashboard';
 
 export const dynamic = 'force-dynamic';
@@ -8,7 +9,46 @@ interface ScraperStats {
   count: number;
   latest_fetched: string | null;
   cameroon_local: number;
+  count_mode: 'external_feed' | 'latest_run';
 }
+
+type SourceSummary = {
+  name: string;
+  slug: string;
+};
+
+type AggregationRunRow = {
+  created_at: string;
+  normalized_count: number;
+  fetched_count: number;
+  source: SourceSummary | SourceSummary[] | null;
+};
+
+const CAMEROON_AGGREGATION_SOURCES = new Set([
+  'reliefweb',
+  'kamerpower',
+  'minajobs',
+  'cameroonjobs',
+  'jobincamer',
+  'emploicm',
+]);
+
+const KNOWN_SOURCES: Array<{
+  source: string;
+  count_mode: 'external_feed' | 'latest_run';
+}> = [
+  { source: 'reliefweb', count_mode: 'latest_run' },
+  { source: 'kamerpower', count_mode: 'latest_run' },
+  { source: 'minajobs', count_mode: 'latest_run' },
+  { source: 'cameroonjobs', count_mode: 'latest_run' },
+  { source: 'jobincamer', count_mode: 'latest_run' },
+  { source: 'emploicm', count_mode: 'latest_run' },
+  { source: 'facebook', count_mode: 'external_feed' },
+  { source: 'remotive', count_mode: 'external_feed' },
+  { source: 'jobicy', count_mode: 'external_feed' },
+  { source: 'findwork', count_mode: 'external_feed' },
+  { source: 'upwork', count_mode: 'external_feed' },
+];
 
 async function getScraperStats(): Promise<{
   stats: ScraperStats[];
@@ -26,34 +66,91 @@ async function getScraperStats(): Promise<{
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-  // Get job counts by source
+  const sourceMap = new Map<string, ScraperStats>(
+    KNOWN_SOURCES.map((item) => [
+      item.source,
+      {
+        source: item.source,
+        count: 0,
+        latest_fetched: null,
+        cameroon_local: 0,
+        count_mode: item.count_mode,
+      },
+    ])
+  );
+
+  // Get job counts by source from the legacy external feed.
   const { data: jobs } = await supabase
     .from('external_jobs')
     .select('source, fetched_at, is_cameroon_local');
 
-  const sourceMap = new Map<string, ScraperStats>();
   let totalJobs = 0;
 
   for (const job of (jobs || [])) {
+    if (CAMEROON_AGGREGATION_SOURCES.has(job.source)) {
+      continue;
+    }
+
     totalJobs++;
-    const existing = sourceMap.get(job.source);
+    const existing = sourceMap.get(job.source) || {
+      source: job.source,
+      count: 0,
+      latest_fetched: null,
+      cameroon_local: 0,
+      count_mode: 'external_feed' as const,
+    };
+
     if (existing) {
       existing.count++;
       if (job.is_cameroon_local) existing.cameroon_local++;
       if (job.fetched_at && (!existing.latest_fetched || job.fetched_at > existing.latest_fetched)) {
         existing.latest_fetched = job.fetched_at;
       }
-    } else {
-      sourceMap.set(job.source, {
-        source: job.source,
-        count: 1,
-        latest_fetched: job.fetched_at || null,
-        cameroon_local: job.is_cameroon_local ? 1 : 0,
-      });
+    }
+
+    sourceMap.set(job.source, existing);
+  }
+
+  const aggregationRunsResult = await supabase
+    .from('aggregation_runs')
+    .select(
+      `
+      created_at,
+      normalized_count,
+      fetched_count,
+      source:source_id (
+        name,
+        slug
+      )
+      `
+    )
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (!aggregationRunsResult.error || !isMissingAggregationRelationError(aggregationRunsResult.error)) {
+    for (const row of ((aggregationRunsResult.data || []) as AggregationRunRow[])) {
+      const source = normalizeSingle(row.source);
+      const slug = source?.slug;
+
+      if (!slug || !CAMEROON_AGGREGATION_SOURCES.has(slug)) {
+        continue;
+      }
+
+      const existing = sourceMap.get(slug);
+      if (!existing || existing.latest_fetched) {
+        continue;
+      }
+
+      existing.count = row.normalized_count || row.fetched_count || 0;
+      existing.latest_fetched = row.created_at;
+      existing.count_mode = 'latest_run';
+      sourceMap.set(slug, existing);
     }
   }
 
-  const stats = [...sourceMap.values()].sort((a, b) => b.count - a.count);
+  const stats = [...sourceMap.values()]
+    .filter((stat) => stat.count > 0 || stat.latest_fetched || KNOWN_SOURCES.some((item) => item.source === stat.source))
+    .sort((a, b) => b.count - a.count);
 
   // Facebook groups
   const { data: groups } = await supabase
@@ -94,7 +191,7 @@ export default async function ScrapersPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">Job Scrapers</h1>
         <span className="text-sm text-gray-400">
-          {data.totalJobs.toLocaleString()} total external jobs
+          {data.totalJobs.toLocaleString()} active external feed jobs
         </span>
       </div>
 

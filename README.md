@@ -116,7 +116,7 @@ If PayUnit blocks server-to-server requests from serverless providers, deploy th
 
 ### International Remote Jobs
 
-JobLinca integrates with multiple public job feeds to surface verified global opportunities.  Listings are stored in the `external_jobs` table and served on the **Global Opportunities** page.  Jobs are categorised (e.g. *Teaching*, *Visa Sponsorship*) by scanning titles and descriptions for keywords.  Cameroonian job seekers can browse by category, search by keyword and apply via the original listing site.  Data is refreshed via the `/api/refresh-external-jobs` route, which aggregates feeds such as:
+JobLinca integrates with multiple public job feeds to surface verified global opportunities.  Listings are stored in the `external_jobs` table and served on the **Global Opportunities** page.  Jobs are categorised (e.g. *Teaching*, *Visa Sponsorship*) by scanning titles and descriptions for keywords.  Cameroonian job seekers can browse by category, search by keyword and apply via the original listing site.  The `/api/refresh-external-jobs` route now refreshes the remote/international feed only; Cameroon-specific sources are handled by the separate aggregation pipeline and `discovered_jobs` subsystem.  The legacy external feed aggregates sources such as:
 
 - **Remotive** – a free remote jobs API.  Each listing links back to Remotive and includes job title, company, location and salary when available【335617390489077†L72-L125】.  We respect Remotive’s guidelines and only refresh the feed a few times per day.
 - **Jobicy remote jobs feed** – an open JSON feed of remote jobs.  Our integration requests a limited number of listings to minimise load.  Titles and industries are analysed to assign categories like *Teaching* or *Visa Sponsorship*.

@@ -7,6 +7,7 @@ interface ScraperStats {
   count: number;
   latest_fetched: string | null;
   cameroon_local: number;
+  count_mode: 'external_feed' | 'latest_run';
 }
 
 interface Props {
@@ -28,6 +29,7 @@ const SOURCE_LABELS: Record<string, { label: string; type: 'cameroon' | 'remote'
   remotive: { label: 'Remotive', type: 'remote' },
   jobicy: { label: 'Jobicy', type: 'remote' },
   findwork: { label: 'Findwork', type: 'remote' },
+  upwork: { label: 'Upwork', type: 'remote' },
 };
 
 function formatDate(dateStr: string | null): string {
@@ -93,15 +95,15 @@ export default function ScraperDashboard({
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Total Jobs</p>
+          <p className="text-xs text-gray-400 uppercase tracking-wider">External Feed</p>
           <p className="text-3xl font-bold text-white mt-1">{totalJobs.toLocaleString()}</p>
         </div>
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Cameroon Local</p>
+          <p className="text-xs text-gray-400 uppercase tracking-wider">Cameroon Latest Run</p>
           <p className="text-3xl font-bold text-emerald-400 mt-1">{cameroonJobs.toLocaleString()}</p>
         </div>
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Facebook</p>
+          <p className="text-xs text-gray-400 uppercase tracking-wider">Facebook Feed</p>
           <p className="text-3xl font-bold text-blue-400 mt-1">{fbJobs.toLocaleString()}</p>
           {unprocessedPosts > 0 && (
             <p className="text-xs text-yellow-400 mt-1">{unprocessedPosts} unprocessed posts</p>
@@ -111,7 +113,7 @@ export default function ScraperDashboard({
           )}
         </div>
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-          <p className="text-xs text-gray-400 uppercase tracking-wider">Remote/Intl</p>
+          <p className="text-xs text-gray-400 uppercase tracking-wider">Remote/Intl Feed</p>
           <p className="text-3xl font-bold text-purple-400 mt-1">{remoteJobs.toLocaleString()}</p>
         </div>
       </div>
@@ -120,6 +122,9 @@ export default function ScraperDashboard({
       <div className="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
         <div className="px-4 py-3 border-b border-gray-700">
           <h2 className="text-sm font-semibold text-white">Scraper Sources</h2>
+          <p className="mt-1 text-xs text-gray-400">
+            Remote and Facebook counts reflect current `external_jobs` rows. Cameroon counts reflect the latest aggregation run per source.
+          </p>
         </div>
         <table className="w-full text-sm">
           <thead>
@@ -151,7 +156,14 @@ export default function ScraperDashboard({
                       {info.type}
                     </span>
                   </td>
-                  <td className="px-4 py-2 text-right text-white tabular-nums">{s.count}</td>
+                  <td className="px-4 py-2 text-right text-white tabular-nums">
+                    {s.count}
+                    {s.count_mode === 'latest_run' && (
+                      <span className="ml-2 rounded bg-gray-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-gray-300">
+                        latest run
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-gray-300">{formatDate(s.latest_fetched)}</td>
                   <td className="px-4 py-2"><StatusBadge hours={hoursSince !== null ? Math.floor(hoursSince) : null} /></td>
                   <td className="px-4 py-2 text-right">

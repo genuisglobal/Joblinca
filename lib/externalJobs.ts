@@ -7,6 +7,7 @@
  * `/api/refresh-external-jobs`.
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchRemoteJobs } from '@/lib/remoteJobs';
 import { runAllScrapers, deduplicateJobs, deduplicateCrossSources } from '@/lib/scrapers/registry';
 import type { ScrapedJob } from '@/lib/scrapers/types';
@@ -25,6 +26,15 @@ export interface ExternalJob {
   url: string;
   fetched_at?: string;
 }
+
+export const LEGACY_EXTERNAL_FEED_RETIRING_SOURCES = [
+  'reliefweb',
+  'kamerpower',
+  'minajobs',
+  'cameroonjobs',
+  'jobincamer',
+  'emploicm',
+] as const;
 
 // ───────────────────────────────────────────────
 // Smart category derivation from text signals
@@ -195,6 +205,96 @@ export async function fetchUpworkExternalJobs(): Promise<ExternalJob[]> {
 // Aggregate all providers (remote + Cameroon local)
 // ───────────────────────────────────────────────
 
+const EXTERNAL_FEED_PROVIDERS = [
+  fetchRemotiveExternalJobs,
+  fetchJobicyExternalJobs,
+  fetchFindworkExternalJobs,
+  fetchUpworkExternalJobs,
+];
+
+/**
+ * Fetch jobs for the public legacy external feed only.
+ *
+ * Cameroon aggregation sources should flow through discovered_jobs and the
+ * aggregation pipeline, not back into external_jobs.
+ */
+export async function fetchExternalFeedJobs(): Promise<ExternalJob[]> {
+  const results: ExternalJob[] = [];
+
+  for (const provider of EXTERNAL_FEED_PROVIDERS) {
+    try {
+      const jobs = await provider();
+      results.push(...jobs);
+    } catch (err) {
+      console.error('Failed to fetch external feed jobs from provider', provider.name, err);
+    }
+  }
+
+  return results;
+}
+
+export async function clearRetiredExternalFeedSources(supabase: SupabaseClient) {
+  const { error } = await supabase
+    .from('external_jobs')
+    .delete()
+    .in('source', [...LEGACY_EXTERNAL_FEED_RETIRING_SOURCES]);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function replaceExternalJobsBySource(
+  supabase: SupabaseClient,
+  jobs: ExternalJob[],
+) {
+  let inserted = 0;
+  let errors = 0;
+  const bySource = new Map<string, ExternalJob[]>();
+
+  for (const job of jobs) {
+    const sourceJobs = bySource.get(job.source) || [];
+    sourceJobs.push(job);
+    bySource.set(job.source, sourceJobs);
+  }
+
+  for (const [source, sourceJobs] of bySource) {
+    const { error: deleteError } = await supabase
+      .from('external_jobs')
+      .delete()
+      .eq('source', source);
+
+    if (deleteError) {
+      console.error(`[externalJobs] Delete ${source} error:`, deleteError.message);
+      errors += sourceJobs.length;
+      continue;
+    }
+
+    const BATCH_SIZE = 50;
+    for (let i = 0; i < sourceJobs.length; i += BATCH_SIZE) {
+      const batch = sourceJobs.slice(i, i + BATCH_SIZE);
+      const { error: insertError } = await supabase
+        .from('external_jobs')
+        .insert(batch);
+
+      if (insertError) {
+        console.error(`[externalJobs] Insert ${source} batch error:`, insertError.message);
+        errors += batch.length;
+      } else {
+        inserted += batch.length;
+      }
+    }
+  }
+
+  return {
+    inserted,
+    errors,
+    sources: Object.fromEntries(
+      [...bySource.entries()].map(([source, sourceJobs]) => [source, sourceJobs.length])
+    ) as Record<string, number>,
+  };
+}
+
 /** Convert a ScrapedJob (from Cameroon scrapers) to ExternalJob for DB insertion. */
 function scrapedToExternal(job: ScrapedJob): ExternalJob {
   return {
@@ -220,24 +320,7 @@ function scrapedToExternal(job: ScrapedJob): ExternalJob {
 }
 
 export async function fetchAllExternalJobs(): Promise<ExternalJob[]> {
-  const results: ExternalJob[] = [];
-
-  // 1. Existing remote/international providers
-  const providers = [
-    fetchRemotiveExternalJobs,
-    fetchJobicyExternalJobs,
-    fetchFindworkExternalJobs,
-    fetchUpworkExternalJobs,
-  ];
-
-  for (const provider of providers) {
-    try {
-      const jobs = await provider();
-      results.push(...jobs);
-    } catch (err) {
-      console.error('Failed to fetch external jobs from provider', provider.name, err);
-    }
-  }
+  const results = await fetchExternalFeedJobs();
 
   // 2. Cameroon local scrapers (ReliefWeb, KamerPower, MinaJobs, CameroonJobs, JobInCamer, Emploi.cm)
   try {

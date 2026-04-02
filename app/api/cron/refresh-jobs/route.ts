@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { fetchAllExternalJobs } from '@/lib/externalJobs';
+import {
+  clearRetiredExternalFeedSources,
+  fetchExternalFeedJobs,
+  replaceExternalJobsBySource,
+} from '@/lib/externalJobs';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { runAutoPipeline } from '@/lib/scrapers/auto-pipeline';
 import { processPendingFacebookRawPosts } from '@/lib/scrapers/facebook-pipeline';
@@ -34,49 +38,20 @@ export async function GET(request: NextRequest) {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
-    console.log('[cron] Starting external jobs refresh...');
-    const jobs = await fetchAllExternalJobs();
-    console.log(`[cron] Fetched ${jobs.length} jobs from all providers`);
+    console.log('[cron] Refreshing legacy external feed (remote/international only)...');
+    const jobs = await fetchExternalFeedJobs();
+    const retiredSourceSummary = { cleared: true, error: null as string | null };
 
-    let inserted = 0;
-    let errors = 0;
-
-    // Group jobs by source so we can replace each source atomically
-    const bySource = new Map<string, typeof jobs>();
-    for (const job of jobs) {
-      const arr = bySource.get(job.source) || [];
-      arr.push(job);
-      bySource.set(job.source, arr);
+    try {
+      await clearRetiredExternalFeedSources(supabase);
+    } catch (retiredSourceError) {
+      retiredSourceSummary.cleared = false;
+      retiredSourceSummary.error = String(retiredSourceError);
+      console.error('[cron] Failed to clear retired Cameroon external feed rows:', retiredSourceError);
     }
 
-    // For each source: delete old rows, then batch insert fresh ones
-    for (const [source, sourceJobs] of bySource) {
-      const { error: delErr } = await supabase
-        .from('external_jobs')
-        .delete()
-        .eq('source', source);
-
-      if (delErr) {
-        console.error(`[cron] Delete ${source} error:`, delErr.message);
-        errors += sourceJobs.length;
-        continue;
-      }
-
-      const BATCH_SIZE = 50;
-      for (let i = 0; i < sourceJobs.length; i += BATCH_SIZE) {
-        const batch = sourceJobs.slice(i, i + BATCH_SIZE);
-        const { error: insertErr } = await supabase
-          .from('external_jobs')
-          .insert(batch);
-
-        if (insertErr) {
-          console.error(`[cron] Insert ${source} batch error:`, insertErr.message);
-          errors += batch.length;
-        } else {
-          inserted += batch.length;
-        }
-      }
-    }
+    const externalFeedSummary = await replaceExternalJobsBySource(supabase, jobs);
+    console.log(`[cron] Refreshed ${jobs.length} legacy external feed jobs`);
 
     // --- Full auto pipeline: scrape → ingest → auto-publish → dedup cleanup ---
     let pipelineSummary: any = null;
@@ -105,20 +80,12 @@ export async function GET(request: NextRequest) {
 
     const summary = {
       success: true,
-      fetched: jobs.length,
-      inserted,
-      errors,
-      sources: {
-        remotive: jobs.filter(j => j.source === 'remotive').length,
-        jobicy: jobs.filter(j => j.source === 'jobicy').length,
-        findwork: jobs.filter(j => j.source === 'findwork').length,
-        reliefweb: jobs.filter(j => j.source === 'reliefweb').length,
-        kamerpower: jobs.filter(j => j.source === 'kamerpower').length,
-        minajobs: jobs.filter(j => j.source === 'minajobs').length,
-        cameroonjobs: jobs.filter(j => j.source === 'cameroonjobs').length,
-        jobincamer: jobs.filter(j => j.source === 'jobincamer').length,
-        emploicm: jobs.filter(j => j.source === 'emploicm').length,
-        facebook: jobs.filter(j => j.source === 'facebook').length,
+      external_feed: {
+        fetched: jobs.length,
+        inserted: externalFeedSummary.inserted,
+        errors: externalFeedSummary.errors,
+        sources: externalFeedSummary.sources,
+        retired_cameroon_sources: retiredSourceSummary,
       },
       pipeline: pipelineSummary,
       facebook_pipeline: facebookSummary,
