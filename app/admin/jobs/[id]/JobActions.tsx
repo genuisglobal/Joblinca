@@ -18,12 +18,14 @@ export default function JobActions({ job }: JobActionsProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
 
   const handleTogglePublished = async (nextPublished: boolean) => {
     setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       const res = await fetch(`/api/admin/jobs/${job.id}/publish`, {
         method: 'POST',
@@ -45,6 +47,7 @@ export default function JobActions({ job }: JobActionsProps) {
   const handleApprove = async () => {
     setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       const res = await fetch(`/api/admin/jobs/${job.id}/approve`, {
         method: 'POST',
@@ -68,6 +71,7 @@ export default function JobActions({ job }: JobActionsProps) {
     }
     setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       const res = await fetch(`/api/admin/jobs/${job.id}/reject`, {
         method: 'POST',
@@ -99,6 +103,7 @@ export default function JobActions({ job }: JobActionsProps) {
 
     setLoading(true);
     setError(null);
+    setSuccess(null);
     try {
       const res = await fetch(`/api/admin/jobs/${job.id}`, {
         method: 'DELETE',
@@ -116,11 +121,43 @@ export default function JobActions({ job }: JobActionsProps) {
     }
   };
 
+  const handleRegenerateMarketingImages = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await fetch(`/api/admin/jobs/${job.id}/marketing-images`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to regenerate marketing images');
+      }
+      const total = typeof data?.total === 'number' ? data.total : 0;
+      setSuccess(
+        total > 0
+          ? `Regenerated ${total} marketing image variants.`
+          : 'Marketing images regenerated.'
+      );
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <>
       {error && (
         <div className="bg-red-900/30 border border-red-700 rounded-lg p-3 mb-4">
           <p className="text-red-400 text-sm">{error}</p>
+        </div>
+      )}
+
+      {success && (
+        <div className="bg-green-900/30 border border-green-700 rounded-lg p-3 mb-4">
+          <p className="text-green-300 text-sm">{success}</p>
         </div>
       )}
 
@@ -180,17 +217,29 @@ export default function JobActions({ job }: JobActionsProps) {
         )}
 
         {job.approval_status === 'approved' && (
-          <div className="text-center py-4">
-            <svg className="w-12 h-12 mx-auto text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p className="text-green-400 font-medium">Job is approved</p>
-            <p className="text-gray-400 text-sm mt-1">
-              {job.published
-                ? 'This job is currently visible to candidates'
-                : 'This job is approved but currently unpublished'}
-            </p>
-          </div>
+          <>
+            <div className="text-center py-4">
+              <svg className="w-12 h-12 mx-auto text-green-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-green-400 font-medium">Job is approved</p>
+              <p className="text-gray-400 text-sm mt-1">
+                {job.published
+                  ? 'This job is currently visible to candidates'
+                  : 'This job is approved but currently unpublished'}
+              </p>
+            </div>
+            <button
+              onClick={handleRegenerateMarketingImages}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m14.356 2A8.001 8.001 0 005.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-13.357-2M15 15h-4" />
+              </svg>
+              {loading ? 'Processing...' : 'Regenerate Images'}
+            </button>
+          </>
         )}
 
         {job.approval_status === 'rejected' && (

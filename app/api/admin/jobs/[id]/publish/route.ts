@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
+import { generateAndPersistApprovedJobImage } from '@/lib/job-image-generator/service';
 import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 
 export async function POST(
@@ -85,12 +86,27 @@ export async function POST(
       .from('jobs')
       .update(nextUpdate)
       .eq('id', jobId)
-      .select('id, title, approval_status, published, approved_at, approved_by, closes_at, lifecycle_status')
+      .select(
+        'id, title, company_name, location, salary, work_type, job_type, image_url, approval_status, published, approved_at, approved_by, closes_at, lifecycle_status'
+      )
       .single();
 
     if (error) {
       console.error('Error updating publish state:', error);
       return NextResponse.json({ error: 'Failed to update job visibility' }, { status: 500 });
+    }
+
+    let marketingImages: Awaited<ReturnType<typeof generateAndPersistApprovedJobImage>> = null;
+    if (published && existingJob.approval_status !== 'approved') {
+      marketingImages = await generateAndPersistApprovedJobImage({
+        jobId,
+        title: data.title,
+        company: data.company_name,
+        salary: data.salary ? String(data.salary) : null,
+        location: data.location,
+        type: data.work_type || data.job_type,
+        jobUrl: `${new URL(request.url).origin}/jobs/${jobId}`,
+      });
     }
 
     if (isJobPubliclyListable(data)) {
@@ -107,6 +123,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       job: data,
+      marketing_images: marketingImages?.variants ?? [],
       message: published ? 'Job is now published' : 'Job is now unpublished',
     });
   } catch (err) {

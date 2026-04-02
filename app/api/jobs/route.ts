@@ -409,41 +409,6 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-  // Generate a shareable image for the job.  We invoke our own API
-  // route rather than duplicating image generation logic here.  If
-  // generation fails, the image_url will remain null.  Use the
-  // request URL to compute the absolute path to the image route.
-  let imageUrl: string | null = null;
-  try {
-    const url = new URL('/api/generate-job-image', request.url);
-    const resp = await fetch(url.toString(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        companyName,
-        salary: salary ? String(salary) : undefined,
-        location,
-        workType: workType || 'onsite',
-      }),
-    });
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.imageUrl) {
-        imageUrl = data.imageUrl as string;
-      }
-    }
-  } catch (err) {
-    console.error('Failed to generate job image', err);
-  }
-  // Update the job record with the generated image URL if available
-  if (imageUrl) {
-    await supabase
-      .from('jobs')
-      .update({ image_url: imageUrl })
-      .eq('id', insertedJob.id);
-  }
-
   if (isJobPubliclyListable(insertedJob)) {
     try {
       await dispatchJobMatchNotifications({
