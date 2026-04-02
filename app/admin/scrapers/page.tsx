@@ -15,12 +15,13 @@ async function getScraperStats(): Promise<{
   totalJobs: number;
   facebookGroups: any[];
   unprocessedPosts: number;
+  failedPosts: number;
 }> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return { stats: [], totalJobs: 0, facebookGroups: [], unprocessedPosts: 0 };
+    return { stats: [], totalJobs: 0, facebookGroups: [], unprocessedPosts: 0, failedPosts: 0 };
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
@@ -66,11 +67,17 @@ async function getScraperStats(): Promise<{
     .select('id', { count: 'exact', head: true })
     .eq('processed', false);
 
+  const { count: failedPosts } = await supabase
+    .from('facebook_raw_posts')
+    .select('id', { count: 'exact', head: true })
+    .eq('extraction_status', 'failed');
+
   return {
     stats,
     totalJobs,
     facebookGroups: groups || [],
     unprocessedPosts: unprocessedPosts || 0,
+    failedPosts: failedPosts || 0,
   };
 }
 
@@ -79,7 +86,7 @@ export default async function ScrapersPage() {
   try {
     data = await getScraperStats();
   } catch {
-    data = { stats: [], totalJobs: 0, facebookGroups: [], unprocessedPosts: 0 };
+    data = { stats: [], totalJobs: 0, facebookGroups: [], unprocessedPosts: 0, failedPosts: 0 };
   }
 
   return (
@@ -96,6 +103,7 @@ export default async function ScrapersPage() {
         totalJobs={data.totalJobs}
         facebookGroups={data.facebookGroups}
         unprocessedPosts={data.unprocessedPosts}
+        failedPosts={data.failedPosts}
       />
     </div>
   );

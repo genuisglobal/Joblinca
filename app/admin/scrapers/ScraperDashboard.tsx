@@ -14,6 +14,7 @@ interface Props {
   totalJobs: number;
   facebookGroups: any[];
   unprocessedPosts: number;
+  failedPosts: number;
 }
 
 const SOURCE_LABELS: Record<string, { label: string; type: 'cameroon' | 'remote' | 'facebook' }> = {
@@ -49,7 +50,13 @@ function StatusBadge({ hours }: { hours: number | null }) {
   return <span className="px-2 py-0.5 text-xs rounded bg-red-900 text-red-300">Down</span>;
 }
 
-export default function ScraperDashboard({ stats, totalJobs, facebookGroups, unprocessedPosts }: Props) {
+export default function ScraperDashboard({
+  stats,
+  totalJobs,
+  facebookGroups,
+  unprocessedPosts,
+  failedPosts,
+}: Props) {
   const [runningSource, setRunningSource] = useState<string | null>(null);
   const [runResult, setRunResult] = useState<any>(null);
 
@@ -98,6 +105,9 @@ export default function ScraperDashboard({ stats, totalJobs, facebookGroups, unp
           <p className="text-3xl font-bold text-blue-400 mt-1">{fbJobs.toLocaleString()}</p>
           {unprocessedPosts > 0 && (
             <p className="text-xs text-yellow-400 mt-1">{unprocessedPosts} unprocessed posts</p>
+          )}
+          {failedPosts > 0 && (
+            <p className="text-xs text-red-400 mt-1">{failedPosts} failed extractions awaiting retry</p>
           )}
         </div>
         <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">

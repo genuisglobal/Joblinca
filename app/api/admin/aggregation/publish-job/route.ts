@@ -84,7 +84,11 @@ export async function POST(request: NextRequest) {
         detectContentLanguage(`${dj.title} ${description}`);
 
       // Check for duplicate in published jobs
-      const duplicate = await findDuplicateJob(supabase, dj.title, dj.company_name);
+      const duplicate = await findDuplicateJob(supabase, {
+        title: dj.title,
+        companyName: dj.company_name,
+        urls: [dj.apply_url, dj.original_job_url],
+      });
       if (duplicate) {
         // Link discovered job to existing published job instead of creating duplicate
         await supabase

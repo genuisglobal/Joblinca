@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { fetchAllExternalJobs } from '@/lib/externalJobs';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { runAutoPipeline } from '@/lib/scrapers/auto-pipeline';
+import { processPendingFacebookRawPosts } from '@/lib/scrapers/facebook-pipeline';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes for full pipeline
@@ -89,6 +90,19 @@ export async function GET(request: NextRequest) {
       pipelineSummary = { error: String(pipelineErr) };
     }
 
+    let facebookSummary: any = null;
+    try {
+      console.log('[cron] Reprocessing pending Facebook raw posts...');
+      facebookSummary = await processPendingFacebookRawPosts(supabase, {
+        limit: 75,
+        triggerType: 'cron',
+      });
+      console.log('[cron] Facebook processing complete:', facebookSummary);
+    } catch (facebookErr) {
+      console.error('[cron] Facebook processing error (non-fatal):', facebookErr);
+      facebookSummary = { error: String(facebookErr) };
+    }
+
     const summary = {
       success: true,
       fetched: jobs.length,
@@ -107,6 +121,7 @@ export async function GET(request: NextRequest) {
         facebook: jobs.filter(j => j.source === 'facebook').length,
       },
       pipeline: pipelineSummary,
+      facebook_pipeline: facebookSummary,
       timestamp: new Date().toISOString(),
     };
 
