@@ -172,6 +172,9 @@ export default async function ApplyPage({ params }: PageProps) {
     talentProfileData?.resume_url ||
     null;
 
+  const initialResumePath =
+    typeof candidateSnapshot?.resumePath === 'string' ? candidateSnapshot.resumePath : null;
+
   const initialCoverLetter =
     existingApplication?.is_draft ? (existingApplication.cover_letter as string | null) || '' : '';
 
@@ -227,6 +230,7 @@ export default async function ApplyPage({ params }: PageProps) {
         }}
         initialContactInfo={initialContactInfo}
         existingResumeUrl={initialResumeUrl}
+        existingResumePath={initialResumePath}
         initialCoverLetter={initialCoverLetter}
         draftApplicationId={existingApplication?.id || null}
         initialAnswers={initialAnswers}

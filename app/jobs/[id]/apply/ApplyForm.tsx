@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import type { ApplicationEligibilityPreview } from '@/lib/applications/eligibility';
 import { getOpportunityTypeLabel } from '@/lib/opportunities';
+import { APPLICATION_CV_BUCKET } from '@/lib/storage/resume-links';
 
 type CustomQuestion = {
   id: string;
@@ -96,6 +97,7 @@ type ApplyFormProps = {
   initialProfessionalDetails: ProfessionalDetails;
   initialContactInfo: ContactInfo;
   existingResumeUrl: string | null;
+  existingResumePath: string | null;
   initialCoverLetter: string;
   draftApplicationId: string | null;
   initialAnswers: QuestionAnswer[];
@@ -125,7 +127,7 @@ type CompletionAction =
     };
 
 // Correct bucket id (matches your Supabase bucket + policies)
-const CV_BUCKET = 'application-cvs';
+const CV_BUCKET = APPLICATION_CV_BUCKET;
 
 function formatList(values: string[] | undefined) {
   if (!values || values.length === 0) {
@@ -341,6 +343,7 @@ export default function ApplyForm({
   initialProfessionalDetails,
   initialContactInfo,
   existingResumeUrl,
+  existingResumePath,
   initialCoverLetter,
   draftApplicationId,
   initialAnswers,
@@ -373,7 +376,7 @@ export default function ApplyForm({
   );
   const [resumeUrl, setResumeUrl] = useState<string | null>(existingResumeUrl);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
-  const [resumePath, setResumePath] = useState<string | null>(null);
+  const [resumePath, setResumePath] = useState<string | null>(existingResumePath);
   const [coverLetter, setCoverLetter] = useState(initialCoverLetter);
   const [answers, setAnswers] = useState<QuestionAnswer[]>(initialAnswers);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -579,17 +582,9 @@ export default function ApplyForm({
       // 4) Save resume_path in state
       setResumePath(filePath);
 
-      // 5) Get URL for UI preview - try signed URL first, fallback to public
-      const { data: signed, error: signedErr } = await supabase.storage
-        .from(CV_BUCKET)
-        .createSignedUrl(filePath, 60 * 60); // 1 hour
-
-      if (!signedErr && signed?.signedUrl) {
-        setResumeUrl(signed.signedUrl);
-      } else {
-        const { data: urlData } = supabase.storage.from(CV_BUCKET).getPublicUrl(filePath);
-        setResumeUrl(urlData.publicUrl || null);
-      }
+      // 5) Store a stable reference. Recruiter views are signed on demand server-side.
+      const { data: urlData } = supabase.storage.from(CV_BUCKET).getPublicUrl(filePath);
+      setResumeUrl(urlData.publicUrl || filePath);
 
       setResumeFile(file);
     } catch (err) {

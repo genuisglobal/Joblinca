@@ -1,5 +1,10 @@
 import { evaluateApplicationEligibility } from '@/lib/applications/eligibility';
 import { loadJobOpportunityMetadata } from '@/lib/opportunities-server';
+import {
+  APPLICATION_CV_BUCKET,
+  buildStoragePublicUrl,
+  getApplicationCvPath,
+} from '@/lib/storage/resume-links';
 
 export interface ApplicationContactInfoInput {
   fullName?: string | null;
@@ -304,7 +309,12 @@ export async function resolveApplicationPayload(
     portfolioUrl: fallbackPortfolioUrl,
   };
 
+  const resumePath = getApplicationCvPath(payload.resumePath, userId);
+  const uploadedResumeUrl = resumePath
+    ? buildStoragePublicUrl(APPLICATION_CV_BUCKET, resumePath)
+    : null;
   const resumeUrl =
+    uploadedResumeUrl ||
     normalizeOptionalText(payload.resumeUrl) ||
     normalizeOptionalText(jobSeekerProfile?.data?.resume_url) ||
     normalizeOptionalText(talentProfile?.data?.resume_url);
@@ -313,7 +323,7 @@ export async function resolveApplicationPayload(
     role: applicantRole,
     contactInfo,
     hasResume: Boolean(resumeUrl),
-    resumePath: normalizeOptionalText(payload.resumePath),
+    resumePath,
     internshipTrack: job.internship_track || null,
     educationDetails: job.internship_track === 'education' ? educationDetails : null,
     professionalDetails: job.internship_track === 'professional' ? professionalDetails : null,
