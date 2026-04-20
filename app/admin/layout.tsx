@@ -42,6 +42,7 @@ export default async function AdminLayout({
           <NavLink href="/admin/field-agents" icon={<UsersIcon />} label="Field Agents" />
           <NavLink href="/admin/recruiters" icon={<BuildingIcon />} label="Recruiters" />
           <NavLink href="/admin/applications" icon={<DocumentIcon />} label="Applications" />
+          <NavLink href="/admin/whatsapp/blast" icon={<MegaphoneIcon />} label="WhatsApp Blast" />
 
           <div className="pt-4 mt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500 uppercase mb-2 px-3">Aggregation</p>
