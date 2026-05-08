@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "videos:daily": "tsx scripts/videos/generate-daily-job-videos.ts",
     "uat:phase1:newman": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1",
     "uat:phase1:critical": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1 -CriticalPath",
     "uat:phase1:report": "node scripts/summarize-phase1-uat-report.mjs",
