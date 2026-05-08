@@ -11,6 +11,10 @@ import StageTimeline from '@/components/hiring-pipeline/StageTimeline';
 import RankingExplanation from '@/components/applications/RankingExplanation';
 import InterviewCalendarActions from '@/components/interview-scheduling/InterviewCalendarActions';
 import {
+  buildRecruiterTemplateMessage,
+  getRecruiterDecisionSupport,
+} from '@/lib/ai/recruiterDecisionSupport';
+import {
   formatDecisionLabel,
   getDecisionTone,
   getRecommendationLabel,
@@ -328,6 +332,7 @@ export default function ApplicationDetailPage({
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const [copiedAssistantMessage, setCopiedAssistantMessage] = useState(false);
   const recruiterTimezone = useMemo(
     () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     []
@@ -584,6 +589,27 @@ export default function ApplicationDetailPage({
       }
     } catch (err) {
       console.error('Failed to move stage:', err);
+    } finally {
+      setMovingStage(false);
+    }
+  };
+
+  const handleStageMoveByKey = async (stageKey: string) => {
+    if (!application || movingStage || !stageKey) return;
+
+    setMovingStage(true);
+    try {
+      const response = await fetch(`/api/applications/${params.id}/stage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageKey }),
+      });
+
+      if (response.ok) {
+        await loadData();
+      }
+    } catch (err) {
+      console.error('Failed to move stage by key:', err);
     } finally {
       setMovingStage(false);
     }
@@ -1101,6 +1127,19 @@ export default function ApplicationDetailPage({
     return profile.full_name || 'Anonymous';
   }
 
+  function buildInboxHref(receiverId: string, draft: string) {
+    return `/dashboard/recruiter/messages?partner=${encodeURIComponent(receiverId)}&draft=${encodeURIComponent(draft)}`;
+  }
+
+  function normalizePhoneForWhatsapp(phone: string | null | undefined) {
+    if (!phone) {
+      return null;
+    }
+
+    const digits = phone.replace(/\D/g, '');
+    return digits.length >= 8 ? digits : null;
+  }
+
   function formatActivityAction(activity: Activity): string {
     switch (activity.action) {
       case 'created':
@@ -1181,6 +1220,66 @@ export default function ApplicationDetailPage({
   const eligibilityTone = getEligibilityTone(application.eligibility_status);
   const upcomingInterviews = interviews.filter((item) => item.status === 'scheduled');
   const openInterviewSlots = interviewSlots.filter((slot) => slot.status === 'available');
+  const applicantName = getApplicantName(application.profiles);
+  const applicantPhone = application.contact_info?.phone || application.profiles?.phone || null;
+  const applicantEmail = application.contact_info?.email || null;
+  const whatsappNumber = normalizePhoneForWhatsapp(applicantPhone);
+  const recruiterMessageTemplates = [
+    {
+      label: 'Intro message',
+      draft: buildRecruiterTemplateMessage({
+        applicantName,
+        jobTitle: application.jobs?.title || 'this role',
+        companyName: application.jobs?.company_name,
+        purpose: 'initial_contact',
+      }),
+    },
+    {
+      label: 'Phone screen',
+      draft: buildRecruiterTemplateMessage({
+        applicantName,
+        jobTitle: application.jobs?.title || 'this role',
+        companyName: application.jobs?.company_name,
+        purpose: 'phone_screen',
+      }),
+    },
+    {
+      label: 'Request update',
+      draft: buildRecruiterTemplateMessage({
+        applicantName,
+        jobTitle: application.jobs?.title || 'this role',
+        companyName: application.jobs?.company_name,
+        purpose: 'document_request',
+      }),
+    },
+  ];
+  const recruiterAiSupport =
+    aiInsights?.status === 'completed'
+      ? getRecruiterDecisionSupport({
+          applicantName,
+          jobTitle: application.jobs?.title || 'this role',
+          companyName: application.jobs?.company_name,
+          matchScore: aiInsights.match_score,
+          strengths: aiInsights.strengths,
+          gaps: aiInsights.gaps,
+          eligibilityStatus: application.eligibility_status,
+          decisionStatus: application.decision_status,
+        })
+      : null;
+
+  async function handleCopyAssistantMessage() {
+    if (!recruiterAiSupport) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(recruiterAiSupport.suggestedMessage);
+      setCopiedAssistantMessage(true);
+      window.setTimeout(() => setCopiedAssistantMessage(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy assistant message:', error);
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -1198,7 +1297,7 @@ export default function ApplicationDetailPage({
           </Link>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold text-white">
-              {getApplicantName(application.profiles)}
+              {applicantName}
             </h1>
             <StageBadge
               label={currentStage?.label || 'Unassigned'}
@@ -1265,30 +1364,78 @@ export default function ApplicationDetailPage({
                 />
               ) : (
                 <div className="w-20 h-20 rounded-full bg-blue-600 flex items-center justify-center text-white text-2xl font-bold">
-                  {getApplicantName(application.profiles).charAt(0).toUpperCase()}
+                  {applicantName.charAt(0).toUpperCase()}
                 </div>
               )}
               <div className="flex-1">
                 <h3 className="text-xl font-medium text-white">
-                  {getApplicantName(application.profiles)}
+                  {applicantName}
                 </h3>
                 <div className="mt-2 space-y-1 text-gray-400">
-                  {application.contact_info?.email && (
+                  {applicantEmail && (
                     <p className="flex items-center gap-2">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
-                      {application.contact_info.email}
+                      {applicantEmail}
                     </p>
                   )}
-                  {(application.contact_info?.phone || application.profiles?.phone) && (
+                  {applicantPhone && (
                     <p className="flex items-center gap-2">
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                       </svg>
-                      {application.contact_info?.phone || application.profiles?.phone}
+                      {applicantPhone}
                     </p>
                   )}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    href={buildInboxHref(
+                      application.applicant_id,
+                      recruiterMessageTemplates[0].draft
+                    )}
+                    className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
+                  >
+                    Message in JobLinca
+                  </Link>
+                  {applicantPhone && (
+                    <a
+                      href={`tel:${applicantPhone}`}
+                      className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-medium text-gray-100 hover:bg-gray-600"
+                    >
+                      Call candidate
+                    </a>
+                  )}
+                  {whatsappNumber && (
+                    <a
+                      href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(recruiterMessageTemplates[1].draft)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                    >
+                      WhatsApp
+                    </a>
+                  )}
+                  {applicantEmail && (
+                    <a
+                      href={`mailto:${applicantEmail}?subject=${encodeURIComponent(`Application update: ${application.jobs?.title || 'JobLinca role'}`)}&body=${encodeURIComponent(recruiterMessageTemplates[2].draft)}`}
+                      className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-medium text-gray-100 hover:bg-gray-600"
+                    >
+                      Email
+                    </a>
+                  )}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {recruiterMessageTemplates.map((template) => (
+                    <Link
+                      key={template.label}
+                      href={buildInboxHref(application.applicant_id, template.draft)}
+                      className="rounded-full border border-gray-600 px-3 py-1.5 text-xs font-medium text-gray-200 hover:border-blue-500 hover:text-white"
+                    >
+                      {template.label}
+                    </Link>
+                  ))}
                 </div>
               </div>
             </div>
@@ -2093,7 +2240,12 @@ export default function ApplicationDetailPage({
           {/* AI Insights */}
           <div className="bg-gray-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white">AI Analysis</h2>
+              <div>
+                <h2 className="text-lg font-semibold text-white">AI Recruiter Assistant</h2>
+                <p className="mt-1 text-sm text-gray-400">
+                  Plain-language hiring guidance built from the submitted application.
+                </p>
+              </div>
               <button
                 onClick={handleAIAnalysis}
                 disabled={analyzingAI}
@@ -2114,6 +2266,66 @@ export default function ApplicationDetailPage({
 
             {aiInsights?.status === 'completed' ? (
               <div className="space-y-4">
+                {recruiterAiSupport && (
+                  <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${
+                            recruiterAiSupport.fitTone === 'emerald'
+                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                              : recruiterAiSupport.fitTone === 'red'
+                                ? 'border-red-500/30 bg-red-500/10 text-red-100'
+                                : recruiterAiSupport.fitTone === 'amber'
+                                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-100'
+                                  : 'border-gray-600 bg-gray-700/40 text-gray-100'
+                          }`}
+                        >
+                          {recruiterAiSupport.fitLabel}
+                        </span>
+                        <p className="mt-3 text-base font-semibold text-white">
+                          {recruiterAiSupport.headline}
+                        </p>
+                        <p className="mt-2 text-sm text-gray-300">
+                          {recruiterAiSupport.recommendedAction}
+                        </p>
+                      </div>
+                      <Link
+                        href={buildInboxHref(
+                          application.applicant_id,
+                          recruiterAiSupport.suggestedMessage
+                        )}
+                        className="rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700"
+                      >
+                        Use in inbox
+                      </Link>
+                    </div>
+                    <div className="mt-4 rounded-lg bg-gray-900/50 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
+                        Suggested recruiter message
+                      </p>
+                      <p className="mt-3 whitespace-pre-wrap text-sm text-gray-200">
+                        {recruiterAiSupport.suggestedMessage}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={handleCopyAssistantMessage}
+                          className="rounded-lg bg-gray-700 px-3 py-2 text-xs font-medium text-gray-100 hover:bg-gray-600"
+                        >
+                          {copiedAssistantMessage ? 'Copied' : 'Copy message'}
+                        </button>
+                        <button
+                          onClick={() => handleStageMoveByKey('interview')}
+                          disabled={movingStage}
+                          className="rounded-lg bg-gray-700 px-3 py-2 text-xs font-medium text-gray-100 hover:bg-gray-600 disabled:opacity-50"
+                        >
+                          Move to interview
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Match Score */}
                 {aiInsights.match_score !== null && (
                   <div className="flex items-center gap-4">
@@ -2240,9 +2452,52 @@ export default function ApplicationDetailPage({
 
         {/* Sidebar */}
         <div className="space-y-6">
+          <div className="bg-gray-800 rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
+            <p className="text-sm text-gray-400">
+              Use the simple recruiter flow first. Advanced ATS controls stay below.
+            </p>
+            <div className="mt-4 grid gap-2">
+              <Link
+                href={buildInboxHref(application.applicant_id, recruiterMessageTemplates[0].draft)}
+                className="rounded-lg bg-sky-600 px-4 py-2 text-center text-white hover:bg-sky-700"
+              >
+                Open candidate inbox
+              </Link>
+              <button
+                onClick={() => handleStageMoveByKey('recruiter_review')}
+                disabled={movingStage}
+                className="rounded-lg bg-amber-600 px-4 py-2 text-white hover:bg-amber-700 disabled:opacity-50"
+              >
+                Shortlist candidate
+              </button>
+              <button
+                onClick={() => handleStageMoveByKey('interview')}
+                disabled={movingStage}
+                className="rounded-lg bg-purple-600 px-4 py-2 text-white hover:bg-purple-700 disabled:opacity-50"
+              >
+                Move to interview
+              </button>
+              <button
+                onClick={() => handleDecision('hired')}
+                disabled={savingDecision}
+                className="rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                Mark as hired
+              </button>
+              <button
+                onClick={() => handleDecision('rejected')}
+                disabled={savingDecision}
+                className="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                Mark as rejected
+              </button>
+            </div>
+          </div>
+
           {/* Stage Controls */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Stage Controls</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">Advanced Stage Controls</h2>
             <div className="space-y-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
@@ -2295,7 +2550,7 @@ export default function ApplicationDetailPage({
           </div>
 
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Decision</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">Final Decision</h2>
             <div
               className={`rounded-xl border p-3 ${decisionTone.bg} ${decisionTone.text} ${decisionTone.border}`}
             >
@@ -2367,7 +2622,7 @@ export default function ApplicationDetailPage({
 
           {/* Ranking Score */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Ranking Score</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">Advanced Review Signals</h2>
             <div className="text-3xl font-bold text-blue-400 mb-4">
               {application.ranking_score?.toFixed(1) || 0}
             </div>

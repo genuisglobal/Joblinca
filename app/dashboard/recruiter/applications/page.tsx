@@ -8,6 +8,7 @@ import StatsCard from '../../components/StatsCard';
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
 import EligibilityBadge from '@/components/applications/EligibilityBadge';
 import RankingExplanation from '@/components/applications/RankingExplanation';
+import { buildRecruiterTemplateMessage } from '@/lib/ai/recruiterDecisionSupport';
 import type { ApplicationCurrentStage } from '@/lib/hiring-pipeline/types';
 
 interface Job {
@@ -97,6 +98,7 @@ export default function RecruiterApplicationsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkUpdating, setBulkUpdating] = useState(false);
+  const [quickUpdatingId, setQuickUpdatingId] = useState<string | null>(null);
 
   // Filters from URL params
   const stageFilter = (searchParams.get('stage') as StageFilter) || 'all';
@@ -372,6 +374,61 @@ export default function RecruiterApplicationsPage() {
     return profile.full_name || 'Anonymous';
   }
 
+  function buildMessageHref(app: Application) {
+    const draft = buildRecruiterTemplateMessage({
+      applicantName: getApplicantName(app.profiles),
+      jobTitle: app.jobs?.title || 'this role',
+      companyName: app.jobs?.company_name,
+      purpose: 'initial_contact',
+    });
+
+    return `/dashboard/recruiter/messages?partner=${encodeURIComponent(app.applicant_id)}&draft=${encodeURIComponent(draft)}`;
+  }
+
+  function getSuggestedNextStep(app: Application) {
+    switch (app.current_stage?.stageType) {
+      case 'interview':
+        return 'Confirm the interview or record a final decision.';
+      case 'review':
+      case 'offer':
+        return 'Contact the candidate and decide whether to interview or reject.';
+      case 'screening':
+        return 'Run a quick phone screen or move to shortlist.';
+      case 'hire':
+        return 'Candidate is already in the hired lane.';
+      case 'rejected':
+        return 'Decision already closed unless you want to reopen.';
+      case 'applied':
+      default:
+        return 'Make first contact or move the candidate to shortlist.';
+    }
+  }
+
+  async function handleQuickStageAction(
+    applicationId: string,
+    stageKey: string,
+    reason: string
+  ) {
+    if (quickUpdatingId) {
+      return;
+    }
+
+    setQuickUpdatingId(applicationId);
+    try {
+      await fetch(`/api/applications/${applicationId}/stage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stageKey, reason }),
+      });
+
+      await loadData();
+    } catch (error) {
+      console.error('Quick stage action failed:', error);
+    } finally {
+      setQuickUpdatingId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -390,7 +447,7 @@ export default function RecruiterApplicationsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Applications</h1>
           <p className="text-gray-400 mt-1">
-            Manage all applications across your job postings
+            Review candidates quickly, contact them directly, and make decisions with less friction.
           </p>
         </div>
       </div>
@@ -495,14 +552,14 @@ export default function RecruiterApplicationsPage() {
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700 disabled:opacity-50"
               >
-                Screen
+                Phone screen
               </button>
               <button
                 onClick={() => handleBulkStageUpdate('recruiter_review')}
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50"
                 >
-                Review
+                Shortlist
               </button>
               <button
                 onClick={() => handleBulkStageUpdate('interview')}
@@ -681,6 +738,53 @@ export default function RecruiterApplicationsPage() {
                         currentStageType={app.current_stage?.stageType || null}
                       />
                     </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Link
+                        href={buildMessageHref(app)}
+                        className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700"
+                      >
+                        Contact
+                      </Link>
+                      <button
+                        onClick={() =>
+                          handleQuickStageAction(
+                            app.id,
+                            'recruiter_review',
+                            'quick_shortlist_from_recruiter_inbox'
+                          )
+                        }
+                        disabled={Boolean(quickUpdatingId)}
+                        className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                      >
+                        Shortlist
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleQuickStageAction(
+                            app.id,
+                            'interview',
+                            'quick_interview_from_recruiter_inbox'
+                          )
+                        }
+                        disabled={Boolean(quickUpdatingId)}
+                        className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                      >
+                        Interview
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleQuickStageAction(
+                            app.id,
+                            'rejected',
+                            'quick_reject_from_recruiter_inbox'
+                          )
+                        }
+                        disabled={Boolean(quickUpdatingId)}
+                        className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -714,6 +818,9 @@ export default function RecruiterApplicationsPage() {
                         Since {new Date(app.stage_entered_at).toLocaleDateString()}
                       </p>
                     )}
+                    <p className="mt-2 text-xs text-gray-400">
+                      {getSuggestedNextStep(app)}
+                    </p>
                   </div>
                 </div>
 

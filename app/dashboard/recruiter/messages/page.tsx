@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { MessageSquare, Send, ArrowLeft, User } from 'lucide-react';
 
 interface Conversation {
@@ -46,6 +47,7 @@ function getPartnerRoleLabel(partner: Conversation['partner']): string {
 }
 
 export default function RecruiterMessagesPage() {
+  const searchParams = useSearchParams();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedPartner, setSelectedPartner] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -53,6 +55,18 @@ export default function RecruiterMessagesPage() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const selectedPartnerFromQuery = searchParams.get('partner');
+  const draftFromQuery = searchParams.get('draft') || '';
+
+  useEffect(() => {
+    if (selectedPartnerFromQuery) {
+      setSelectedPartner((current) => current || selectedPartnerFromQuery);
+    }
+
+    if (draftFromQuery) {
+      setNewMessage((current) => current || draftFromQuery);
+    }
+  }, [draftFromQuery, selectedPartnerFromQuery]);
 
   // Load conversations
   useEffect(() => {
@@ -230,32 +244,43 @@ export default function RecruiterMessagesPage() {
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {messages.map((msg) => {
-                  const isMine = msg.sender_id !== selectedPartner;
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
-                    >
+                {messages.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-center">
+                    <div>
+                      <p className="text-sm text-gray-400">No messages yet</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        Send the first message to start this recruiter conversation.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  messages.map((msg) => {
+                    const isMine = msg.sender_id !== selectedPartner;
+                    return (
                       <div
-                        className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${
-                          isMine
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-700 text-gray-100'
-                        }`}
+                        key={msg.id}
+                        className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
                       >
-                        <p className="text-sm whitespace-pre-wrap">{msg.body}</p>
-                        <p
-                          className={`text-[10px] mt-1 ${
-                            isMine ? 'text-blue-200' : 'text-gray-500'
+                        <div
+                          className={`max-w-[70%] rounded-2xl px-4 py-2.5 ${
+                            isMine
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-700 text-gray-100'
                           }`}
                         >
-                          {formatTime(msg.created_at)}
-                        </p>
+                          <p className="text-sm whitespace-pre-wrap">{msg.body}</p>
+                          <p
+                            className={`text-[10px] mt-1 ${
+                              isMine ? 'text-blue-200' : 'text-gray-500'
+                            }`}
+                          >
+                            {formatTime(msg.created_at)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
