@@ -12,9 +12,16 @@ import { MinaJobsScraper } from './providers/minajobs';
 import { CameroonJobsScraper } from './providers/cameroonjobs';
 import { JobInCamerScraper } from './providers/jobincamer';
 import { EmploiCmScraper } from './providers/emploicm';
+import { WorkConnectScraper } from './providers/workconnect';
+import { KmerJobsScraper } from './providers/kmerjobs';
 import { FacebookScraper } from './providers/facebook';
 import { BaseScraper } from './base';
 import { deduplicateCrossSources } from './dedup';
+import {
+  ALL_SCRAPER_SOURCE_SLUGS,
+  AUTOMATED_SCRAPER_SOURCE_SLUGS,
+  type ScraperSourceSlug,
+} from './catalog';
 
 export interface AggregateResult {
   total_jobs: number;
@@ -22,16 +29,26 @@ export interface AggregateResult {
   duration_ms: number;
 }
 
+const SCRAPER_FACTORIES: Record<
+  ScraperSourceSlug,
+  (config?: Partial<ScraperConfig>) => BaseScraper
+> = {
+  reliefweb: (config) => new ReliefWebScraper(config),
+  kamerpower: (config) => new KamerPowerScraper(config),
+  minajobs: (config) => new MinaJobsScraper(config),
+  cameroonjobs: (config) => new CameroonJobsScraper(config),
+  jobincamer: (config) => new JobInCamerScraper(config),
+  emploicm: (config) => new EmploiCmScraper(config),
+  workconnect: (config) => new WorkConnectScraper(config),
+  kmerjobs: (config) => new KmerJobsScraper(config),
+  facebook: (config) => new FacebookScraper(config),
+};
+
 /** Create all registered scrapers with optional config overrides per source. */
 function createScrapers(overrides?: Record<string, Partial<ScraperConfig>>): BaseScraper[] {
-  return [
-    new ReliefWebScraper(overrides?.reliefweb),
-    new KamerPowerScraper(overrides?.kamerpower),
-    new MinaJobsScraper(overrides?.minajobs),
-    new CameroonJobsScraper(overrides?.cameroonjobs),
-    new JobInCamerScraper(overrides?.jobincamer),
-    new EmploiCmScraper(overrides?.emploicm),
-  ];
+  return AUTOMATED_SCRAPER_SOURCE_SLUGS.map((source) =>
+    SCRAPER_FACTORIES[source](overrides?.[source])
+  );
 }
 
 /**
@@ -98,17 +115,7 @@ export async function runScraper(
   source: string,
   config?: Partial<ScraperConfig>
 ): Promise<ScrapeResult> {
-  const scraperMap: Record<string, () => BaseScraper> = {
-    reliefweb: () => new ReliefWebScraper(config),
-    kamerpower: () => new KamerPowerScraper(config),
-    minajobs: () => new MinaJobsScraper(config),
-    cameroonjobs: () => new CameroonJobsScraper(config),
-    jobincamer: () => new JobInCamerScraper(config),
-    emploicm: () => new EmploiCmScraper(config),
-    facebook: () => new FacebookScraper(config),
-  };
-
-  const factory = scraperMap[source];
+  const factory = SCRAPER_FACTORIES[source as ScraperSourceSlug];
   if (!factory) {
     return {
       source,
@@ -119,10 +126,15 @@ export async function runScraper(
     };
   }
 
-  return factory().run();
+  return factory(config).run();
 }
 
 /** List all available scraper source names. */
 export function listScraperSources(): string[] {
-  return ['reliefweb', 'kamerpower', 'minajobs', 'cameroonjobs', 'jobincamer', 'emploicm', 'facebook'];
+  return [...ALL_SCRAPER_SOURCE_SLUGS];
+}
+
+/** List sources that can run directly in bulk site-scraping flows. */
+export function listAutomatedScraperSources(): string[] {
+  return [...AUTOMATED_SCRAPER_SOURCE_SLUGS];
 }

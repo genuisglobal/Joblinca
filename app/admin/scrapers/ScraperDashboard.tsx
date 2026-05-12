@@ -24,6 +24,8 @@ const SOURCE_LABELS: Record<string, { label: string; type: 'cameroon' | 'remote'
   cameroonjobs: { label: 'CameroonJobs.net', type: 'cameroon' },
   jobincamer: { label: 'JobInCamer', type: 'cameroon' },
   emploicm: { label: 'Emploi.cm', type: 'cameroon' },
+  workconnect: { label: 'WorkConnect CM', type: 'cameroon' },
+  kmerjobs: { label: 'KmerJobs', type: 'cameroon' },
   reliefweb: { label: 'ReliefWeb', type: 'cameroon' },
   facebook: { label: 'Facebook Groups', type: 'facebook' },
   remotive: { label: 'Remotive', type: 'remote' },

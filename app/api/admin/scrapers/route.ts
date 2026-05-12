@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { runAllScrapers, runScraper, listScraperSources, deduplicateJobs } from '@/lib/scrapers/registry';
+import {
+  runAllScrapers,
+  runScraper,
+  listAutomatedScraperSources,
+  listScraperSources,
+  deduplicateJobs,
+} from '@/lib/scrapers/registry';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 import { ingestAllResults, ingestScrapeResult } from '@/lib/scrapers/ingestion';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
@@ -45,7 +51,7 @@ export async function POST(request: NextRequest) {
 
     if (source === 'all') {
       const overrides = maxPages
-        ? Object.fromEntries(listScraperSources().map((s) => [s, { maxPages }]))
+        ? Object.fromEntries(listAutomatedScraperSources().map((s) => [s, { maxPages }]))
         : undefined;
 
       const aggregate = await runAllScrapers(overrides);

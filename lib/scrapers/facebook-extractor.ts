@@ -16,6 +16,7 @@ import {
   isAiConfigured,
   type AiChatContentPart,
 } from '@/lib/ai/client';
+import { looksLikeJobSnippet } from './facebook-heuristics';
 
 /** Schema for a single extracted job from a Facebook post. */
 const extractedJobSchema = z.object({
@@ -49,6 +50,13 @@ export interface FacebookExtractionDetail {
   imageCount: number;
 }
 
+export interface FacebookExtractionContext {
+  groupName?: string | null;
+  groupUrl?: string | null;
+  author?: string | null;
+  postUrl?: string | null;
+}
+
 const EXTRACTION_PROMPT = `You are a job posting parser for Cameroon. Given a Facebook group post and any attached flyer images, determine if it's a job posting and extract structured data.
 
 Rules:
@@ -56,6 +64,7 @@ Rules:
 - If attached images contain a flyer or poster, read the visible text and use it as evidence.
 - Image content is allowed to fill gaps when the caption is short or missing.
 - If the post is NOT a job posting (e.g., job seeking, ads, spam, general discussion), set is_job_post=false and null all other fields.
+- Group name, author, and post URL are weak context only. They can help classify the post, but never invent missing job facts from them.
 - For job title: extract or infer the most specific job title. "Recrutement d'un comptable" -> "Comptable"
 - For company: extract the hiring organization name. If embedded in text like "la societe ABC recrute", extract "ABC".
 - For location: extract Cameroon city/region. Common: Douala, Yaounde, Bamenda, Buea, Bafoussam, Garoua, Maroua.
@@ -72,8 +81,19 @@ function sanitizeImageUrls(imageUrls: string[] | undefined): string[] {
     .slice(0, 3);
 }
 
-function buildUserContent(postText: string, imageUrls: string[]): string | AiChatContentPart[] {
+function buildUserContent(
+  postText: string,
+  imageUrls: string[],
+  context: FacebookExtractionContext
+): string | AiChatContentPart[] {
+  const contextLines = [
+    context.groupName ? `Facebook group: ${context.groupName}` : null,
+    context.author ? `Post author: ${context.author}` : null,
+    context.postUrl ? `Post URL: ${context.postUrl}` : null,
+  ].filter(Boolean);
+
   const contentBlock = [
+    ...contextLines,
     'Facebook post text:',
     postText.trim() || '[No caption text provided]',
     imageUrls.length > 0
@@ -105,7 +125,8 @@ function buildUserContent(postText: string, imageUrls: string[]): string | AiCha
  */
 export async function extractJobFromPostDetailed(
   postText: string,
-  imageUrls: string[] = []
+  imageUrls: string[] = [],
+  context: FacebookExtractionContext = {}
 ): Promise<FacebookExtractionDetail> {
   if (!isAiConfigured()) {
     console.warn('[facebook-extractor] OpenAI not configured, skipping extraction');
@@ -119,8 +140,12 @@ export async function extractJobFromPostDetailed(
     return { extraction: null, error: 'empty_post', imageCount: 0 };
   }
 
-  if (normalizedText.length < 20 && normalizedImageUrls.length === 0) {
-    return { extraction: null, error: 'text_too_short', imageCount: 0 };
+  if (
+    normalizedText.length < 20 &&
+    normalizedImageUrls.length === 0 &&
+    !looksLikeJobSnippet(normalizedText)
+  ) {
+    return { extraction: null, error: 'text_too_short_or_low_signal', imageCount: 0 };
   }
 
   try {
@@ -129,7 +154,7 @@ export async function extractJobFromPostDetailed(
         { role: 'system', content: EXTRACTION_PROMPT },
         {
           role: 'user',
-          content: buildUserContent(normalizedText.slice(0, 3000), normalizedImageUrls),
+          content: buildUserContent(normalizedText.slice(0, 3000), normalizedImageUrls, context),
         },
       ],
       schema: extractedJobSchema,
