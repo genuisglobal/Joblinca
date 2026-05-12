@@ -58,7 +58,9 @@ export default function RunScrapersButton() {
       }
 
       if (!res.ok) {
-        setError(data.error || `HTTP ${res.status}`);
+        setError(
+          [data.error || `HTTP ${res.status}`, data.details].filter(Boolean).join(': ')
+        );
         return;
       }
 

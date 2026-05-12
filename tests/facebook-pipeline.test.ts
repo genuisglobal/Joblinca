@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 
-import { facebookLimitFromMaxPages, normalizeApifyFacebookPosts } from '@/lib/scrapers/facebook-pipeline';
+import {
+  facebookLimitFromMaxPages,
+  isMissingFacebookHardeningColumnError,
+  normalizeApifyFacebookPosts,
+  processPendingFacebookRawPosts,
+} from '@/lib/scrapers/facebook-pipeline';
 import { isFacebookPostExtractable } from '@/lib/scrapers/providers/facebook';
 
 function testWebhookNormalization() {
@@ -98,9 +103,96 @@ function testNestedWebhookNormalization() {
   assert.equal(posts[0].image_urls?.[0], 'https://cdn.example.com/flyer.jpg');
 }
 
-testWebhookNormalization();
-testImageOnlyPostsAreExtractable();
-testFacebookLimitFromMaxPages();
-testNestedWebhookNormalization();
+function createLegacyPendingSupabaseMock() {
+  return {
+    from(table: string) {
+      assert.equal(table, 'facebook_raw_posts');
 
-console.log('facebook pipeline test passed');
+      return {
+        select(selection: string) {
+          if (selection.includes('extraction_status')) {
+            return {
+              or() {
+                return {
+                  order() {
+                    return {
+                      async limit() {
+                        return {
+                          data: null,
+                          error: {
+                            message:
+                              "Could not find the 'extraction_status' column of 'facebook_raw_posts' in the schema cache",
+                          },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            };
+          }
+
+          return {
+            eq(field: string, value: boolean) {
+              assert.equal(field, 'processed');
+              assert.equal(value, false);
+              return {
+                order() {
+                  return {
+                    async limit() {
+                      return {
+                        data: [],
+                        error: null,
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+}
+
+async function testLegacyFacebookSchemaFallback() {
+  const result = await processPendingFacebookRawPosts(
+    createLegacyPendingSupabaseMock() as any,
+    { limit: 10, triggerType: 'manual' }
+  );
+
+  assert.equal(result.received, 0);
+  assert.equal(result.queued, 0);
+  assert.equal(result.jobs_extracted, 0);
+  assert.equal(result.failed_posts, 0);
+}
+
+function testMissingFacebookHardeningColumnErrorDetection() {
+  assert.equal(
+    isMissingFacebookHardeningColumnError(
+      "Could not find the 'extraction_status' column of 'facebook_raw_posts' in the schema cache"
+    ),
+    true
+  );
+  assert.equal(
+    isMissingFacebookHardeningColumnError('Failed to load pending Facebook posts: permission denied'),
+    false
+  );
+}
+
+async function main() {
+  testWebhookNormalization();
+  testImageOnlyPostsAreExtractable();
+  testFacebookLimitFromMaxPages();
+  testNestedWebhookNormalization();
+  testMissingFacebookHardeningColumnErrorDetection();
+  await testLegacyFacebookSchemaFallback();
+
+  console.log('facebook pipeline test passed');
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
