@@ -49,7 +49,7 @@ type FacebookRawInsertRow = {
 
 type ProcessTrigger = 'manual' | 'cron';
 
-const RAW_POST_SELECT = [
+const BASE_RAW_POST_SELECT_FIELDS = [
   'id',
   'post_id',
   'text',
@@ -65,12 +65,22 @@ const RAW_POST_SELECT = [
   'processed',
   'processed_at',
   'extracted_job_id',
+  'created_at',
+];
+
+const FACEBOOK_HARDENING_COLUMNS = [
   'extraction_status',
   'extraction_error',
   'extraction_attempts',
   'last_extracted_at',
-  'created_at',
+];
+
+const RAW_POST_SELECT = [
+  ...BASE_RAW_POST_SELECT_FIELDS,
+  ...FACEBOOK_HARDENING_COLUMNS,
 ].join(', ');
+
+const LEGACY_RAW_POST_SELECT = BASE_RAW_POST_SELECT_FIELDS.join(', ');
 
 export interface FacebookPipelineResult {
   received: number;
@@ -90,6 +100,67 @@ export interface FacebookPipelineResult {
     duplicates: number;
     suspicious: number;
   } | null;
+}
+
+export function isMissingFacebookHardeningColumnError(error: unknown): boolean {
+  const message =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : String((error as { message?: unknown } | null)?.message || error || '');
+  const lower = message.toLowerCase();
+
+  return (
+    FACEBOOK_HARDENING_COLUMNS.some((column) => lower.includes(column.toLowerCase())) &&
+    (lower.includes('does not exist') ||
+      lower.includes('schema cache') ||
+      lower.includes('could not find the'))
+  );
+}
+
+function normalizeRawPostRow(row: Partial<FacebookRawPostRow>): FacebookRawPostRow {
+  const processed = typeof row.processed === 'boolean' ? row.processed : false;
+  const extractedJobId =
+    typeof row.extracted_job_id === 'string' && row.extracted_job_id.trim()
+      ? row.extracted_job_id
+      : null;
+
+  return {
+    id: row.id || '',
+    post_id: row.post_id || '',
+    text: row.text || '',
+    url: row.url || null,
+    posted_at: row.posted_at || null,
+    group_name: row.group_name || null,
+    group_url: row.group_url || null,
+    author: row.author || null,
+    likes: typeof row.likes === 'number' ? row.likes : 0,
+    comments: typeof row.comments === 'number' ? row.comments : 0,
+    shares: typeof row.shares === 'number' ? row.shares : 0,
+    image_urls: Array.isArray(row.image_urls) ? row.image_urls : [],
+    processed,
+    processed_at: row.processed_at || null,
+    extracted_job_id: extractedJobId,
+    extraction_status:
+      row.extraction_status ||
+      (processed ? (extractedJobId ? 'processed' : 'skipped') : 'pending'),
+    extraction_error: row.extraction_error || null,
+    extraction_attempts:
+      typeof row.extraction_attempts === 'number' ? row.extraction_attempts : 0,
+    last_extracted_at: row.last_extracted_at || null,
+    created_at: row.created_at || new Date(0).toISOString(),
+  };
+}
+
+function stripFacebookHardeningFields(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(
+      ([key]) => !FACEBOOK_HARDENING_COLUMNS.includes(key)
+    )
+  );
 }
 
 function mapRowToRawPost(row: FacebookRawPostRow): FacebookRawPost {
@@ -408,11 +479,26 @@ async function loadRowsByPostIds(
     .select(RAW_POST_SELECT)
     .in('post_id', postIds);
 
-  if (error) {
+  if (!error) {
+    return ((data || []) as Partial<FacebookRawPostRow>[]).map(normalizeRawPostRow);
+  }
+
+  if (!isMissingFacebookHardeningColumnError(error.message)) {
     throw new Error(`Failed to load stored Facebook posts: ${error.message}`);
   }
 
-  return ((data || []) as unknown) as FacebookRawPostRow[];
+  const legacyResult = await supabase
+    .from('facebook_raw_posts')
+    .select(LEGACY_RAW_POST_SELECT)
+    .in('post_id', postIds);
+
+  if (legacyResult.error) {
+    throw new Error(`Failed to load stored Facebook posts: ${legacyResult.error.message}`);
+  }
+
+  return ((legacyResult.data || []) as Partial<FacebookRawPostRow>[]).map(
+    normalizeRawPostRow
+  );
 }
 
 async function upsertExternalJobs(
@@ -496,8 +582,24 @@ async function updateRawPostOutcome(
     .update(updatePayload)
     .eq('id', row.id);
 
-  if (error) {
+  if (!error) {
+    return;
+  }
+
+  if (!isMissingFacebookHardeningColumnError(error.message)) {
     throw new Error(`Failed to update facebook_raw_posts row ${row.post_id}: ${error.message}`);
+  }
+
+  const legacyUpdatePayload = stripFacebookHardeningFields(updatePayload);
+  const legacyResult = await supabase
+    .from('facebook_raw_posts')
+    .update(legacyUpdatePayload)
+    .eq('id', row.id);
+
+  if (legacyResult.error) {
+    throw new Error(
+      `Failed to update facebook_raw_posts row ${row.post_id}: ${legacyResult.error.message}`
+    );
   }
 }
 
@@ -702,8 +804,24 @@ export async function storeFacebookRawPosts(
       .update(buildExistingRowUpdatePayload(existing, row))
       .eq('id', existing.id);
 
-    if (error) {
+    if (!error) {
+      updatedCount++;
+      continue;
+    }
+
+    if (!isMissingFacebookHardeningColumnError(error.message)) {
       throw new Error(`Failed to refresh Facebook raw post ${row.post_id}: ${error.message}`);
+    }
+
+    const legacyResult = await supabase
+      .from('facebook_raw_posts')
+      .update(stripFacebookHardeningFields(buildExistingRowUpdatePayload(existing, row)))
+      .eq('id', existing.id);
+
+    if (legacyResult.error) {
+      throw new Error(
+        `Failed to refresh Facebook raw post ${row.post_id}: ${legacyResult.error.message}`
+      );
     }
 
     updatedCount++;
@@ -717,8 +835,23 @@ export async function storeFacebookRawPosts(
     .from('facebook_raw_posts')
     .upsert(newRows, { onConflict: 'post_id', ignoreDuplicates: true });
 
-  if (error) {
+  if (!error) {
+    return newRows.length + updatedCount;
+  }
+
+  if (!isMissingFacebookHardeningColumnError(error.message)) {
     throw new Error(`Failed to store Facebook raw posts: ${error.message}`);
+  }
+
+  const legacyResult = await supabase
+    .from('facebook_raw_posts')
+    .upsert(
+      newRows.map((row) => stripFacebookHardeningFields(row as unknown as Record<string, unknown>)),
+      { onConflict: 'post_id', ignoreDuplicates: true }
+    );
+
+  if (legacyResult.error) {
+    throw new Error(`Failed to store Facebook raw posts: ${legacyResult.error.message}`);
   }
 
   return newRows.length + updatedCount;
@@ -735,11 +868,28 @@ export async function loadPendingFacebookRawPosts(
     .order('created_at', { ascending: true })
     .limit(limit);
 
-  if (error) {
+  if (!error) {
+    return ((data || []) as Partial<FacebookRawPostRow>[]).map(normalizeRawPostRow);
+  }
+
+  if (!isMissingFacebookHardeningColumnError(error.message)) {
     throw new Error(`Failed to load pending Facebook posts: ${error.message}`);
   }
 
-  return ((data || []) as unknown) as FacebookRawPostRow[];
+  const legacyResult = await supabase
+    .from('facebook_raw_posts')
+    .select(LEGACY_RAW_POST_SELECT)
+    .eq('processed', false)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (legacyResult.error) {
+    throw new Error(`Failed to load pending Facebook posts: ${legacyResult.error.message}`);
+  }
+
+  return ((legacyResult.data || []) as Partial<FacebookRawPostRow>[]).map(
+    normalizeRawPostRow
+  );
 }
 
 export async function processFacebookRawPostRows(
