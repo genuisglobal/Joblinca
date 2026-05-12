@@ -16,6 +16,7 @@ import { runAllScrapers } from './registry';
 import { ingestAllResults, type IngestionResult } from './ingestion';
 import { findDuplicateJob, findAllDuplicateGroups, hideDuplicateJobs } from '@/lib/jobs/dedup';
 import { detectContentLanguage, normalizeLocale } from '@/lib/i18n/locale';
+import { AUTOMATED_SCRAPER_SOURCE_SLUGS } from './catalog';
 
 // Auto-publish thresholds
 const AUTO_PUBLISH_TRUST_MIN = 60;
@@ -97,9 +98,7 @@ export async function runAutoPipeline(
   // Step 1: Scrape all sources
   console.log('[auto-pipeline] Step 1: Running scrapers...');
   const overrides = Object.fromEntries(
-    ['reliefweb', 'kamerpower', 'minajobs', 'cameroonjobs', 'jobincamer', 'emploicm'].map(
-      (s) => [s, { maxPages }]
-    )
+    AUTOMATED_SCRAPER_SOURCE_SLUGS.map((source) => [source, { maxPages }])
   );
   const scrapeResult = await runAllScrapers(overrides);
 

@@ -1,15 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import { ADMIN_RUN_SCRAPER_SOURCE_OPTIONS } from '@/lib/scrapers/catalog';
 
-const PIPELINE_SOURCES = [
-  { value: 'reliefweb', label: 'ReliefWeb' },
-  { value: 'kamerpower', label: 'KamerPower' },
-  { value: 'minajobs', label: 'MinaJobs' },
-  { value: 'cameroonjobs', label: 'CameroonJobs' },
-  { value: 'jobincamer', label: 'JobInCamer' },
-  { value: 'emploicm', label: 'Emploi.cm' },
-] as const;
+const PIPELINE_SOURCES = ADMIN_RUN_SCRAPER_SOURCE_OPTIONS;
 
 interface PipelineResult {
   scraping: {
@@ -120,7 +114,7 @@ export default function AutoPipelineButton() {
       };
 
       for (const [index, source] of PIPELINE_SOURCES.entries()) {
-        setProgress(`Scraping ${source.label} (${index + 1}/${PIPELINE_SOURCES.length})...`);
+        setProgress(`Running ${source.label} (${index + 1}/${PIPELINE_SOURCES.length})...`);
 
         const scraperRes = await fetch('/api/admin/aggregation/run-scrapers', {
           method: 'POST',
@@ -176,7 +170,7 @@ export default function AutoPipelineButton() {
         <div>
           <h2 className="text-lg font-semibold text-white">Auto Pipeline</h2>
           <p className="text-sm text-gray-400">
-            Runs each source separately to avoid request timeouts, then auto-publishes trustworthy jobs and cleans duplicates.
+            Runs each site scraper and the Facebook group backlog separately to avoid request timeouts, then auto-publishes trustworthy jobs and cleans duplicates.
           </p>
         </div>
         <button

@@ -39,6 +39,15 @@ function testImageOnlyPostsAreExtractable() {
     }),
     false
   );
+
+  assert.equal(
+    isFacebookPostExtractable({
+      id: 'short-joby',
+      text: 'Recrutement urgent',
+      image_urls: [],
+    }),
+    true
+  );
 }
 
 function testFacebookLimitFromMaxPages() {
@@ -47,8 +56,51 @@ function testFacebookLimitFromMaxPages() {
   assert.equal(facebookLimitFromMaxPages(20, 50), 200);
 }
 
+function testNestedWebhookNormalization() {
+  const posts = normalizeApifyFacebookPosts([
+    {
+      post: {
+        id: 'nested-1',
+        message: 'Offre d’emploi - chauffeur',
+        permalink: 'https://www.facebook.com/groups/example/posts/12345',
+        created_time: '2026-05-10T12:00:00Z',
+      },
+      group: {
+        name: 'Jobs Cameroon',
+        id: '987654321',
+      },
+      author: {
+        name: 'Recruiter Jane',
+      },
+      attachments: [
+        {
+          media: {
+            image: {
+              url: 'https://cdn.example.com/flyer.jpg',
+            },
+          },
+        },
+      ],
+      stats: {
+        likes: 8,
+        comments: 2,
+        shares: 1,
+      },
+    },
+  ]);
+
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].id, 'nested-1');
+  assert.equal(posts[0].group_name, 'Jobs Cameroon');
+  assert.equal(posts[0].group_url, 'https://www.facebook.com/groups/987654321/');
+  assert.equal(posts[0].author, 'Recruiter Jane');
+  assert.equal(posts[0].likes, 8);
+  assert.equal(posts[0].image_urls?.[0], 'https://cdn.example.com/flyer.jpg');
+}
+
 testWebhookNormalization();
 testImageOnlyPostsAreExtractable();
 testFacebookLimitFromMaxPages();
+testNestedWebhookNormalization();
 
 console.log('facebook pipeline test passed');

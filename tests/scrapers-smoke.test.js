@@ -93,6 +93,38 @@ async function main() {
       },
     },
     {
+      name: 'WorkConnect API',
+      run: async () => {
+        const res = await fetch('https://www.workconnectjob.com/api/jobs?limit=5', {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+          },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = await res.json();
+        const count = Array.isArray(payload) ? payload.length : Array.isArray(payload?.data) ? payload.data.length : 0;
+        console.log(`   âœ“ ${count} API jobs`);
+        return count > 0;
+      },
+    },
+    {
+      name: 'KmerJobs WP API',
+      run: async () => {
+        const res = await fetch('https://www.kmerjobs.com/wp-json/wp/v2/job-listings?per_page=5', {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+          },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const payload = await res.json();
+        const count = Array.isArray(payload) ? payload.length : 0;
+        console.log(`   âœ“ ${count} WP API jobs`);
+        return count > 0;
+      },
+    },
+    {
       name: 'Facebook Extractor (module load)',
       run: async () => {
         // Just verify the module structure

@@ -9,6 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchRemoteJobs } from '@/lib/remoteJobs';
+import { LEGACY_EXTERNAL_FEED_RETIRING_SOURCE_SLUGS } from '@/lib/scrapers/catalog';
 import { runAllScrapers, deduplicateJobs, deduplicateCrossSources } from '@/lib/scrapers/registry';
 import type { ScrapedJob } from '@/lib/scrapers/types';
 
@@ -27,14 +28,8 @@ export interface ExternalJob {
   fetched_at?: string;
 }
 
-export const LEGACY_EXTERNAL_FEED_RETIRING_SOURCES = [
-  'reliefweb',
-  'kamerpower',
-  'minajobs',
-  'cameroonjobs',
-  'jobincamer',
-  'emploicm',
-] as const;
+export const LEGACY_EXTERNAL_FEED_RETIRING_SOURCES =
+  LEGACY_EXTERNAL_FEED_RETIRING_SOURCE_SLUGS;
 
 // ───────────────────────────────────────────────
 // Smart category derivation from text signals
@@ -322,7 +317,7 @@ function scrapedToExternal(job: ScrapedJob): ExternalJob {
 export async function fetchAllExternalJobs(): Promise<ExternalJob[]> {
   const results = await fetchExternalFeedJobs();
 
-  // 2. Cameroon local scrapers (ReliefWeb, KamerPower, MinaJobs, CameroonJobs, JobInCamer, Emploi.cm)
+  // 2. Cameroon local scrapers from the shared scraper catalog.
   try {
     console.log('[externalJobs] Running Cameroon scrapers...');
     const aggregate = await runAllScrapers();

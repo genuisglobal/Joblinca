@@ -31,6 +31,22 @@ type FacebookRawPostRow = {
   created_at: string;
 };
 
+type FacebookRawInsertRow = {
+  post_id: string;
+  text: string;
+  url: string | null;
+  posted_at: string | null;
+  group_name: string | null;
+  group_url: string | null;
+  author: string | null;
+  likes: number;
+  comments: number;
+  shares: number;
+  image_urls: string[];
+  processed: boolean;
+  extraction_status: 'pending';
+};
+
 type ProcessTrigger = 'manual' | 'cron';
 
 const RAW_POST_SELECT = [
@@ -112,7 +128,7 @@ function shouldRetryRow(row: FacebookRawPostRow): boolean {
   return !row.processed || row.extraction_status === 'failed' || row.extraction_status === 'pending';
 }
 
-function buildRawInsertData(rawPosts: FacebookRawPost[]) {
+function buildRawInsertData(rawPosts: FacebookRawPost[]): FacebookRawInsertRow[] {
   return rawPosts.map((post) => ({
     post_id: post.id,
     text: (post.text || '').slice(0, 10000),
@@ -128,6 +144,247 @@ function buildRawInsertData(rawPosts: FacebookRawPost[]) {
     processed: false,
     extraction_status: 'pending',
   }));
+}
+
+function readPath(input: any, path: string): unknown {
+  return path.split('.').reduce<unknown>((value, segment) => {
+    if (!value || typeof value !== 'object') {
+      return undefined;
+    }
+
+    return (value as Record<string, unknown>)[segment];
+  }, input);
+}
+
+function firstDefined(input: any, paths: string[]): unknown {
+  for (const path of paths) {
+    const value = readPath(input, path);
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function coerceString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    const joined = value
+      .map((item) => coerceString(item))
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+    return joined || null;
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of ['text', 'message', 'name', 'title', 'label', 'value']) {
+      const nested = coerceString(record[key]);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+function coerceNumber(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[^\d.-]/g, ''));
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+}
+
+function isProbablyImageUrl(value: string): boolean {
+  if (!/^https?:\/\//i.test(value)) {
+    return false;
+  }
+
+  return (
+    /\.(?:png|jpe?g|gif|webp)(?:[?#].*)?$/i.test(value) ||
+    /(?:image|photo|fbcdn|scontent)/i.test(value)
+  );
+}
+
+function collectImageUrls(value: unknown, output: Set<string>): void {
+  if (!value) {
+    return;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (isProbablyImageUrl(trimmed)) {
+      output.add(trimmed);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectImageUrls(item, output);
+    }
+    return;
+  }
+
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of [
+      'url',
+      'src',
+      'image',
+      'imageUrl',
+      'image_url',
+      'media',
+      'photo',
+      'attachment',
+      'thumbnail',
+      'thumbnailUrl',
+      'previewImage',
+      'preview_image',
+    ]) {
+      collectImageUrls(record[key], output);
+    }
+
+    if (String(record.type || '').toLowerCase().includes('image')) {
+      for (const nested of Object.values(record)) {
+        collectImageUrls(nested, output);
+      }
+    }
+  }
+}
+
+function extractImageUrls(item: any): string[] {
+  const urls = new Set<string>();
+  for (const candidate of [
+    item.imageUrls,
+    item.image_urls,
+    item.images,
+    item.photos,
+    item.media,
+    item.attachments,
+    item.gallery,
+    readPath(item, 'post.images'),
+    readPath(item, 'attachments.images'),
+    readPath(item, 'attachments.media'),
+  ]) {
+    collectImageUrls(candidate, urls);
+  }
+
+  return [...urls].slice(0, 6);
+}
+
+function derivePostIdFromUrl(url: string | null): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const permalinkMatch = url.match(/(?:posts|permalink)\/([^/?#]+)/i);
+  if (permalinkMatch?.[1]) {
+    return permalinkMatch[1];
+  }
+
+  const fallback = url.replace(/^https?:\/\//i, '').replace(/[/?#=&]+/g, '-');
+  return fallback || null;
+}
+
+function normalizeComparableText(value: string | null | undefined): string {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeComparableImages(values: string[] | null | undefined): string[] {
+  return [...new Set((values || []).map((value) => value.trim()).filter(Boolean))].sort();
+}
+
+function stringArrayEquals(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function hasAnyRawFieldChange(row: FacebookRawPostRow, incoming: FacebookRawInsertRow): boolean {
+  return (
+    normalizeComparableText(row.text) !== normalizeComparableText(incoming.text) ||
+    normalizeComparableText(row.url) !== normalizeComparableText(incoming.url) ||
+    normalizeComparableText(row.posted_at) !== normalizeComparableText(incoming.posted_at) ||
+    normalizeComparableText(row.group_name) !== normalizeComparableText(incoming.group_name) ||
+    normalizeComparableText(row.group_url) !== normalizeComparableText(incoming.group_url) ||
+    normalizeComparableText(row.author) !== normalizeComparableText(incoming.author) ||
+    (row.likes || 0) !== incoming.likes ||
+    (row.comments || 0) !== incoming.comments ||
+    (row.shares || 0) !== incoming.shares ||
+    !stringArrayEquals(
+      normalizeComparableImages(row.image_urls),
+      normalizeComparableImages(incoming.image_urls)
+    )
+  );
+}
+
+function hasExtractionRelevantChange(row: FacebookRawPostRow, incoming: FacebookRawInsertRow): boolean {
+  return (
+    normalizeComparableText(row.text) !== normalizeComparableText(incoming.text) ||
+    normalizeComparableText(row.url) !== normalizeComparableText(incoming.url) ||
+    normalizeComparableText(row.posted_at) !== normalizeComparableText(incoming.posted_at) ||
+    !stringArrayEquals(
+      normalizeComparableImages(row.image_urls),
+      normalizeComparableImages(incoming.image_urls)
+    )
+  );
+}
+
+function buildExistingRowUpdatePayload(
+  row: FacebookRawPostRow,
+  incoming: FacebookRawInsertRow
+): Record<string, unknown> {
+  const basePayload: Record<string, unknown> = {
+    text: incoming.text,
+    url: incoming.url,
+    posted_at: incoming.posted_at,
+    group_name: incoming.group_name,
+    group_url: incoming.group_url,
+    author: incoming.author,
+    likes: incoming.likes,
+    comments: incoming.comments,
+    shares: incoming.shares,
+    image_urls: incoming.image_urls,
+  };
+
+  if (hasExtractionRelevantChange(row, incoming)) {
+    return {
+      ...basePayload,
+      processed: false,
+      processed_at: null,
+      extracted_job_id: null,
+      extraction_status: 'pending',
+      extraction_error: null,
+    };
+  }
+
+  if (row.extraction_status === 'failed') {
+    return {
+      ...basePayload,
+      extraction_status: 'pending',
+      extraction_error: null,
+      processed: false,
+      processed_at: null,
+    };
+  }
+
+  return basePayload;
 }
 
 function getBatchLimitFromPages(maxPages: number | undefined, defaultLimit: number): number {
@@ -309,20 +566,107 @@ async function refreshFacebookGroupMetrics(
 }
 
 export function normalizeApifyFacebookPosts(items: any[]): FacebookRawPost[] {
-  return items.map((item: any) => ({
-    id: item.postId || item.id || item.facebookId || String(Date.now() + Math.random()),
-    text: item.postText || item.text || item.message || item.caption || '',
-    url: item.postUrl || item.url || item.post_url || null,
-    post_url: item.postUrl || item.url || item.post_url || null,
-    timestamp: item.timestamp || item.time || item.date || item.createdTime || null,
-    group_name: item.groupName || item.group_name || null,
-    group_url: item.groupUrl || item.group_url || null,
-    author: item.authorName || item.author || item.userName || null,
-    likes: item.likesCount || item.likes || 0,
-    comments: item.commentsCount || item.comments || 0,
-    shares: item.sharesCount || item.shares || 0,
-    image_urls: item.imageUrls || item.images || [],
-  }));
+  return items.map((item: any, index: number) => {
+    const url =
+      coerceString(
+        firstDefined(item, [
+          'postUrl',
+          'url',
+          'post_url',
+          'permalink',
+          'permalinkUrl',
+          'post.permalink',
+          'post.url',
+        ])
+      ) || null;
+    const groupId = coerceString(firstDefined(item, ['groupId', 'group.id']));
+
+    return {
+      id:
+        coerceString(
+          firstDefined(item, [
+            'postId',
+            'id',
+            'facebookId',
+            'post.id',
+            'post.postId',
+          ])
+        ) ||
+        derivePostIdFromUrl(url) ||
+        `${Date.now()}-${index}`,
+      text:
+        coerceString(
+          firstDefined(item, [
+            'postText',
+            'text',
+            'message',
+            'caption',
+            'content',
+            'description',
+            'post.text',
+            'post.message',
+            'post.caption',
+            'postTextSegments',
+            'messageParts',
+          ])
+        ) || '',
+      url: url || undefined,
+      post_url: url || undefined,
+      timestamp:
+        coerceString(
+          firstDefined(item, [
+            'timestamp',
+            'time',
+            'date',
+            'createdTime',
+            'created_time',
+            'publishedAt',
+            'post.createdTime',
+            'post.created_time',
+          ])
+        ) || undefined,
+      group_name:
+        coerceString(
+          firstDefined(item, [
+            'groupName',
+            'group_name',
+            'group.name',
+            'group.title',
+            'owner.name',
+          ])
+        ) || undefined,
+      group_url:
+        coerceString(
+          firstDefined(item, [
+            'groupUrl',
+            'group_url',
+            'group.url',
+            'group.link',
+            'group.permalink',
+            'owner.url',
+          ])
+        ) ||
+        (groupId ? `https://www.facebook.com/groups/${groupId}/` : undefined),
+      author:
+        coerceString(
+          firstDefined(item, [
+            'authorName',
+            'author',
+            'author.name',
+            'userName',
+            'user.name',
+            'pageName',
+            'page.name',
+          ])
+        ) || undefined,
+      likes: coerceNumber(firstDefined(item, ['likesCount', 'likes', 'stats.likes', 'metrics.likes'])),
+      comments: coerceNumber(
+        firstDefined(item, ['commentsCount', 'comments', 'stats.comments', 'metrics.comments'])
+      ),
+      shares: coerceNumber(firstDefined(item, ['sharesCount', 'shares', 'stats.shares', 'metrics.shares'])),
+      image_urls: extractImageUrls(item),
+    };
+  });
 }
 
 export async function storeFacebookRawPosts(
@@ -333,15 +677,51 @@ export async function storeFacebookRawPosts(
     return 0;
   }
 
+  const insertRows = buildRawInsertData(rawPosts);
+  const existingRows = await loadRowsByPostIds(
+    supabase,
+    insertRows.map((row) => row.post_id)
+  );
+  const existingByPostId = new Map(existingRows.map((row) => [row.post_id, row]));
+  const newRows: FacebookRawInsertRow[] = [];
+  let updatedCount = 0;
+
+  for (const row of insertRows) {
+    const existing = existingByPostId.get(row.post_id);
+    if (!existing) {
+      newRows.push(row);
+      continue;
+    }
+
+    if (!hasAnyRawFieldChange(existing, row)) {
+      continue;
+    }
+
+    const { error } = await supabase
+      .from('facebook_raw_posts')
+      .update(buildExistingRowUpdatePayload(existing, row))
+      .eq('id', existing.id);
+
+    if (error) {
+      throw new Error(`Failed to refresh Facebook raw post ${row.post_id}: ${error.message}`);
+    }
+
+    updatedCount++;
+  }
+
+  if (newRows.length === 0) {
+    return updatedCount;
+  }
+
   const { error } = await supabase
     .from('facebook_raw_posts')
-    .upsert(buildRawInsertData(rawPosts), { onConflict: 'post_id', ignoreDuplicates: true });
+    .upsert(newRows, { onConflict: 'post_id', ignoreDuplicates: true });
 
   if (error) {
     throw new Error(`Failed to store Facebook raw posts: ${error.message}`);
   }
 
-  return rawPosts.length;
+  return newRows.length + updatedCount;
 }
 
 export async function loadPendingFacebookRawPosts(

@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { isMissingAggregationRelationError, normalizeSingle } from '@/lib/aggregation/admin';
+import {
+  AUTOMATED_SCRAPER_SOURCE_OPTIONS,
+  FACEBOOK_SCRAPER_SOURCE_SLUG,
+} from '@/lib/scrapers/catalog';
 import ScraperDashboard from './ScraperDashboard';
 
 export const dynamic = 'force-dynamic';
@@ -24,26 +28,19 @@ type AggregationRunRow = {
   source: SourceSummary | SourceSummary[] | null;
 };
 
-const CAMEROON_AGGREGATION_SOURCES = new Set([
-  'reliefweb',
-  'kamerpower',
-  'minajobs',
-  'cameroonjobs',
-  'jobincamer',
-  'emploicm',
-]);
+const CAMEROON_AGGREGATION_SOURCES = new Set(
+  AUTOMATED_SCRAPER_SOURCE_OPTIONS.map((source) => source.value)
+);
 
 const KNOWN_SOURCES: Array<{
   source: string;
   count_mode: 'external_feed' | 'latest_run';
 }> = [
-  { source: 'reliefweb', count_mode: 'latest_run' },
-  { source: 'kamerpower', count_mode: 'latest_run' },
-  { source: 'minajobs', count_mode: 'latest_run' },
-  { source: 'cameroonjobs', count_mode: 'latest_run' },
-  { source: 'jobincamer', count_mode: 'latest_run' },
-  { source: 'emploicm', count_mode: 'latest_run' },
-  { source: 'facebook', count_mode: 'external_feed' },
+  ...AUTOMATED_SCRAPER_SOURCE_OPTIONS.map((source) => ({
+    source: source.value,
+    count_mode: 'latest_run' as const,
+  })),
+  { source: FACEBOOK_SCRAPER_SOURCE_SLUG, count_mode: 'external_feed' },
   { source: 'remotive', count_mode: 'external_feed' },
   { source: 'jobicy', count_mode: 'external_feed' },
   { source: 'findwork', count_mode: 'external_feed' },

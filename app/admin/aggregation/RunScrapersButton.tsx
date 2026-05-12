@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { ADMIN_RUN_SCRAPER_SOURCE_OPTIONS } from '@/lib/scrapers/catalog';
 
 type IngestionDetail = {
   runId: string;
@@ -32,12 +33,7 @@ export default function RunScrapersButton() {
 
   const sources = [
     { value: 'all', label: 'All Scrapers' },
-    { value: 'kamerpower', label: 'KamerPower' },
-    { value: 'minajobs', label: 'MinaJobs' },
-    { value: 'cameroonjobs', label: 'CameroonJobs' },
-    { value: 'jobincamer', label: 'JobInCamer' },
-    { value: 'emploicm', label: 'Emploi.cm' },
-    { value: 'reliefweb', label: 'ReliefWeb' },
+    ...ADMIN_RUN_SCRAPER_SOURCE_OPTIONS,
   ];
 
   async function handleRun() {

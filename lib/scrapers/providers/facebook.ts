@@ -8,6 +8,7 @@ import { deriveCategory } from '@/lib/externalJobs';
 import { extractJobFromPostDetailed } from '../facebook-extractor';
 import { isAiConfigured } from '@/lib/ai/client';
 import type { ScrapedJob, ScraperConfig } from '../types';
+import { looksLikeJobSnippet } from '../facebook-heuristics';
 
 /** Shape of a raw Facebook post (from Apify or stored in DB). */
 export interface FacebookRawPost {
@@ -66,7 +67,7 @@ function hasImages(post: FacebookRawPost): boolean {
 
 export function isFacebookPostExtractable(post: FacebookRawPost): boolean {
   const text = (post.text || '').trim();
-  return text.length >= 20 || hasImages(post);
+  return text.length >= 20 || hasImages(post) || looksLikeJobSnippet(text);
 }
 
 export class FacebookScraper extends BaseScraper {
@@ -137,7 +138,12 @@ export class FacebookScraper extends BaseScraper {
       }
 
       try {
-        const extractionDetail = await extractJobFromPostDetailed(postText, post.image_urls || []);
+        const extractionDetail = await extractJobFromPostDetailed(postText, post.image_urls || [], {
+          groupName: post.group_name,
+          groupUrl: post.group_url,
+          author: post.author,
+          postUrl: post.url || post.post_url || null,
+        });
 
         if (extractionDetail.error) {
           this.lastRunStats.failedPosts++;

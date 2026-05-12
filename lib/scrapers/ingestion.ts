@@ -16,29 +16,33 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { buildDiscoveredJobTextHash, buildJobIdentity } from '@/lib/jobs/dedupe-model';
 import type { ScrapedJob, ScrapeResult } from './types';
+import { SCRAPER_SOURCE_CATALOG } from './catalog';
+
+const SCRAPER_SOURCE_TYPE_MAP = Object.fromEntries(
+  SCRAPER_SOURCE_CATALOG.map((source) => [source.slug, source.sourceType])
+) as Record<string, 'api' | 'html' | 'manual'>;
+
+const SCRAPER_SOURCE_META = Object.fromEntries(
+  SCRAPER_SOURCE_CATALOG.map((source) => [
+    source.slug,
+    {
+      name: source.label,
+      url: source.baseUrl,
+      trustTier: source.trustTier,
+    },
+  ])
+) as Record<string, { name: string; url: string; trustTier: number }>;
 
 // Source type mapping for our scrapers
 const SOURCE_TYPE_MAP: Record<string, 'api' | 'html' | 'manual'> = {
-  reliefweb: 'api',
-  kamerpower: 'html',
-  minajobs: 'html',
-  cameroonjobs: 'html',
-  jobincamer: 'html',
-  emploicm: 'html',
-  facebook: 'manual',
+  ...SCRAPER_SOURCE_TYPE_MAP,
   remotive: 'api',
   jobicy: 'api',
   findwork: 'api',
 };
 
 const SOURCE_META: Record<string, { name: string; url: string; trustTier: number }> = {
-  reliefweb: { name: 'ReliefWeb', url: 'https://reliefweb.int', trustTier: 90 },
-  kamerpower: { name: 'KamerPower', url: 'https://kamerpower.com', trustTier: 60 },
-  minajobs: { name: 'MinaJobs', url: 'https://minajobs.net', trustTier: 60 },
-  cameroonjobs: { name: 'CameroonJobs.net', url: 'https://www.cameroonjobs.net', trustTier: 70 },
-  jobincamer: { name: 'JobInCamer', url: 'https://www.jobincamer.com', trustTier: 65 },
-  emploicm: { name: 'Emploi.cm', url: 'https://www.emploi.cm', trustTier: 75 },
-  facebook: { name: 'Facebook Groups', url: 'https://facebook.com', trustTier: 30 },
+  ...SCRAPER_SOURCE_META,
   remotive: { name: 'Remotive', url: 'https://remotive.com', trustTier: 80 },
   jobicy: { name: 'Jobicy', url: 'https://jobicy.com', trustTier: 75 },
   findwork: { name: 'Findwork', url: 'https://findwork.dev', trustTier: 75 },
