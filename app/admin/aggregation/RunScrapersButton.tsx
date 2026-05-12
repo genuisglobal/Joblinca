@@ -22,8 +22,20 @@ type RunResult = {
   } | null;
   source?: string;
   jobs?: number;
+  queued_posts?: number;
+  jobs_inserted?: number;
+  skipped_posts?: number;
+  non_job_posts?: number;
+  failed_posts?: number;
+  image_assisted_posts?: number;
   error?: string;
 };
+
+function isFacebookRunResult(
+  result: RunResult | null
+): result is RunResult & { source: 'facebook' } {
+  return result?.source === 'facebook';
+}
 
 export default function RunScrapersButton() {
   const [loading, setLoading] = useState(false);
@@ -35,6 +47,7 @@ export default function RunScrapersButton() {
     { value: 'all', label: 'All Scrapers' },
     ...ADMIN_RUN_SCRAPER_SOURCE_OPTIONS,
   ];
+  const selectedIsFacebook = source === 'facebook';
 
   async function handleRun() {
     setLoading(true);
@@ -78,6 +91,11 @@ export default function RunScrapersButton() {
       <p className="text-sm text-gray-400 mb-4">
         Manually trigger scrapers to populate aggregation runs and discovered jobs. "Duplicates" below means a row matched an existing discovered job.
       </p>
+      {selectedIsFacebook && (
+        <p className="text-xs text-blue-300 mb-4">
+          Facebook Groups does not crawl Facebook directly here. This action only processes posts already captured by the Apify webhook and stored in the raw-post queue.
+        </p>
+      )}
 
       <div className="flex items-center gap-3 mb-4">
         <select
@@ -108,7 +126,9 @@ export default function RunScrapersButton() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          Scraping in progress — this may take a minute...
+          {selectedIsFacebook
+            ? 'Processing Facebook backlog; this may take a minute...'
+            : 'Scraping in progress; this may take a minute...'}
         </div>
       )}
 
@@ -120,12 +140,64 @@ export default function RunScrapersButton() {
 
       {result && (
         <div className="space-y-3">
-          <div className="rounded-lg border border-green-700 bg-green-900/20 p-3 text-sm text-green-300">
-            Scrape complete
-            {result.duration_ms ? ` in ${(result.duration_ms / 1000).toFixed(1)}s` : ''}
-            {result.total_jobs != null ? ` — ${result.total_jobs} jobs found` : ''}
-            {result.jobs != null ? ` — ${result.jobs} jobs found` : ''}
-          </div>
+          {isFacebookRunResult(result) ? (
+            <div className="rounded-lg border border-green-700 bg-green-900/20 p-3 text-sm text-green-300">
+              Facebook processing complete
+              {result.duration_ms ? ` in ${(result.duration_ms / 1000).toFixed(1)}s` : ''}
+              {typeof result.queued_posts === 'number' && result.queued_posts > 0
+                ? ` - ${result.queued_posts} queued posts, ${result.jobs ?? 0} jobs extracted`
+                : ' - no pending Facebook posts in the queue'}
+            </div>
+          ) : (
+            <div className="rounded-lg border border-green-700 bg-green-900/20 p-3 text-sm text-green-300">
+              Scrape complete
+              {result.duration_ms ? ` in ${(result.duration_ms / 1000).toFixed(1)}s` : ''}
+              {result.total_jobs != null ? ` - ${result.total_jobs} jobs found` : ''}
+              {result.jobs != null ? ` - ${result.jobs} jobs found` : ''}
+            </div>
+          )}
+
+          {isFacebookRunResult(result) && (
+            <div className="rounded-lg bg-gray-900/50 p-3 text-sm">
+              <p className="text-white font-medium mb-2">Facebook Queue</p>
+              <div className="grid grid-cols-2 gap-3 text-gray-300 md:grid-cols-3">
+                <div>
+                  <p className="text-gray-500 text-xs">Queued Posts</p>
+                  <p className="font-semibold">{result.queued_posts ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs">Jobs Extracted</p>
+                  <p className="font-semibold">{result.jobs ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs">Jobs Inserted</p>
+                  <p className="font-semibold">{result.jobs_inserted ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs">Skipped</p>
+                  <p className="font-semibold">{result.skipped_posts ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs">Not Job Posts</p>
+                  <p className="font-semibold">{result.non_job_posts ?? 0}</p>
+                </div>
+                <div>
+                  <p className="text-gray-500 text-xs">Failed</p>
+                  <p className="font-semibold">{result.failed_posts ?? 0}</p>
+                </div>
+              </div>
+              {(result.image_assisted_posts ?? 0) > 0 && (
+                <p className="mt-3 text-xs text-gray-400">
+                  {result.image_assisted_posts} extracted jobs used image-assisted parsing.
+                </p>
+              )}
+              {(result.queued_posts ?? 0) === 0 && (
+                <p className="mt-3 text-xs text-gray-400">
+                  To get Facebook jobs here, send fresh group posts into `/api/webhooks/apify` first.
+                </p>
+              )}
+            </div>
+          )}
 
           {result.ingestion && (
             <div className="rounded-lg bg-gray-900/50 p-3 text-sm">
@@ -149,12 +221,16 @@ export default function RunScrapersButton() {
                   {result.ingestion.details.map((d) => (
                     <div key={d.runId} className="flex items-center justify-between text-xs text-gray-400">
                       <span className="truncate max-w-[200px]">{d.runId}</span>
-                      <span className={`rounded-full border px-2 py-0.5 ${
-                        d.status === 'completed' ? 'border-green-700 text-green-300' :
-                        d.status === 'partial' ? 'border-yellow-700 text-yellow-300' :
-                        'border-red-700 text-red-300'
-                      }`}>
-                        {d.status} — {d.inserted} new, {d.duplicates} matched
+                      <span
+                        className={`rounded-full border px-2 py-0.5 ${
+                          d.status === 'completed'
+                            ? 'border-green-700 text-green-300'
+                            : d.status === 'partial'
+                              ? 'border-yellow-700 text-yellow-300'
+                              : 'border-red-700 text-red-300'
+                        }`}
+                      >
+                        {d.status} - {d.inserted} new, {d.duplicates} matched
                       </span>
                     </div>
                   ))}
