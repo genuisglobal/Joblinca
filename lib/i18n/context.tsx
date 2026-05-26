@@ -5,6 +5,7 @@ import en from "./translations/en";
 import fr from "./translations/fr";
 import {
   LOCALE_COOKIE_NAME,
+  LOCALE_PREFERENCE_COOKIE_NAME,
   type Locale,
 } from "./locale";
 
@@ -39,7 +40,9 @@ export function LanguageProvider({
   const setLocale = useCallback(async (newLocale: Locale) => {
     setLocaleState(newLocale);
     localStorage.setItem(LOCALE_COOKIE_NAME, newLocale);
+    localStorage.setItem(LOCALE_PREFERENCE_COOKIE_NAME, "1");
     document.cookie = `${LOCALE_COOKIE_NAME}=${newLocale}; path=/; max-age=31536000; samesite=lax`;
+    document.cookie = `${LOCALE_PREFERENCE_COOKIE_NAME}=1; path=/; max-age=31536000; samesite=lax`;
     document.documentElement.lang = newLocale;
     try {
       await fetch("/api/preferences/locale", {
