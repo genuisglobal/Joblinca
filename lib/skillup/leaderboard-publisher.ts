@@ -5,15 +5,26 @@ import {
   getDoualaWeekWindowFromKey,
   type DoualaWeekWindow,
 } from '@/lib/skillup/challenges';
+import { keywordsForDomain } from '@/lib/skillup/domain-keywords';
+
+const BOOST_TOKENS_BY_RANK: Record<number, number> = { 1: 3, 2: 2, 3: 1 };
+const BOOST_EXPIRY_DAYS = 30;
+const AUTO_INTRO_JOBS_PER_WINNER = 2;
+const AUTO_INTRO_JOB_LOOKBACK_DAYS = 21;
 
 interface ChallengeRow {
   id: string;
   title: string;
+  title_fr: string | null;
+  domain: string | null;
   top_n: number;
   starts_at: string;
   ends_at: string;
   status: string;
 }
+
+const SPOTLIGHT_WINDOW_DAYS = 7;
+const SPOTLIGHTS_PER_DOMAIN = 3;
 
 interface SubmissionRow {
   id: string;
@@ -46,12 +57,25 @@ export interface PublishWeeklyLeaderboardResult {
   entries_published: number;
   notifications_sent: number;
   notifications_failed: number;
+  spotlights_created: number;
+  boosts_granted: number;
+  auto_intros_created: number;
   details: Array<{
     challenge_id: string;
     title: string;
     selected_submissions: number;
     published_rows: number;
   }>;
+}
+
+interface DomainCandidate {
+  user_id: string;
+  score: number;
+  tie_breaker: number;
+  challenge_id: string;
+  challenge_title: string;
+  challenge_title_fr: string | null;
+  rank: number;
 }
 
 function rankLevel(rank: number): string {
@@ -188,7 +212,7 @@ export async function publishWeeklyLeaderboard(
 
   let challengesQuery = db
     .from('talent_challenges')
-    .select('id, title, top_n, starts_at, ends_at, status')
+    .select('id, title, title_fr, domain, top_n, starts_at, ends_at, status')
     .in('status', ['active', 'closed', 'published'])
     .lte('starts_at', week.windowEndUtc.toISOString())
     .gte('ends_at', week.windowStartUtc.toISOString())
@@ -210,8 +234,13 @@ export async function publishWeeklyLeaderboard(
     entries_published: 0,
     notifications_sent: 0,
     notifications_failed: 0,
+    spotlights_created: 0,
+    boosts_granted: 0,
+    auto_intros_created: 0,
     details: [],
   };
+
+  const candidatesByDomain = new Map<string, DomainCandidate[]>();
 
   for (const challenge of challenges) {
     const { data: submissionsData, error: submissionsError } = await db
@@ -266,6 +295,22 @@ export async function publishWeeklyLeaderboard(
           : Math.floor(Date.parse(row.created_at) / 1000),
       submission_id: row.id,
     }));
+
+    if (ranked.length > 0 && challenge.domain) {
+      const bucket = candidatesByDomain.get(challenge.domain) || [];
+      for (const entry of ranked) {
+        bucket.push({
+          user_id: entry.user_id,
+          score: entry.score,
+          tie_breaker: entry.tie_breaker,
+          challenge_id: challenge.id,
+          challenge_title: challenge.title,
+          challenge_title_fr: challenge.title_fr,
+          rank: entry.rank,
+        });
+      }
+      candidatesByDomain.set(challenge.domain, bucket);
+    }
 
     if (ranked.length > 0) {
       const { error: insertLeaderboardError } = await db
@@ -372,6 +417,190 @@ export async function publishWeeklyLeaderboard(
       selected_submissions: bestAttempts.length,
       published_rows: ranked.length,
     });
+  }
+
+  // Spotlight aggregation: pick top N unique users per domain across all
+  // challenges processed this run. A user appears at most once per domain.
+  const spotlightStartIso = new Date().toISOString();
+  const spotlightEndIso = new Date(
+    Date.now() + SPOTLIGHT_WINDOW_DAYS * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  for (const [domain, candidates] of candidatesByDomain.entries()) {
+    const sorted = [...candidates].sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      if (a.tie_breaker !== b.tie_breaker) return a.tie_breaker - b.tie_breaker;
+      return a.user_id.localeCompare(b.user_id);
+    });
+
+    const seenUsers = new Set<string>();
+    const picks: DomainCandidate[] = [];
+    for (const candidate of sorted) {
+      if (seenUsers.has(candidate.user_id)) continue;
+      seenUsers.add(candidate.user_id);
+      picks.push(candidate);
+      if (picks.length >= SPOTLIGHTS_PER_DOMAIN) break;
+    }
+
+    if (picks.length === 0) continue;
+
+    const spotlightRows = picks.map((pick, index) => ({
+      user_id: pick.user_id,
+      source_type: 'weekly_winner',
+      source_ref: pick.challenge_id,
+      domain,
+      rank: index + 1,
+      week_key: week.weekKey,
+      headline: `Top ${index + 1} - ${pick.challenge_title}`,
+      headline_fr: pick.challenge_title_fr
+        ? `Top ${index + 1} - ${pick.challenge_title_fr}`
+        : null,
+      starts_at: spotlightStartIso,
+      ends_at: spotlightEndIso,
+      metadata: {
+        week_key: week.weekKey,
+        challenge_id: pick.challenge_id,
+        domain,
+        score: pick.score,
+        source_rank: pick.rank,
+      },
+    }));
+
+    const { data: insertedSpotlights, error: spotlightError } = await db
+      .from('talent_spotlights')
+      .upsert(spotlightRows, {
+        onConflict: 'user_id,source_type,source_ref',
+        ignoreDuplicates: false,
+      })
+      .select('id');
+
+    if (spotlightError) {
+      throw new Error(
+        `Failed to upsert spotlights for domain ${domain}: ${spotlightError.message}`
+      );
+    }
+
+    result.spotlights_created += insertedSpotlights?.length ?? 0;
+
+    // A2 — grant boost tokens to the same Top 3 per domain.
+    const boostExpiresAt = new Date(
+      Date.now() + BOOST_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const boostRows = picks.map((pick, index) => {
+      const rank = index + 1;
+      const tokens = BOOST_TOKENS_BY_RANK[rank] ?? 1;
+      return {
+        user_id: pick.user_id,
+        granted_for: `${week.weekKey}:${domain}`,
+        source_type: 'weekly_winner',
+        source_ref: pick.challenge_id,
+        domain,
+        tokens_granted: tokens,
+        tokens_remaining: tokens,
+        expires_at: boostExpiresAt,
+        metadata: {
+          week_key: week.weekKey,
+          domain,
+          challenge_id: pick.challenge_id,
+          rank,
+          score: pick.score,
+        },
+      };
+    });
+
+    if (boostRows.length > 0) {
+      // ON CONFLICT (user_id, granted_for) DO NOTHING is the simplest idempotent
+      // strategy: a rerun of the same week+domain won't refund or duplicate tokens.
+      const { data: insertedBoosts, error: boostError } = await db
+        .from('talent_application_boosts')
+        .upsert(boostRows, {
+          onConflict: 'user_id,granted_for',
+          ignoreDuplicates: true,
+        })
+        .select('id');
+
+      if (boostError) {
+        throw new Error(
+          `Failed to upsert application boosts for domain ${domain}: ${boostError.message}`
+        );
+      }
+
+      result.boosts_granted += insertedBoosts?.length ?? 0;
+    }
+
+    // A3 — auto-intro winners to recruiters whose published jobs match the
+    // domain keywords. Best-effort: failures here must not block the rest of
+    // the cron.
+    const keywords = keywordsForDomain(domain);
+    if (keywords.length > 0 && picks.length > 0) {
+      const jobSinceIso = new Date(
+        Date.now() - AUTO_INTRO_JOB_LOOKBACK_DAYS * 24 * 60 * 60 * 1000
+      ).toISOString();
+      const orFilter = keywords
+        .map((kw) => `title.ilike.%${kw.replace(/[%,]/g, '')}%`)
+        .join(',');
+
+      const { data: matchingJobs, error: jobsError } = await db
+        .from('jobs')
+        .select('id, recruiter_id, title, created_at')
+        .eq('published', true)
+        .gte('created_at', jobSinceIso)
+        .or(orFilter)
+        .order('created_at', { ascending: false })
+        .limit(AUTO_INTRO_JOBS_PER_WINNER * picks.length);
+
+      if (!jobsError && Array.isArray(matchingJobs) && matchingJobs.length > 0) {
+        type JobRow = {
+          id: string;
+          recruiter_id: string | null;
+          title: string;
+          created_at: string;
+        };
+        const jobs = matchingJobs as JobRow[];
+
+        for (const pick of picks) {
+          const winnersJobs = jobs.slice(0, AUTO_INTRO_JOBS_PER_WINNER);
+          for (const job of winnersJobs) {
+            if (!job.recruiter_id || job.recruiter_id === pick.user_id) continue;
+
+            // Skip if an auto-intro for this (recruiter, candidate, job, week) already exists.
+            const { data: existingIntro } = await db
+              .from('recruiter_candidate_outreach_events')
+              .select('id')
+              .eq('recruiter_id', job.recruiter_id)
+              .eq('candidate_id', pick.user_id)
+              .eq('source', 'spotlight_auto_intro')
+              .eq('metadata->>week_key', week.weekKey)
+              .eq('job_id', job.id)
+              .maybeSingle();
+            if (existingIntro) continue;
+
+            const { error: introError } = await db
+              .from('recruiter_candidate_outreach_events')
+              .insert({
+                recruiter_id: job.recruiter_id,
+                candidate_id: pick.user_id,
+                job_id: job.id,
+                channel: 'joblinca_message',
+                source: 'spotlight_auto_intro',
+                metadata: {
+                  week_key: week.weekKey,
+                  domain,
+                  challenge_id: pick.challenge_id,
+                  challenge_title: pick.challenge_title,
+                  score: pick.score,
+                  job_title: job.title,
+                  generated_by: 'skillup-weekly-leaderboard',
+                },
+              });
+
+            if (!introError) {
+              result.auto_intros_created += 1;
+            }
+          }
+        }
+      }
+    }
   }
 
   return result;

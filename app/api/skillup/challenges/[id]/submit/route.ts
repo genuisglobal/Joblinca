@@ -8,16 +8,79 @@ import {
   normalizeProjectSubmission,
   roundScore,
 } from '@/lib/skillup/challenges';
+import { getUserSubscription } from '@/lib/subscriptions';
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin-types';
+import type { Locale } from '@/lib/i18n/locale';
+
+const TIME_LIMIT_GRACE_SECONDS = 30;
+
+interface RawConfigQuestion {
+  id?: unknown;
+  correct_index?: unknown;
+}
+
+function extractQuestionIds(config: unknown): string[] {
+  if (typeof config !== 'object' || config === null) return [];
+  const record = config as Record<string, unknown>;
+  let raw: unknown = record.questions;
+  if (!Array.isArray(raw) && Array.isArray(record.quiz_questions)) {
+    raw = record.quiz_questions;
+  }
+  if (!Array.isArray(raw)) return [];
+
+  return raw.map((item, index) => {
+    if (item && typeof item === 'object' && typeof (item as RawConfigQuestion).id === 'string') {
+      const id = ((item as RawConfigQuestion).id as string).trim();
+      if (id) return id;
+    }
+    return `q${index + 1}`;
+  });
+}
+
+interface RefRow {
+  id: string;
+  question_id: string;
+  target_course_id: string | null;
+  target_module_id: string | null;
+  external_provider: string | null;
+  external_url: string | null;
+  external_url_fr: string | null;
+  rationale: string | null;
+  display_order: number;
+}
+
+interface RefCourseRow {
+  id: string;
+  title: string;
+  title_fr: string | null;
+  external_provider: string | null;
+  external_url: string | null;
+  external_url_fr: string | null;
+  is_free: boolean | null;
+  partner_name: string | null;
+}
+
+function chooseLocalizedUrl(
+  external_url: string | null,
+  external_url_fr: string | null,
+  locale: Locale
+): string | null {
+  if (locale === 'fr' && external_url_fr && external_url_fr.trim()) {
+    return external_url_fr;
+  }
+  return external_url && external_url.trim() ? external_url : null;
+}
 
 async function fetchChallengeByIdOrSlug(
   supabase: ReturnType<typeof createServerSupabaseClient>,
   value: string
 ) {
+  const columns =
+    'id, slug, title, challenge_type, status, starts_at, ends_at, max_ranked_attempts, config, access_tier';
+
   const byId = await supabase
     .from('talent_challenges')
-    .select(
-      'id, slug, title, challenge_type, status, starts_at, ends_at, max_ranked_attempts, config'
-    )
+    .select(columns)
     .eq('id', value)
     .maybeSingle();
 
@@ -26,13 +89,19 @@ async function fetchChallengeByIdOrSlug(
 
   const bySlug = await supabase
     .from('talent_challenges')
-    .select(
-      'id, slug, title, challenge_type, status, starts_at, ends_at, max_ranked_attempts, config'
-    )
+    .select(columns)
     .eq('slug', value)
     .maybeSingle();
 
   return { data: bySlug.data, error: bySlug.error };
+}
+
+function extractTimeLimitSeconds(config: unknown): number | null {
+  if (typeof config !== 'object' || config === null) return null;
+  const raw = (config as Record<string, unknown>).time_limit_seconds;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
 }
 
 function sanitizeAnswers(value: unknown): number[] {
@@ -95,9 +164,35 @@ export async function POST(
     return NextResponse.json({ error: 'Challenge is already closed' }, { status: 409 });
   }
 
+  if (challenge.access_tier === 'paid') {
+    const { data: callerProfile } = await supabase
+      .from('profiles')
+      .select('admin_type')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const isAdminBypass = Boolean(
+      callerProfile?.admin_type &&
+        ACTIVE_ADMIN_TYPES.includes(callerProfile.admin_type)
+    );
+
+    if (!isAdminBypass) {
+      const subscription = await getUserSubscription(user.id);
+      if (!subscription.isActive) {
+        return NextResponse.json(
+          {
+            error: 'This challenge requires an active subscription.',
+            access_tier: 'paid',
+          },
+          { status: 402 }
+        );
+      }
+    }
+  }
+
   const { data: previousSubmissions, error: previousError } = await supabase
     .from('talent_challenge_submissions')
-    .select('attempt_no')
+    .select('attempt_no, status')
     .eq('challenge_id', challenge.id)
     .eq('user_id', user.id)
     .order('attempt_no', { ascending: false });
@@ -106,6 +201,8 @@ export async function POST(
     return NextResponse.json({ error: previousError.message }, { status: 500 });
   }
 
+  // Disqualified attempts still count toward the cap — prevents intentional
+  // disqualification followed by a re-attempt.
   const attemptsUsed = (previousSubmissions || []).length;
   const nextAttempt = attemptsUsed + 1;
   if (nextAttempt > challenge.max_ranked_attempts) {
@@ -142,6 +239,15 @@ export async function POST(
       ? Math.max(0, Math.floor(completionSecondsRaw))
       : null;
 
+    const timeLimit = extractTimeLimitSeconds(challenge.config);
+    const timeLimitExceeded =
+      timeLimit !== null &&
+      completionSeconds !== null &&
+      completionSeconds > timeLimit + TIME_LIMIT_GRACE_SECONDS;
+
+    const submissionStatus = timeLimitExceeded ? 'disqualified' : 'graded';
+    const finalScore = timeLimitExceeded ? 0 : grading.score;
+
     const { data: submission, error: submissionError } = await supabase
       .from('talent_challenge_submissions')
       .insert({
@@ -150,13 +256,16 @@ export async function POST(
         attempt_no: nextAttempt,
         answers,
         auto_score: grading.score,
-        final_score: grading.score,
+        final_score: finalScore,
         completion_seconds: completionSeconds,
-        status: 'graded',
+        status: submissionStatus,
         metadata: {
           grading_mode: 'auto',
           correct_answers: grading.correct,
           total_questions: grading.total,
+          time_limit_seconds: timeLimit,
+          time_limit_exceeded: timeLimitExceeded,
+          disqualification_reason: timeLimitExceeded ? 'time_limit_exceeded' : null,
         },
       })
       .select(
@@ -168,15 +277,124 @@ export async function POST(
       return NextResponse.json({ error: submissionError.message }, { status: 500 });
     }
 
+    // Build wrong-answer recommendations from approved study refs.
+    const questionIds = extractQuestionIds(challenge.config);
+    const missedIds: string[] = [];
+    for (let i = 0; i < questions.length; i += 1) {
+      if (answers[i] !== questions[i].correct_index) {
+        const id = questionIds[i];
+        if (id) missedIds.push(id);
+      }
+    }
+
+    let recommendations: Array<{
+      question_id: string;
+      refs: Array<{
+        id: string;
+        external_provider: string | null;
+        external_url: string | null;
+        rationale: string | null;
+        course: {
+          id: string;
+          title: string;
+          is_free: boolean;
+          partner_name: string | null;
+          external_url: string | null;
+        } | null;
+      }>;
+    }> = [];
+
+    if (missedIds.length > 0) {
+      const { data: callerProfile } = await supabase
+        .from('profiles')
+        .select('preferred_locale')
+        .eq('id', user.id)
+        .maybeSingle();
+      const locale: Locale = callerProfile?.preferred_locale === 'fr' ? 'fr' : 'en';
+
+      const { data: refRows } = await supabase
+        .from('talent_challenge_question_refs')
+        .select(
+          'id, question_id, target_course_id, target_module_id, external_provider, external_url, external_url_fr, rationale, display_order'
+        )
+        .eq('challenge_id', challenge.id)
+        .eq('status', 'approved')
+        .in('question_id', missedIds)
+        .order('display_order', { ascending: true });
+
+      const refs = (refRows || []) as RefRow[];
+
+      const courseIds = Array.from(
+        new Set(refs.map((r) => r.target_course_id).filter((id): id is string => !!id))
+      );
+      let courseById = new Map<string, RefCourseRow>();
+      if (courseIds.length > 0) {
+        const { data: courseRows } = await supabase
+          .from('learning_courses')
+          .select(
+            'id, title, title_fr, external_provider, external_url, external_url_fr, is_free, partner_name'
+          )
+          .in('id', courseIds);
+        for (const row of (courseRows || []) as RefCourseRow[]) {
+          courseById.set(row.id, row);
+        }
+      }
+
+      const grouped = new Map<string, typeof recommendations[number]['refs']>();
+      for (const ref of refs) {
+        const list = grouped.get(ref.question_id) || [];
+        const course = ref.target_course_id ? courseById.get(ref.target_course_id) : null;
+        list.push({
+          id: ref.id,
+          external_provider: ref.external_provider,
+          external_url: chooseLocalizedUrl(ref.external_url, ref.external_url_fr, locale),
+          rationale: ref.rationale,
+          course: course
+            ? {
+                id: course.id,
+                title: locale === 'fr' && course.title_fr ? course.title_fr : course.title,
+                is_free: Boolean(course.is_free),
+                partner_name: course.partner_name,
+                external_url: chooseLocalizedUrl(
+                  course.external_url,
+                  course.external_url_fr,
+                  locale
+                ),
+              }
+            : null,
+        });
+        grouped.set(ref.question_id, list);
+      }
+
+      // Surface free options first within each question's ref list.
+      for (const [qid, list] of grouped.entries()) {
+        list.sort((a, b) => {
+          const aFree = a.course?.is_free ? 0 : 1;
+          const bFree = b.course?.is_free ? 0 : 1;
+          return aFree - bFree;
+        });
+        grouped.set(qid, list);
+      }
+
+      recommendations = missedIds
+        .filter((id) => grouped.has(id))
+        .map((id) => ({ question_id: id, refs: grouped.get(id) || [] }));
+    }
+
     return NextResponse.json({
       ok: true,
       challenge_id: challenge.id,
       submission,
-      score: grading.score,
+      score: finalScore,
+      raw_score: grading.score,
       correct: grading.correct,
       total: grading.total,
+      disqualified: timeLimitExceeded,
+      disqualification_reason: timeLimitExceeded ? 'time_limit_exceeded' : null,
+      time_limit_seconds: timeLimit,
       attempts_used: nextAttempt,
       attempts_left: Math.max(0, challenge.max_ranked_attempts - nextAttempt),
+      recommendations,
     });
   }
 
