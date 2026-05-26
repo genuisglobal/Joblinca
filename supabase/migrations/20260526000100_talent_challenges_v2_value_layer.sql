@@ -149,9 +149,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uniq_talent_spotlights_source
   ON public.talent_spotlights(user_id, source_type, source_ref)
   WHERE source_ref IS NOT NULL;
 
+-- Index supports the common query `WHERE ends_at > now() ORDER BY ends_at DESC`.
+-- We can't use `WHERE ends_at > now()` as a partial-index predicate because
+-- `now()` is STABLE, not IMMUTABLE; Postgres rejects non-immutable functions
+-- in index predicates with 42P17. A plain composite index still serves the
+-- query via index range scan + runtime filter.
 CREATE INDEX IF NOT EXISTS idx_talent_spotlights_active
-  ON public.talent_spotlights(domain, ends_at DESC)
-  WHERE ends_at > now();
+  ON public.talent_spotlights(domain, ends_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_talent_spotlights_user_active
   ON public.talent_spotlights(user_id, ends_at DESC);
