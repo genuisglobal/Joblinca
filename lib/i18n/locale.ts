@@ -2,9 +2,45 @@ export type Locale = 'en' | 'fr';
 
 export const DEFAULT_LOCALE: Locale = 'en';
 export const LOCALE_COOKIE_NAME = 'lang';
+export const LOCALE_PREFERENCE_COOKIE_NAME = 'lang_pref_set';
+export const LOCALE_REQUEST_HEADER = 'x-joblinca-locale';
+export const SUPPORTED_LOCALES: readonly Locale[] = ['en', 'fr'];
 
 export function normalizeLocale(value: unknown): Locale | null {
   return value === 'en' || value === 'fr' ? value : null;
+}
+
+export function hasExplicitLocalePreference(
+  value: unknown
+): boolean {
+  return value === '1' || value === 1 || value === true;
+}
+
+function ensureLeadingSlash(pathname: string): string {
+  return pathname.startsWith('/') ? pathname : `/${pathname}`;
+}
+
+export function getPathLocale(pathname: string): Locale | null {
+  const normalizedPathname = ensureLeadingSlash(pathname);
+  const [, firstSegment] = normalizedPathname.split('/');
+  return normalizeLocale(firstSegment);
+}
+
+export function stripLocalePrefix(pathname: string): string {
+  const normalizedPathname = ensureLeadingSlash(pathname);
+  const locale = getPathLocale(normalizedPathname);
+
+  if (!locale) {
+    return normalizedPathname;
+  }
+
+  const stripped = normalizedPathname.slice(locale.length + 1);
+  return stripped.length > 0 ? stripped : '/';
+}
+
+export function addLocalePrefix(pathname: string, locale: Locale): string {
+  const barePath = stripLocalePrefix(pathname);
+  return barePath === '/' ? `/${locale}` : `/${locale}${barePath}`;
 }
 
 export function getPreferredLocaleFromAcceptLanguage(
@@ -26,17 +62,20 @@ export function resolveLocalePreference({
   queryLocale,
   cookieLocale,
   profileLocale,
+  hasExplicitPreference = false,
   acceptLanguage,
 }: {
   queryLocale?: unknown;
   cookieLocale?: unknown;
   profileLocale?: unknown;
+  hasExplicitPreference?: boolean;
   acceptLanguage?: string | null;
 }): Locale {
   return (
     normalizeLocale(queryLocale) ||
-    normalizeLocale(cookieLocale) ||
+    (hasExplicitPreference ? normalizeLocale(cookieLocale) : null) ||
     normalizeLocale(profileLocale) ||
+    normalizeLocale(cookieLocale) ||
     getPreferredLocaleFromAcceptLanguage(acceptLanguage)
   );
 }
