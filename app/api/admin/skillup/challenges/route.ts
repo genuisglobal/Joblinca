@@ -3,6 +3,19 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { AdminRequiredError, requireAdmin } from '@/lib/admin';
 import { isChallengeStatus, isChallengeType } from '@/lib/skillup/challenges';
 
+const ACCESS_TIERS = ['free', 'paid'] as const;
+type AccessTier = (typeof ACCESS_TIERS)[number];
+
+function isAccessTier(value: unknown): value is AccessTier {
+  return typeof value === 'string' && (ACCESS_TIERS as readonly string[]).includes(value);
+}
+
+function asTrimmedStringOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -85,6 +98,25 @@ export async function POST(request: NextRequest) {
         ? payload.config
         : {};
 
+    const accessTier: AccessTier = isAccessTier(payload.access_tier)
+      ? payload.access_tier
+      : 'free';
+    const isSponsored = payload.is_sponsored === true;
+    if (isSponsored && accessTier !== 'paid') {
+      return NextResponse.json(
+        { error: 'Sponsored challenges must have access_tier=paid' },
+        { status: 422 }
+      );
+    }
+
+    const sponsorRecruiterId = asTrimmedStringOrNull(payload.sponsor_recruiter_id);
+    if (isSponsored && !sponsorRecruiterId) {
+      return NextResponse.json(
+        { error: 'sponsor_recruiter_id is required for sponsored challenges' },
+        { status: 422 }
+      );
+    }
+
     const { data, error } = await supabase
       .from('talent_challenges')
       .insert({
@@ -117,6 +149,12 @@ export async function POST(request: NextRequest) {
         max_ranked_attempts: maxAttempts,
         top_n: topN,
         config,
+        access_tier: accessTier,
+        is_sponsored: isSponsored,
+        sponsor_recruiter_id: sponsorRecruiterId,
+        sponsor_company: asTrimmedStringOrNull(payload.sponsor_company),
+        sponsor_prize_text: asTrimmedStringOrNull(payload.sponsor_prize_text),
+        sponsor_prize_text_fr: asTrimmedStringOrNull(payload.sponsor_prize_text_fr),
         created_by: userId,
       })
       .select('*')

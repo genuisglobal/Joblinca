@@ -27,6 +27,10 @@
     {
       "path": "/api/cron/whatsapp-matched-jobs",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/daily-quiz-drill",
+      "schedule": "0 6 * * *"
     }
   ]
 }

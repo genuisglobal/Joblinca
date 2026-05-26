@@ -28,6 +28,7 @@ import {
 import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
 import { handleWhatsAppJobAgentInbound } from '@/lib/whatsapp-agent/router';
+import { handleDailyDrillReply } from '@/lib/skillup/drill-inbound';
 
 function toUnixTimestamp(value: string | undefined): number {
   if (!value) return 0;
@@ -187,6 +188,16 @@ async function routeInboundMessage(
     waPhone: phone,
   });
   if (agentResult.handled) {
+    return;
+  }
+
+  // Daily quiz drill reply (A/B/C/D). Only claims when an unanswered dispatch
+  // exists for this phone in the last 24h — otherwise falls through.
+  const drillResult = await handleDailyDrillReply({
+    textBody,
+    waPhone: phone,
+  });
+  if (drillResult.handled) {
     return;
   }
 

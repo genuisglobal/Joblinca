@@ -16,11 +16,18 @@ interface ChallengeSummary {
   max_ranked_attempts: number;
   top_n: number;
   attempts_used: number;
+  access_tier: 'free' | 'paid';
+  is_sponsored: boolean;
+  sponsor_company: string | null;
+  sponsor_prize_text: string | null;
+  is_unlocked: boolean;
   latest_submission: {
     status: string;
     final_score: number | null;
   } | null;
 }
+
+type TierFilter = 'all' | 'free' | 'paid';
 
 function statusBadge(challenge: ChallengeSummary): string {
   if (challenge.latest_submission?.status === 'graded') {
@@ -36,6 +43,7 @@ export default function TalentChallengesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [challenges, setChallenges] = useState<ChallengeSummary[]>([]);
+  const [tierFilter, setTierFilter] = useState<TierFilter>('all');
 
   useEffect(() => {
     let mounted = true;
@@ -62,10 +70,20 @@ export default function TalentChallengesPage() {
     };
   }, []);
 
+  const filteredChallenges = useMemo(() => {
+    if (tierFilter === 'all') return challenges;
+    return challenges.filter((challenge) => challenge.access_tier === tierFilter);
+  }, [challenges, tierFilter]);
+
   const challengeCountLabel = useMemo(() => {
-    if (challenges.length === 1) return '1 active challenge';
-    return `${challenges.length} active challenges`;
-  }, [challenges.length]);
+    if (filteredChallenges.length === 1) return '1 active challenge';
+    return `${filteredChallenges.length} active challenges`;
+  }, [filteredChallenges.length]);
+
+  const tierButtonClass = (current: TierFilter): string =>
+    tierFilter === current
+      ? 'px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium'
+      : 'px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-xs font-medium';
 
   return (
     <div className="space-y-6">
@@ -76,12 +94,20 @@ export default function TalentChallengesPage() {
             Weekly quizzes and project tasks. Top 10 performers are featured.
           </p>
         </div>
-        <Link
-          href="/dashboard/talent/leaderboard"
-          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm"
-        >
-          View Leaderboard
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dashboard/talent/practice"
+            className="px-4 py-2 rounded-lg border border-gray-600 text-gray-200 hover:text-white text-sm"
+          >
+            Practice
+          </Link>
+          <Link
+            href="/dashboard/talent/leaderboard"
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm"
+          >
+            View Leaderboard
+          </Link>
+        </div>
       </div>
 
       <div className="bg-gray-800 rounded-xl p-4 border border-gray-700 text-sm text-gray-300">
@@ -89,6 +115,19 @@ export default function TalentChallengesPage() {
           Scoring model: quizzes are auto-graded, project challenges use manual + AI
           blended scoring.
         </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs uppercase tracking-wide text-gray-500 mr-1">Filter:</span>
+        <button type="button" onClick={() => setTierFilter('all')} className={tierButtonClass('all')}>
+          All
+        </button>
+        <button type="button" onClick={() => setTierFilter('free')} className={tierButtonClass('free')}>
+          Free
+        </button>
+        <button type="button" onClick={() => setTierFilter('paid')} className={tierButtonClass('paid')}>
+          Premium
+        </button>
       </div>
 
       {loading ? (
@@ -101,20 +140,26 @@ export default function TalentChallengesPage() {
         <div className="bg-red-900/20 border border-red-700 rounded-xl p-4 text-red-300 text-sm">
           {error}
         </div>
-      ) : challenges.length === 0 ? (
+      ) : filteredChallenges.length === 0 ? (
         <div className="bg-gray-800 rounded-xl p-10 border border-gray-700 text-center">
-          <p className="text-gray-300">No active challenges right now.</p>
+          <p className="text-gray-300">
+            {tierFilter === 'all'
+              ? 'No active challenges right now.'
+              : `No active ${tierFilter === 'paid' ? 'premium' : 'free'} challenges.`}
+          </p>
           <p className="text-gray-500 text-sm mt-1">Check back this week for new drops.</p>
         </div>
       ) : (
         <>
           <p className="text-xs uppercase tracking-wide text-gray-500">{challengeCountLabel}</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {challenges.map((challenge) => {
+            {filteredChallenges.map((challenge) => {
               const attemptsLeft = Math.max(
                 0,
                 challenge.max_ranked_attempts - challenge.attempts_used
               );
+              const isPaid = challenge.access_tier === 'paid';
+              const isLocked = isPaid && !challenge.is_unlocked;
 
               return (
                 <div
@@ -129,16 +174,35 @@ export default function TalentChallengesPage() {
                         {challenge.domain ? ` | ${challenge.domain}` : ''}
                       </p>
                     </div>
-                    <span
-                      className={`text-xs px-2.5 py-1 rounded-full border ${statusBadge(challenge)}`}
-                    >
-                      {challenge.latest_submission?.status || 'not started'}
-                    </span>
+                    <div className="flex flex-col items-end gap-1.5">
+                      <span
+                        className={
+                          isPaid
+                            ? 'text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border bg-amber-500/15 text-amber-300 border-amber-500/40'
+                            : 'text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border bg-emerald-600/15 text-emerald-300 border-emerald-500/40'
+                        }
+                      >
+                        {isPaid ? 'Premium' : 'Free'}
+                      </span>
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-full border ${statusBadge(challenge)}`}
+                      >
+                        {challenge.latest_submission?.status || 'not started'}
+                      </span>
+                    </div>
                   </div>
 
                   <p className="text-sm text-gray-300 line-clamp-3">
                     {challenge.description || 'No description provided.'}
                   </p>
+
+                  {challenge.is_sponsored && challenge.sponsor_prize_text ? (
+                    <div className="rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-200 text-xs px-3 py-2">
+                      <span className="font-medium">Sponsored prize:</span>{' '}
+                      {challenge.sponsor_prize_text}
+                      {challenge.sponsor_company ? ` (${challenge.sponsor_company})` : ''}
+                    </div>
+                  ) : null}
 
                   <div className="text-xs text-gray-400 space-y-1">
                     <p>
@@ -152,12 +216,26 @@ export default function TalentChallengesPage() {
                     <p>Top ranking cutoff: Top {challenge.top_n}</p>
                   </div>
 
-                  <Link
-                    href={`/dashboard/talent/challenges/${challenge.id}`}
-                    className="mt-auto inline-flex items-center justify-center rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
-                  >
-                    Open Challenge
-                  </Link>
+                  {isLocked ? (
+                    <div className="mt-auto space-y-2">
+                      <p className="text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                        Premium challenge — requires an active subscription to attempt.
+                      </p>
+                      <Link
+                        href="/dashboard/talent/billing"
+                        className="inline-flex w-full items-center justify-center rounded-lg bg-amber-500 hover:bg-amber-400 text-gray-900 px-4 py-2 text-sm font-semibold"
+                      >
+                        Upgrade to Unlock
+                      </Link>
+                    </div>
+                  ) : (
+                    <Link
+                      href={`/dashboard/talent/challenges/${challenge.id}`}
+                      className="mt-auto inline-flex items-center justify-center rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
+                    >
+                      Open Challenge
+                    </Link>
+                  )}
                 </div>
               );
             })}

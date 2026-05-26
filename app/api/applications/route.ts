@@ -3,6 +3,10 @@ import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveApplicationPayload } from '@/lib/applications/server';
 import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
+import {
+  type ApplicationBoostConsumption,
+  consumeApplicationBoost,
+} from '@/lib/skillup/application-boost';
 
 type QuestionAnswer = {
   questionId: string;
@@ -180,6 +184,7 @@ export async function POST(request: NextRequest) {
     typeof body.draftApplicationId === 'string' && body.draftApplicationId.trim().length > 0
       ? body.draftApplicationId.trim()
       : null;
+  const useBoost = body.useBoost === true || body.use_boost === true;
 
   if (['recruiter', 'admin', 'staff', 'field_agent'].includes(applicantRole)) {
     return NextResponse.json(
@@ -256,7 +261,35 @@ export async function POST(request: NextRequest) {
 
   const now = new Date().toISOString();
   const startedAt = targetDraft?.started_at || targetDraft?.created_at || now;
-  const applicationValues = {
+
+  let boostConsumption: ApplicationBoostConsumption | null = null;
+  if (useBoost) {
+    const consumeResult = await consumeApplicationBoost(user.id);
+    if (!consumeResult.ok) {
+      if (consumeResult.reason === 'no_active_boost') {
+        return applicationError(
+          'You don\'t have an active Quiz-Verified boost to apply.',
+          422,
+          'boost_unavailable'
+        );
+      }
+      if (consumeResult.reason === 'boost_contention') {
+        return applicationError(
+          'Could not reserve your Quiz-Verified boost. Please retry.',
+          409,
+          'boost_contention'
+        );
+      }
+      return applicationError(
+        'Could not consume your Quiz-Verified boost right now.',
+        500,
+        'boost_consume_failed'
+      );
+    }
+    boostConsumption = consumeResult.consumption;
+  }
+
+  const applicationValues: Record<string, unknown> = {
     job_id: jobId,
     applicant_id: user.id,
     contact_info: contactInfo,
@@ -279,6 +312,19 @@ export async function POST(request: NextRequest) {
     },
     candidate_snapshot: candidateSnapshot,
   };
+
+  if (boostConsumption) {
+    applicationValues.quiz_verified = true;
+    applicationValues.quiz_verified_meta = {
+      boost_id: boostConsumption.boostId,
+      week_key: boostConsumption.weekKey,
+      domain: boostConsumption.domain,
+      challenge_id: boostConsumption.challengeId,
+      score: boostConsumption.score,
+      rank: boostConsumption.rank,
+      consumed_at: now,
+    };
+  }
 
   const serviceSupabase = createServiceSupabaseClient();
 

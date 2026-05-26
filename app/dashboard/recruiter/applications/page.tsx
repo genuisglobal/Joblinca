@@ -10,6 +10,9 @@ import EligibilityBadge from '@/components/applications/EligibilityBadge';
 import RankingExplanation from '@/components/applications/RankingExplanation';
 import { buildRecruiterTemplateMessage } from '@/lib/ai/recruiterDecisionSupport';
 import type { ApplicationCurrentStage } from '@/lib/hiring-pipeline/types';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
+import { formatLocalizedDate } from '@/lib/i18n/application-presentation';
 
 interface Job {
   id: string;
@@ -45,6 +48,14 @@ interface Application {
   is_pinned: boolean;
   ranking_score: number;
   ranking_breakdown: Record<string, number> | null;
+  quiz_verified: boolean | null;
+  quiz_verified_meta: {
+    domain?: string | null;
+    score?: number | null;
+    week_key?: string | null;
+    challenge_id?: string | null;
+    rank?: number | null;
+  } | null;
   jobs: Job;
   profiles: Profile;
   current_stage: ApplicationCurrentStage | null;
@@ -62,35 +73,46 @@ type StageFilter =
   | 'hire'
   | 'rejected';
 
-const STAGE_OPTIONS: { value: StageFilter; label: string; color: string }[] = [
-  { value: 'all', label: 'All', color: 'gray' },
-  { value: 'applied', label: 'Applied', color: 'blue' },
-  { value: 'screening', label: 'Screening', color: 'blue' },
-  { value: 'review', label: 'Review', color: 'yellow' },
-  { value: 'interview', label: 'Interview', color: 'purple' },
-  { value: 'offer', label: 'Offer', color: 'green' },
-  { value: 'hire', label: 'Hired', color: 'green' },
-  { value: 'rejected', label: 'Rejected', color: 'red' },
-];
-
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: 'newest', label: 'Newest First' },
-  { value: 'oldest', label: 'Oldest First' },
-  { value: 'ranking', label: 'Best Match' },
-  { value: 'rating', label: 'Highest Rated' },
-];
-
-const ELIGIBILITY_OPTIONS: { value: EligibilityFilter; label: string }[] = [
-  { value: 'all', label: 'All eligibility states' },
-  { value: 'eligible', label: 'Eligible' },
-  { value: 'needs_review', label: 'Needs review' },
-  { value: 'ineligible', label: 'Ineligible' },
-];
-
 export default function RecruiterApplicationsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useTranslation();
+  const localize = useCallback((href: string) => addLocalePrefix(href, locale), [locale]);
+
+  const stageOptions = useMemo(
+    () => [
+      { value: 'all' as StageFilter, label: t('recruiterApplications.stage.all'), color: 'gray' },
+      { value: 'applied' as StageFilter, label: t('recruiterApplications.stage.applied'), color: 'blue' },
+      { value: 'screening' as StageFilter, label: t('recruiterApplications.stage.screening'), color: 'blue' },
+      { value: 'review' as StageFilter, label: t('recruiterApplications.stage.review'), color: 'yellow' },
+      { value: 'interview' as StageFilter, label: t('recruiterApplications.stage.interview'), color: 'purple' },
+      { value: 'offer' as StageFilter, label: t('recruiterApplications.stage.offer'), color: 'green' },
+      { value: 'hire' as StageFilter, label: t('recruiterApplications.stage.hire'), color: 'green' },
+      { value: 'rejected' as StageFilter, label: t('recruiterApplications.stage.rejected'), color: 'red' },
+    ],
+    [t]
+  );
+
+  const sortOptions = useMemo(
+    () => [
+      { value: 'newest' as SortOption, label: t('recruiterApplications.sort.newest') },
+      { value: 'oldest' as SortOption, label: t('recruiterApplications.sort.oldest') },
+      { value: 'ranking' as SortOption, label: t('recruiterApplications.sort.ranking') },
+      { value: 'rating' as SortOption, label: t('recruiterApplications.sort.rating') },
+    ],
+    [t]
+  );
+
+  const eligibilityOptions = useMemo(
+    () => [
+      { value: 'all' as EligibilityFilter, label: t('recruiterApplications.eligibility.all') },
+      { value: 'eligible' as EligibilityFilter, label: t('eligibility.eligible') },
+      { value: 'needs_review' as EligibilityFilter, label: t('eligibility.needsReview') },
+      { value: 'ineligible' as EligibilityFilter, label: t('eligibility.ineligible') },
+    ],
+    [t]
+  );
 
   // State
   const [loading, setLoading] = useState(true);
@@ -187,7 +209,11 @@ export default function RecruiterApplicationsPage() {
       } = await supabase.auth.getUser();
 
       if (authError || !user) {
-        router.replace('/auth/login');
+        router.replace(
+          `${localize('/auth/login')}?redirect=${encodeURIComponent(
+            localize('/dashboard/recruiter/applications')
+          )}`
+        );
         return;
       }
 
@@ -232,6 +258,8 @@ export default function RecruiterApplicationsPage() {
           is_pinned,
           ranking_score,
           ranking_breakdown,
+          quiz_verified,
+          quiz_verified_meta,
           current_stage:current_stage_id (
             id,
             stage_key,
@@ -257,6 +285,7 @@ export default function RecruiterApplicationsPage() {
         )
         .in('job_id', jobIds)
         .neq('status', 'draft')
+        .order('quiz_verified', { ascending: false })
         .order('created_at', { ascending: false });
 
       const normalizedApps = (appsData || []).map((app: any) => ({
@@ -297,7 +326,7 @@ export default function RecruiterApplicationsPage() {
       console.error('Failed to load applications:', err);
       setLoading(false);
     }
-  }, [supabase, router]);
+  }, [supabase, router, localize]);
 
   useEffect(() => {
     loadData();
@@ -314,9 +343,12 @@ export default function RecruiterApplicationsPage() {
           newParams.delete(key);
         }
       });
-      router.push(`/dashboard/recruiter/applications?${newParams.toString()}`);
+      const target = newParams.toString()
+        ? `${localize('/dashboard/recruiter/applications')}?${newParams.toString()}`
+        : localize('/dashboard/recruiter/applications');
+      router.push(target);
     },
-    [router, searchParams]
+    [router, searchParams, localize]
   );
 
   // Bulk status update
@@ -367,40 +399,41 @@ export default function RecruiterApplicationsPage() {
 
   // Helper: get applicant name
   function getApplicantName(profile: Profile | null): string {
-    if (!profile) return 'Unknown';
+    if (!profile) return t('recruiterApplications.unknownApplicant');
     if (profile.first_name && profile.last_name) {
       return `${profile.first_name} ${profile.last_name}`;
     }
-    return profile.full_name || 'Anonymous';
+    return profile.full_name || t('recruiterApplications.anonymousApplicant');
   }
 
   function buildMessageHref(app: Application) {
     const draft = buildRecruiterTemplateMessage({
       applicantName: getApplicantName(app.profiles),
-      jobTitle: app.jobs?.title || 'this role',
+      jobTitle: app.jobs?.title || t('recruiterApplications.roleFallback'),
       companyName: app.jobs?.company_name,
       purpose: 'initial_contact',
+      locale,
     });
 
-    return `/dashboard/recruiter/messages?partner=${encodeURIComponent(app.applicant_id)}&draft=${encodeURIComponent(draft)}`;
+    return `${localize('/dashboard/recruiter/messages')}?partner=${encodeURIComponent(app.applicant_id)}&draft=${encodeURIComponent(draft)}`;
   }
 
   function getSuggestedNextStep(app: Application) {
     switch (app.current_stage?.stageType) {
       case 'interview':
-        return 'Confirm the interview or record a final decision.';
+        return t('recruiterApplications.nextStep.interview');
       case 'review':
       case 'offer':
-        return 'Contact the candidate and decide whether to interview or reject.';
+        return t('recruiterApplications.nextStep.reviewOrOffer');
       case 'screening':
-        return 'Run a quick phone screen or move to shortlist.';
+        return t('recruiterApplications.nextStep.screening');
       case 'hire':
-        return 'Candidate is already in the hired lane.';
+        return t('recruiterApplications.nextStep.hire');
       case 'rejected':
-        return 'Decision already closed unless you want to reopen.';
+        return t('recruiterApplications.nextStep.rejected');
       case 'applied':
       default:
-        return 'Make first contact or move the candidate to shortlist.';
+        return t('recruiterApplications.nextStep.applied');
     }
   }
 
@@ -434,7 +467,7 @@ export default function RecruiterApplicationsPage() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
-          <p className="text-gray-400">Loading applications...</p>
+          <p className="text-gray-400">{t('recruiterApplications.loading')}</p>
         </div>
       </div>
     );
@@ -445,16 +478,16 @@ export default function RecruiterApplicationsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Applications</h1>
+          <h1 className="text-2xl font-bold text-white">{t('recruiterApplications.title')}</h1>
           <p className="text-gray-400 mt-1">
-            Review candidates quickly, contact them directly, and make decisions with less friction.
+            {t('recruiterApplications.subtitle')}
           </p>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {STAGE_OPTIONS.map((opt) => (
+        {stageOptions.map((opt) => (
           <button
             key={opt.value}
             onClick={() => updateFilters({ stage: opt.value })}
@@ -490,9 +523,9 @@ export default function RecruiterApplicationsPage() {
                   d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
                 />
               </svg>
-              <input
+                <input
                 type="text"
-                placeholder="Search applicants or jobs..."
+                placeholder={t('recruiterApplications.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => updateFilters({ q: e.target.value })}
                 className="w-full pl-10 pr-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
@@ -506,7 +539,7 @@ export default function RecruiterApplicationsPage() {
             onChange={(e) => updateFilters({ job: e.target.value })}
             className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
-            <option value="all">All Jobs</option>
+            <option value="all">{t('recruiterApplications.allJobs')}</option>
             {jobs.map((job) => (
               <option key={job.id} value={job.id}>
                 {job.title}
@@ -520,7 +553,7 @@ export default function RecruiterApplicationsPage() {
             onChange={(e) => updateFilters({ sort: e.target.value })}
             className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
-            {SORT_OPTIONS.map((opt) => (
+            {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -532,7 +565,7 @@ export default function RecruiterApplicationsPage() {
             onChange={(e) => updateFilters({ eligibility: e.target.value })}
             className="px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
-            {ELIGIBILITY_OPTIONS.map((opt) => (
+            {eligibilityOptions.map((opt) => (
               <option key={opt.value} value={opt.value}>
                 {opt.label}
               </option>
@@ -544,7 +577,7 @@ export default function RecruiterApplicationsPage() {
         {selectedIds.size > 0 && (
           <div className="mt-4 pt-4 border-t border-gray-700 flex items-center gap-4">
             <span className="text-sm text-gray-400">
-              {selectedIds.size} selected
+              {t('recruiterApplications.selectedCount', { count: selectedIds.size })}
             </span>
             <div className="flex gap-2">
               <button
@@ -552,42 +585,42 @@ export default function RecruiterApplicationsPage() {
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700 disabled:opacity-50"
               >
-                Phone screen
+                {t('recruiterApplications.bulk.phoneScreen')}
               </button>
               <button
                 onClick={() => handleBulkStageUpdate('recruiter_review')}
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700 disabled:opacity-50"
                 >
-                Shortlist
+                {t('recruiterApplications.bulk.shortlist')}
               </button>
               <button
                 onClick={() => handleBulkStageUpdate('interview')}
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50"
               >
-                Interview
+                {t('recruiterApplications.bulk.interview')}
               </button>
               <button
                 onClick={() => handleBulkStageUpdate('hired')}
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-50"
               >
-                Hire
+                {t('recruiterApplications.bulk.hire')}
               </button>
               <button
                 onClick={() => handleBulkStageUpdate('rejected')}
                 disabled={bulkUpdating}
                 className="px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
-                Reject
+                {t('recruiterApplications.bulk.reject')}
               </button>
             </div>
             <button
               onClick={() => setSelectedIds(new Set())}
               className="ml-auto text-sm text-gray-400 hover:text-white"
             >
-              Clear selection
+              {t('recruiterApplications.clearSelection')}
             </button>
           </div>
         )}
@@ -611,20 +644,20 @@ export default function RecruiterApplicationsPage() {
           </svg>
           <h3 className="text-xl font-semibold text-white mb-2">
             {applications.length === 0
-              ? 'No applications yet'
-              : 'No matching applications'}
+              ? t('recruiterApplications.empty.none')
+              : t('recruiterApplications.empty.noMatches')}
           </h3>
           <p className="text-gray-400 mb-6">
             {applications.length === 0
-              ? 'Applications will appear here once candidates start applying to your jobs.'
-              : 'Try adjusting your filters to see more results.'}
+              ? t('recruiterApplications.empty.noneDescription')
+              : t('recruiterApplications.empty.noMatchesDescription')}
           </p>
           {applications.length > 0 && (
             <button
-              onClick={() => router.push('/dashboard/recruiter/applications')}
+              onClick={() => router.push(localize('/dashboard/recruiter/applications'))}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
-              Clear Filters
+              {t('common.clearFilters')}
             </button>
           )}
         </div>
@@ -640,11 +673,11 @@ export default function RecruiterApplicationsPage() {
                 className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
               />
             </div>
-            <div className="col-span-3">Applicant</div>
-            <div className="col-span-3">Job</div>
-            <div className="col-span-2">Applied</div>
-            <div className="col-span-2">Current Stage</div>
-            <div className="col-span-1">Actions</div>
+            <div className="col-span-3">{t('recruiterApplications.table.applicant')}</div>
+            <div className="col-span-3">{t('recruiterApplications.table.job')}</div>
+            <div className="col-span-2">{t('recruiterApplications.table.applied')}</div>
+            <div className="col-span-2">{t('recruiterApplications.table.currentStage')}</div>
+            <div className="col-span-1">{t('recruiterApplications.table.actions')}</div>
           </div>
 
           {/* Application Rows */}
@@ -683,8 +716,8 @@ export default function RecruiterApplicationsPage() {
                     <p className="font-medium text-white">
                       {getApplicantName(app.profiles)}
                       {!app.viewed_at && (
-                        <span className="ml-2 px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded">
-                          New
+                          <span className="ml-2 px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded">
+                          {t('recruiterApplications.new')}
                         </span>
                       )}
                       {app.is_pinned && (
@@ -694,6 +727,25 @@ export default function RecruiterApplicationsPage() {
                           </svg>
                         </span>
                       )}
+                      {app.quiz_verified ? (
+                        <span
+                          title={
+                            app.quiz_verified_meta?.domain
+                              ? `Quiz-Verified${
+                                  app.quiz_verified_meta.score != null
+                                    ? ' - ' + Math.round(app.quiz_verified_meta.score) + '/100'
+                                    : ''
+                                } in ${app.quiz_verified_meta.domain}`
+                              : 'Quiz-Verified'
+                          }
+                          className="ml-2 inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-200 align-middle"
+                        >
+                          Quiz-Verified
+                          {app.quiz_verified_meta?.score != null
+                            ? ` ${Math.round(app.quiz_verified_meta.score)}`
+                            : ''}
+                        </span>
+                      ) : null}
                     </p>
                     {app.recruiter_rating && (
                       <div className="flex mt-0.5">
@@ -717,12 +769,16 @@ export default function RecruiterApplicationsPage() {
                       <EligibilityBadge status={app.eligibility_status} compact />
                       {typeof app.overall_stage_score === 'number' && app.overall_stage_score > 0 && (
                         <span className="text-xs text-gray-500">
-                          Stage score {app.overall_stage_score.toFixed(1)}
+                          {t('recruiterApplications.stageScore', {
+                            score: app.overall_stage_score.toFixed(1),
+                          })}
                         </span>
                       )}
                       {typeof app.ranking_score === 'number' && app.ranking_score > 0 && (
                         <span className="text-xs text-gray-500">
-                          Rank {app.ranking_score.toFixed(1)}
+                          {t('recruiterApplications.rankScore', {
+                            score: app.ranking_score.toFixed(1),
+                          })}
                         </span>
                       )}
                     </div>
@@ -743,7 +799,7 @@ export default function RecruiterApplicationsPage() {
                         href={buildMessageHref(app)}
                         className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700"
                       >
-                        Contact
+                        {t('recruiterApplications.action.contact')}
                       </Link>
                       <button
                         onClick={() =>
@@ -756,7 +812,7 @@ export default function RecruiterApplicationsPage() {
                         disabled={Boolean(quickUpdatingId)}
                         className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
                       >
-                        Shortlist
+                        {t('recruiterApplications.action.shortlist')}
                       </button>
                       <button
                         onClick={() =>
@@ -769,7 +825,7 @@ export default function RecruiterApplicationsPage() {
                         disabled={Boolean(quickUpdatingId)}
                         className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
                       >
-                        Interview
+                        {t('recruiterApplications.action.interview')}
                       </button>
                       <button
                         onClick={() =>
@@ -782,7 +838,7 @@ export default function RecruiterApplicationsPage() {
                         disabled={Boolean(quickUpdatingId)}
                         className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
                       >
-                        Reject
+                        {t('recruiterApplications.action.reject')}
                       </button>
                     </div>
                   </div>
@@ -791,7 +847,7 @@ export default function RecruiterApplicationsPage() {
                 {/* Job */}
                 <div className="col-span-3 flex items-center">
                   <div>
-                    <p className="text-white">{app.jobs?.title || 'Unknown Job'}</p>
+                    <p className="text-white">{app.jobs?.title || t('recruiterApplications.unknownJob')}</p>
                     {app.jobs?.company_name && (
                       <p className="text-sm text-gray-400">{app.jobs.company_name}</p>
                     )}
@@ -800,14 +856,14 @@ export default function RecruiterApplicationsPage() {
 
                 {/* Applied Date */}
                 <div className="col-span-2 flex items-center text-gray-400">
-                  {new Date(app.created_at).toLocaleDateString()}
+                  {formatLocalizedDate(app.created_at, locale) || app.created_at}
                 </div>
 
                 {/* Current Stage */}
                 <div className="col-span-2 flex items-center">
                   <div>
                     <StageBadge
-                      label={app.current_stage?.label || 'Unassigned'}
+                      label={app.current_stage?.label || t('recruiterApplications.unassigned')}
                       stageType={app.current_stage?.stageType || 'applied'}
                     />
                     <div className="mt-2">
@@ -815,7 +871,9 @@ export default function RecruiterApplicationsPage() {
                     </div>
                     {app.stage_entered_at && (
                       <p className="mt-1 text-xs text-gray-500">
-                        Since {new Date(app.stage_entered_at).toLocaleDateString()}
+                        {t('recruiterApplications.sinceDate', {
+                          date: formatLocalizedDate(app.stage_entered_at, locale) || app.stage_entered_at,
+                        })}
                       </p>
                     )}
                     <p className="mt-2 text-xs text-gray-400">
@@ -827,10 +885,10 @@ export default function RecruiterApplicationsPage() {
                 {/* Actions */}
                 <div className="col-span-1 flex items-center">
                   <Link
-                    href={`/dashboard/recruiter/applications/${app.id}`}
+                    href={localize(`/dashboard/recruiter/applications/${app.id}`)}
                     className="px-3 py-1 text-sm bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
                   >
-                    View
+                    {t('common.view')}
                   </Link>
                 </div>
               </div>

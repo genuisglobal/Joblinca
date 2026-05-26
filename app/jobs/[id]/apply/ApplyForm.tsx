@@ -355,6 +355,8 @@ export default function ApplyForm({
     job.job_type === 'internship' && job.internship_track === 'education';
   const isProfessionalInternship =
     job.job_type === 'internship' && job.internship_track === 'professional';
+  const isQuickApplyOpportunity =
+    !isEducationInternship && !isProfessionalInternship && !hasQuestions;
   const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
 
   const STEPS: { key: Step; label: string }[] = [
@@ -389,6 +391,32 @@ export default function ApplyForm({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [previewSignature, setPreviewSignature] = useState<string | null>(null);
+  const [boostsActive, setBoostsActive] = useState<number>(0);
+  const [boostExpiry, setBoostExpiry] = useState<string | null>(null);
+  const [useBoost, setUseBoost] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch('/api/skillup/boosts/me')
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json().catch(() => null)) as {
+          tokens_active?: number;
+          next_expiry?: string | null;
+        } | null;
+      })
+      .then((payload) => {
+        if (!mounted || !payload) return;
+        setBoostsActive(typeof payload.tokens_active === 'number' ? payload.tokens_active : 0);
+        setBoostExpiry(payload.next_expiry ?? null);
+      })
+      .catch(() => {
+        // Boost state is non-critical to the apply flow; swallow.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
 
@@ -447,6 +475,7 @@ export default function ApplyForm({
       educationDetails: isEducationInternship ? educationDetails : null,
       professionalDetails: isProfessionalInternship ? professionalDetails : null,
       profileReadiness,
+      useBoost: useBoost && boostsActive > 0,
     }),
     [
       job.id,
@@ -461,6 +490,8 @@ export default function ApplyForm({
       educationDetails,
       professionalDetails,
       profileReadiness,
+      useBoost,
+      boostsActive,
     ]
   );
 
@@ -655,6 +686,30 @@ export default function ApplyForm({
     }
   };
 
+  const getFirstIncompleteSubmitStep = (): Step | null => {
+    const requiredSteps: Step[] = [
+      'contact',
+      ...(isEducationInternship ? (['education'] as Step[]) : []),
+      ...(isProfessionalInternship ? (['experience'] as Step[]) : []),
+      ...(hasQuestions ? (['questions'] as Step[]) : []),
+    ];
+
+    return requiredSteps.find((step) => !validateStep(step)) || null;
+  };
+
+  const validateBeforeSubmit = (
+    message = 'Please complete the required fields before submitting your application.'
+  ) => {
+    const incompleteStep = getFirstIncompleteSubmitStep();
+    if (!incompleteStep) {
+      return true;
+    }
+
+    setCurrentStep(incompleteStep);
+    setError(message);
+    return false;
+  };
+
   const handleNext = () => {
     if (!validateStep(currentStep)) {
       setError('Please fill in all required fields');
@@ -727,6 +782,10 @@ export default function ApplyForm({
   }, [currentStep, runEligibilityPreview]);
 
   const handleSubmit = async () => {
+    if (!validateBeforeSubmit()) {
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
     setPreviewError(null);
@@ -764,6 +823,18 @@ export default function ApplyForm({
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleQuickApply = async () => {
+    if (
+      !validateBeforeSubmit(
+        'Please fill in your full name, email address, and phone number before using quick apply.'
+      )
+    ) {
+      return;
+    }
+
+    await handleSubmit();
   };
 
   const handleViewDescription = async (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -821,6 +892,13 @@ export default function ApplyForm({
     isProfessionalInternship,
     preview: eligibilityPreview,
   });
+  const quickApplyReady =
+    isQuickApplyOpportunity &&
+    Boolean(
+      contactInfo.fullName.trim() &&
+      contactInfo.email.trim() &&
+      contactInfo.phone.trim()
+    );
 
   const handleCompletionAction = async (action: CompletionAction) => {
     if (action.kind === 'step') {
@@ -965,6 +1043,37 @@ export default function ApplyForm({
                     placeholder="City, Country"
                   />
                 </div>
+
+                {isQuickApplyOpportunity && (
+                  <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-medium text-white">Quick apply available</p>
+                        <p className="mt-1 text-sm text-blue-100/85">
+                          This opportunity has no extra screening steps. Submit now with your current
+                          contact details, or continue if you want to review everything first.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleQuickApply()}
+                        disabled={!quickApplyReady || isSubmitting || isPreviewLoading || isUploading}
+                        className="inline-flex items-center justify-center rounded-lg bg-green-600 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-600"
+                      >
+                        {isSubmitting || isPreviewLoading
+                          ? isSubmitting
+                            ? 'Submitting...'
+                            : 'Checking eligibility...'
+                          : 'Quick Apply'}
+                      </button>
+                    </div>
+                    {!quickApplyReady && (
+                      <p className="mt-3 text-xs text-blue-100/80">
+                        Add your full name, email address, and phone number to unlock quick apply.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1430,6 +1539,35 @@ export default function ApplyForm({
                   Please review your information before submitting this {opportunityLabel.toLowerCase()} application
                 </p>
 
+                {boostsActive > 0 ? (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-amber-100">
+                          Quiz-Verified Application Boost
+                        </h3>
+                        <p className="mt-1 text-xs text-amber-200/80">
+                          You earned {boostsActive} boost{boostsActive === 1 ? '' : 's'} from
+                          recent challenge wins. Using one stamps this application as
+                          Quiz-Verified and sorts it to the top of the recruiter&apos;s pipeline.
+                          {boostExpiry
+                            ? ` Next expires ${new Date(boostExpiry).toLocaleDateString()}.`
+                            : null}
+                        </p>
+                      </div>
+                      <label className="inline-flex items-center gap-2 text-sm text-amber-100 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={useBoost}
+                          onChange={(event) => setUseBoost(event.target.checked)}
+                          className="h-4 w-4 rounded border-amber-400 bg-gray-700 text-amber-500 focus:ring-amber-500"
+                        />
+                        Use a boost
+                      </label>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="space-y-6">
                   {/* Contact Info Summary */}
                   <div className="bg-gray-700/50 rounded-lg p-4">
@@ -1824,6 +1962,32 @@ export default function ApplyForm({
                   </p>
                 )}
               </div>
+
+              {isQuickApplyOpportunity && (
+                <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-4">
+                  <p className="font-medium text-white">Fast path</p>
+                  <p className="mt-2 text-sm text-green-100/80">
+                    No education, portfolio, or custom question steps are required for this application.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickApply()}
+                    disabled={!quickApplyReady || isSubmitting || isPreviewLoading || isUploading}
+                    className="mt-4 inline-flex w-full items-center justify-center rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:bg-gray-600"
+                  >
+                    {isSubmitting || isPreviewLoading
+                      ? isSubmitting
+                        ? 'Submitting...'
+                        : 'Checking eligibility...'
+                      : 'Quick Apply Now'}
+                  </button>
+                  {!quickApplyReady && (
+                    <p className="mt-2 text-xs text-green-100/75">
+                      Complete contact details in the form to enable this shortcut.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {job.location && (
                 <div className="flex items-center gap-2 text-gray-400 text-sm">

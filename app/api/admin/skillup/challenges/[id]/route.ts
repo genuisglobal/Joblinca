@@ -3,25 +3,41 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { AdminRequiredError, requireAdmin } from '@/lib/admin';
 import { isChallengeStatus, isChallengeType } from '@/lib/skillup/challenges';
 
-async function resolveChallengeId(
+const ACCESS_TIERS = ['free', 'paid'] as const;
+type AccessTier = (typeof ACCESS_TIERS)[number];
+
+function isAccessTier(value: unknown): value is AccessTier {
+  return typeof value === 'string' && (ACCESS_TIERS as readonly string[]).includes(value);
+}
+
+async function resolveChallenge(
   supabase: ReturnType<typeof createServerSupabaseClient>,
   idOrSlug: string
-): Promise<string | null> {
+): Promise<{ id: string; access_tier: AccessTier; is_sponsored: boolean } | null> {
+  const columns = 'id, access_tier, is_sponsored';
   const byId = await supabase
     .from('talent_challenges')
-    .select('id')
+    .select(columns)
     .eq('id', idOrSlug)
     .maybeSingle();
   if (byId.error) return null;
-  if (byId.data?.id) return byId.data.id;
+  if (byId.data?.id) {
+    return byId.data as { id: string; access_tier: AccessTier; is_sponsored: boolean };
+  }
 
   const bySlug = await supabase
     .from('talent_challenges')
-    .select('id')
+    .select(columns)
     .eq('slug', idOrSlug)
     .maybeSingle();
   if (bySlug.error) return null;
-  return bySlug.data?.id || null;
+  return (bySlug.data as { id: string; access_tier: AccessTier; is_sponsored: boolean }) || null;
+}
+
+function asTrimmedStringOrNull(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function slugify(value: string): string {
@@ -46,10 +62,11 @@ export async function PATCH(
       return NextResponse.json({ error: 'Challenge ID is required' }, { status: 400 });
     }
 
-    const challengeId = await resolveChallengeId(supabase, identifier);
-    if (!challengeId) {
+    const existing = await resolveChallenge(supabase, identifier);
+    if (!existing) {
       return NextResponse.json({ error: 'Challenge not found' }, { status: 404 });
     }
+    const challengeId = existing.id;
 
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') {
@@ -138,6 +155,54 @@ export async function PATCH(
       !Array.isArray(payload.config)
     ) {
       updates.config = payload.config;
+    }
+
+    let finalAccessTier: AccessTier = existing.access_tier;
+    let finalIsSponsored: boolean = existing.is_sponsored;
+
+    if (payload.access_tier !== undefined) {
+      if (!isAccessTier(payload.access_tier)) {
+        return NextResponse.json(
+          { error: "access_tier must be 'free' or 'paid'" },
+          { status: 422 }
+        );
+      }
+      finalAccessTier = payload.access_tier;
+      updates.access_tier = payload.access_tier;
+    }
+
+    if (payload.is_sponsored !== undefined) {
+      if (typeof payload.is_sponsored !== 'boolean') {
+        return NextResponse.json(
+          { error: 'is_sponsored must be a boolean' },
+          { status: 422 }
+        );
+      }
+      finalIsSponsored = payload.is_sponsored;
+      updates.is_sponsored = payload.is_sponsored;
+    }
+
+    if (finalIsSponsored && finalAccessTier !== 'paid') {
+      return NextResponse.json(
+        {
+          error:
+            'Sponsored challenges must have access_tier=paid. Update both fields together.',
+        },
+        { status: 422 }
+      );
+    }
+
+    if (payload.sponsor_recruiter_id !== undefined) {
+      updates.sponsor_recruiter_id = asTrimmedStringOrNull(payload.sponsor_recruiter_id);
+    }
+    if (payload.sponsor_company !== undefined) {
+      updates.sponsor_company = asTrimmedStringOrNull(payload.sponsor_company);
+    }
+    if (payload.sponsor_prize_text !== undefined) {
+      updates.sponsor_prize_text = asTrimmedStringOrNull(payload.sponsor_prize_text);
+    }
+    if (payload.sponsor_prize_text_fr !== undefined) {
+      updates.sponsor_prize_text_fr = asTrimmedStringOrNull(payload.sponsor_prize_text_fr);
     }
 
     if (Object.keys(updates).length === 0) {
