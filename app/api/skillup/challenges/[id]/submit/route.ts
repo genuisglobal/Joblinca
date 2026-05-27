@@ -2,12 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import {
   computeProjectAutoScore,
-  extractChallengeQuizQuestions,
-  gradeChallengeQuiz,
   hasRequiredProjectDeliverables,
   normalizeProjectSubmission,
   roundScore,
 } from '@/lib/skillup/challenges';
+import {
+  extractExtendedQuestions,
+  gradeMixedQuiz,
+  questionsOverTime,
+  sanitizeMixedAnswers,
+  type AnswerValue,
+} from '@/lib/skillup/grader';
 import { getUserSubscription } from '@/lib/subscriptions';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin-types';
 import type { Locale } from '@/lib/i18n/locale';
@@ -104,12 +109,24 @@ function extractTimeLimitSeconds(config: unknown): number | null {
   return Math.floor(parsed);
 }
 
-function sanitizeAnswers(value: unknown): number[] {
+function coerceLegacyAnswers(value: unknown): Array<AnswerValue | undefined> | null {
+  if (!Array.isArray(value)) return null;
+  // Detect legacy scalar shape: array of numbers.
+  if (value.length > 0 && value.every((v) => typeof v === 'number' || v === null)) {
+    return value.map((entry): AnswerValue | undefined => {
+      const num = typeof entry === 'number' && Number.isFinite(entry) ? Math.floor(entry) : null;
+      return { type: 'mcq_single', selected_index: num !== null && num >= 0 ? num : null };
+    });
+  }
+  return null;
+}
+
+function sanitizeDurations(value: unknown): Array<number | null> {
   if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => Number(entry))
-    .filter((entry) => Number.isFinite(entry))
-    .map((entry) => Math.floor(entry));
+  return value.map((entry) => {
+    const n = Number(entry);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  });
 }
 
 export async function POST(
@@ -215,7 +232,14 @@ export async function POST(
   }
 
   if (challenge.challenge_type === 'quiz') {
-    const questions = extractChallengeQuizQuestions(challenge.config || {});
+    const { data: callerProfileForLocale } = await supabase
+      .from('profiles')
+      .select('preferred_locale')
+      .eq('id', user.id)
+      .maybeSingle();
+    const submitLocale: Locale = callerProfileForLocale?.preferred_locale === 'fr' ? 'fr' : 'en';
+
+    const questions = extractExtendedQuestions(challenge.config || {}, submitLocale);
     if (questions.length === 0) {
       return NextResponse.json(
         { error: 'Quiz challenge is missing questions in config' },
@@ -223,7 +247,14 @@ export async function POST(
       );
     }
 
-    const answers = sanitizeAnswers((body as Record<string, unknown>).answers);
+    const rawAnswers = (body as Record<string, unknown>).answers;
+    let answers: Array<AnswerValue | undefined>;
+    const legacyShape = coerceLegacyAnswers(rawAnswers);
+    if (legacyShape) {
+      answers = legacyShape;
+    } else {
+      answers = sanitizeMixedAnswers(rawAnswers);
+    }
     if (answers.length === 0) {
       return NextResponse.json(
         { error: 'answers array is required for quiz challenge' },
@@ -231,7 +262,11 @@ export async function POST(
       );
     }
 
-    const grading = gradeChallengeQuiz(questions, answers);
+    const durations = sanitizeDurations(
+      (body as Record<string, unknown>).question_durations
+    );
+
+    const grading = gradeMixedQuiz(questions, answers);
     const completionSecondsRaw = Number(
       (body as Record<string, unknown>).completionSeconds
     );
@@ -240,10 +275,17 @@ export async function POST(
       : null;
 
     const timeLimit = extractTimeLimitSeconds(challenge.config);
-    const timeLimitExceeded =
+    const overallExceeded =
       timeLimit !== null &&
       completionSeconds !== null &&
       completionSeconds > timeLimit + TIME_LIMIT_GRACE_SECONDS;
+    const perQuestionOver = questionsOverTime(questions, durations);
+    const timeLimitExceeded = overallExceeded || perQuestionOver.length > 0;
+    const disqualificationReason = overallExceeded
+      ? 'time_limit_exceeded'
+      : perQuestionOver.length > 0
+      ? 'per_question_time_exceeded'
+      : null;
 
     const submissionStatus = timeLimitExceeded ? 'disqualified' : 'graded';
     const finalScore = timeLimitExceeded ? 0 : grading.score;
@@ -263,9 +305,11 @@ export async function POST(
           grading_mode: 'auto',
           correct_answers: grading.correct,
           total_questions: grading.total,
+          per_question: grading.per_question,
           time_limit_seconds: timeLimit,
           time_limit_exceeded: timeLimitExceeded,
-          disqualification_reason: timeLimitExceeded ? 'time_limit_exceeded' : null,
+          per_question_overruns: perQuestionOver,
+          disqualification_reason: disqualificationReason,
         },
       })
       .select(
@@ -278,14 +322,9 @@ export async function POST(
     }
 
     // Build wrong-answer recommendations from approved study refs.
-    const questionIds = extractQuestionIds(challenge.config);
-    const missedIds: string[] = [];
-    for (let i = 0; i < questions.length; i += 1) {
-      if (answers[i] !== questions[i].correct_index) {
-        const id = questionIds[i];
-        if (id) missedIds.push(id);
-      }
-    }
+    const missedIds: string[] = grading.per_question
+      .filter((row) => !row.is_correct)
+      .map((row) => row.id);
 
     let recommendations: Array<{
       question_id: string;
@@ -305,12 +344,7 @@ export async function POST(
     }> = [];
 
     if (missedIds.length > 0) {
-      const { data: callerProfile } = await supabase
-        .from('profiles')
-        .select('preferred_locale')
-        .eq('id', user.id)
-        .maybeSingle();
-      const locale: Locale = callerProfile?.preferred_locale === 'fr' ? 'fr' : 'en';
+      const locale: Locale = submitLocale;
 
       const { data: refRows } = await supabase
         .from('talent_challenge_question_refs')
@@ -389,9 +423,11 @@ export async function POST(
       raw_score: grading.score,
       correct: grading.correct,
       total: grading.total,
+      per_question: grading.per_question,
       disqualified: timeLimitExceeded,
-      disqualification_reason: timeLimitExceeded ? 'time_limit_exceeded' : null,
+      disqualification_reason: disqualificationReason,
       time_limit_seconds: timeLimit,
+      per_question_overruns: perQuestionOver,
       attempts_used: nextAttempt,
       attempts_left: Math.max(0, challenge.max_ranked_attempts - nextAttempt),
       recommendations,
