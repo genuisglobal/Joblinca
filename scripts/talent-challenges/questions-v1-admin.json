@@ -1,0 +1,739 @@
+[
+  {
+    "id": "adm-b01",
+    "type": "mcq_single",
+    "topic": "communication_basics",
+    "bloom_layer": "recall",
+    "time_limit_seconds": 60,
+    "question": "When taking a phone message for a manager who is out of office, which set of fields gives the manager the most useful record?",
+    "question_fr": "Quand vous prenez un message téléphonique pour un responsable absent, quel ensemble d'informations donne au responsable l'enregistrement le plus utile ?",
+    "options": [
+      "Caller name and phone number only",
+      "Caller name, organisation, purpose, callback number, time, urgency, action required",
+      "Caller name and a short summary of how they sounded",
+      "Just the message, the manager can call back later"
+    ],
+    "options_fr": [
+      "Nom et numéro de l'appelant uniquement",
+      "Nom, organisme, objet, numéro de rappel, heure, urgence, action requise",
+      "Nom de l'appelant et brève description de son ton",
+      "Le message seul, le responsable rappellera plus tard"
+    ],
+    "correct_index": 1,
+    "explanation": "A useful phone-message record gives the manager enough context to decide priority and respond without calling back to ask basic questions.",
+    "explanation_fr": "Un bon message téléphonique donne au responsable assez de contexte pour décider de la priorité et répondre sans avoir à rappeler pour des informations de base.",
+    "source": "Office administration practice",
+    "verification_required": false,
+    "research_source_id": "AD-B01"
+  },
+  {
+    "id": "adm-b02",
+    "type": "mcq_single",
+    "topic": "visitor_triage",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 75,
+    "question": "A visitor insists they have an urgent appointment, but there is no calendar entry and no host has notified you. What is the correct first action?",
+    "question_fr": "Un visiteur insiste avoir un rendez-vous urgent, mais il n'y a aucune entrée au calendrier et aucun hôte ne vous a informé. Quelle est la première action correcte ?",
+    "options": [
+      "Let them in immediately; you don't want them complaining",
+      "Verify identity and purpose, contact the host or a delegate, keep the visitor waiting professionally",
+      "Refuse access without explanation and ask them to leave",
+      "Send them straight to the CEO so the CEO can decide"
+    ],
+    "options_fr": [
+      "Le faire entrer immédiatement pour éviter une plainte",
+      "Vérifier identité et objet, contacter l'hôte ou un délégué, faire patienter le visiteur professionnellement",
+      "Refuser l'accès sans explication et lui demander de partir",
+      "L'envoyer directement chez le DG pour qu'il décide"
+    ],
+    "correct_index": 1,
+    "explanation": "Verify and route - don't grant uncontrolled access, don't refuse without explanation, and don't escalate to leadership for routine visitor triage.",
+    "explanation_fr": "Vérifier puis orienter - ni accès non contrôlé, ni refus sans explication, ni remontée systématique au top management pour un triage routinier.",
+    "source": "Office administration good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B02"
+  },
+  {
+    "id": "adm-b07",
+    "type": "mcq_single",
+    "topic": "inbox_priority",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 60,
+    "question": "Which item in your inbox should usually be opened FIRST?",
+    "question_fr": "Lequel des éléments suivants devez-vous généralement ouvrir EN PREMIER dans votre boîte mail ?",
+    "options": [
+      "A routine supplier reminder about restocking",
+      "A scanned signed contract from a partner",
+      "A compliance notice from a public authority",
+      "A newsletter from a professional network"
+    ],
+    "options_fr": [
+      "Un rappel fournisseur de routine pour le réapprovisionnement",
+      "Un contrat signé scanné d'un partenaire",
+      "Une notification de conformité d'une administration publique",
+      "Une newsletter d'un réseau professionnel"
+    ],
+    "correct_index": 2,
+    "explanation": "Compliance notices from authorities often carry deadlines. Open and route them before any routine traffic, including signed contracts which are normally less time-sensitive.",
+    "explanation_fr": "Les notifications de conformité ont souvent des délais. Les ouvrir et orienter avant tout courrier de routine, y compris les contrats signés qui sont en général moins urgents.",
+    "source": "Inbox prioritisation good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B07"
+  },
+  {
+    "id": "adm-b08",
+    "type": "true_false",
+    "topic": "confidentiality",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 45,
+    "question": "A colleague not on the HR team asks to browse candidate CVs sitting on the reception desk. It is acceptable to let them browse because the CVs are not technically labelled confidential.",
+    "question_fr": "Un collègue qui ne fait pas partie de l'équipe RH demande à consulter les CV des candidats laissés sur le comptoir d'accueil. Il est acceptable de le laisser consulter puisque les CV ne sont pas explicitement marqués confidentiels.",
+    "options": ["True", "False"],
+    "options_fr": ["Vrai", "Faux"],
+    "correct_index": 1,
+    "explanation": "Candidate CVs contain personal data and recruitment context. They are confidential by nature, not by label. Access is restricted to authorised HR staff.",
+    "explanation_fr": "Les CV contiennent des données personnelles et un contexte de recrutement. Ils sont confidentiels par nature, pas par étiquetage. L'accès est limité au personnel RH autorisé.",
+    "source": "Data protection good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B08"
+  },
+  {
+    "id": "adm-b09",
+    "type": "mcq_single",
+    "topic": "calendar_planning",
+    "bloom_layer": "application",
+    "time_limit_seconds": 75,
+    "question": "Your manager has three external meetings in different parts of Yaoundé on the same day. What should you build into the calendar before sending confirmations?",
+    "question_fr": "Votre responsable a trois rendez-vous externes dans des quartiers différents de Yaoundé le même jour. Que devez-vous intégrer au calendrier avant d'envoyer les confirmations ?",
+    "options": [
+      "Back-to-back meetings to maximise productive time",
+      "Travel time, preparation buffers, overrun allowance, venue or link verification, and a lunch slot",
+      "Only the meeting times themselves; the manager handles the rest",
+      "Half-hour buffers only at the very start and end of the day"
+    ],
+    "options_fr": [
+      "Réunions enchaînées pour maximiser le temps utile",
+      "Temps de trajet, buffers de préparation, marge pour dépassements, vérification des lieux/liens, créneau déjeuner",
+      "Seulement les heures de réunion ; le responsable gère le reste",
+      "Buffers d'une demi-heure uniquement en début et fin de journée"
+    ],
+    "correct_index": 1,
+    "explanation": "Realistic Yaoundé schedules need travel time, preparation buffers, and overrun allowances. Stacking meetings back-to-back guarantees the day collapses on the first delay.",
+    "explanation_fr": "Une journée yaoundéenne réaliste nécessite trajets, buffers de préparation et marges pour dépassements. Enchaîner les réunions garantit l'effondrement au premier retard.",
+    "source": "Executive assistant good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B09"
+  },
+  {
+    "id": "adm-b10",
+    "type": "mcq_single",
+    "topic": "room_booking",
+    "bloom_layer": "application",
+    "time_limit_seconds": 60,
+    "question": "Two teams claim the same meeting room at 09:00. What is the correct first step?",
+    "question_fr": "Deux équipes revendiquent la même salle de réunion à 09h00. Quelle est la première démarche correcte ?",
+    "options": [
+      "Whoever arrives first gets the room",
+      "Check the booking record, identify the rightful holder, propose an alternative room or time to the other, and update the calendar",
+      "Let the senior manager decide on the spot",
+      "Cancel both meetings and ask everyone to reschedule"
+    ],
+    "options_fr": [
+      "Le premier arrivé garde la salle",
+      "Vérifier l'enregistrement de réservation, identifier le détenteur légitime, proposer une autre salle ou créneau à l'autre équipe, mettre à jour le calendrier",
+      "Laisser le responsable le plus senior trancher sur place",
+      "Annuler les deux réunions et demander à chacun de reprogrammer"
+    ],
+    "correct_index": 1,
+    "explanation": "Booking records are the source of truth. Identify the rightful holder, then propose an alternative - don't reward chaos or shortcut by seniority.",
+    "explanation_fr": "L'enregistrement de réservation fait foi. Identifier le détenteur légitime puis proposer une alternative - ne pas récompenser le chaos ni trancher par ancienneté.",
+    "source": "Office administration good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B10"
+  },
+  {
+    "id": "adm-b11",
+    "type": "mcq_single",
+    "topic": "meeting_records",
+    "bloom_layer": "recall",
+    "time_limit_seconds": 60,
+    "question": "Which set of sections belongs in good minutes for an internal operations meeting?",
+    "question_fr": "Quel ensemble de sections convient à un bon procès-verbal de réunion d'exploitation interne ?",
+    "options": [
+      "Word-for-word transcript of every comment",
+      "Date and time, attendees, agenda, key decisions, action items with owners and deadlines",
+      "Just the action items, nothing else",
+      "Date and a list of who spoke, with no decisions or actions"
+    ],
+    "options_fr": [
+      "Transcription mot à mot de chaque commentaire",
+      "Date et heure, participants, ordre du jour, décisions clés, actions avec responsables et échéances",
+      "Uniquement les actions, rien d'autre",
+      "Date et liste des intervenants, sans décisions ni actions"
+    ],
+    "correct_index": 1,
+    "explanation": "Effective minutes record decisions and actions, not verbatim discussion. Owner and deadline make actions enforceable.",
+    "explanation_fr": "De bons PV consignent les décisions et actions, pas la discussion verbatim. Responsable et échéance rendent les actions exécutables.",
+    "source": "Meeting minutes good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B11"
+  },
+  {
+    "id": "adm-b12",
+    "type": "matching",
+    "topic": "meeting_artefacts",
+    "bloom_layer": "recall",
+    "time_limit_seconds": 120,
+    "question": "Match each document to its primary purpose.",
+    "question_fr": "Faites correspondre chaque document à son objectif principal.",
+    "left_items": ["Agenda", "Minutes", "Action tracker"],
+    "left_items_fr": ["Ordre du jour", "Procès-verbal", "Tableau de suivi des actions"],
+    "right_items": [
+      "Before-meeting plan of what will be discussed and in what order",
+      "After-meeting record of decisions and assigned actions",
+      "Living document used between meetings to follow up on owners and deadlines"
+    ],
+    "right_items_fr": [
+      "Plan avant réunion de ce qui sera discuté et dans quel ordre",
+      "Compte rendu après réunion des décisions et actions assignées",
+      "Document vivant utilisé entre réunions pour suivre responsables et échéances"
+    ],
+    "correct_pairs": [[0, 0], [1, 1], [2, 2]],
+    "explanation": "Three distinct artefacts with three distinct timing roles - before, immediately after, and ongoing between meetings.",
+    "explanation_fr": "Trois livrables distincts avec trois rôles temporels distincts - avant, immédiatement après, et en continu entre les réunions.",
+    "source": "Meeting management good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B12"
+  },
+  {
+    "id": "adm-b16",
+    "type": "true_false",
+    "topic": "document_control",
+    "bloom_layer": "recall",
+    "time_limit_seconds": 45,
+    "question": "A scanned document with one missing page is still acceptable for official filing as long as the visible pages are readable.",
+    "question_fr": "Un document scanné avec une page manquante est acceptable pour le classement officiel tant que les pages visibles sont lisibles.",
+    "options": ["True", "False"],
+    "options_fr": ["Vrai", "Faux"],
+    "correct_index": 1,
+    "explanation": "An incomplete scan is unacceptable. Re-scan to capture all pages and verify completeness before filing.",
+    "explanation_fr": "Un scan incomplet est inacceptable. Re-scanner pour capturer toutes les pages et vérifier l'intégralité avant classement.",
+    "source": "Document control good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B16"
+  },
+  {
+    "id": "adm-b17",
+    "type": "mcq_single",
+    "topic": "continuity",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 75,
+    "question": "The office printer fails and power is fluctuating, one hour before a board file must be delivered. What is the right response?",
+    "question_fr": "L'imprimante du bureau tombe en panne et l'alimentation fluctue, une heure avant la remise d'un dossier du conseil. Quelle est la bonne réponse ?",
+    "options": [
+      "Wait for power to stabilise and the printer to come back",
+      "Switch to a backup printer or service centre, prioritise the essential pages, notify the file owner, document any delay risk",
+      "Cancel the delivery and reschedule the board",
+      "Ask the board chair to come collect the file in person"
+    ],
+    "options_fr": [
+      "Attendre que l'alimentation se stabilise et que l'imprimante revienne",
+      "Passer sur une imprimante de secours ou un centre de reprographie, prioriser les pages essentielles, prévenir le responsable du dossier, consigner tout risque de retard",
+      "Annuler la livraison et reporter le conseil",
+      "Demander au président du conseil de venir chercher le dossier en personne"
+    ],
+    "correct_index": 1,
+    "explanation": "Continuity means executing through the disruption - find backup capacity, prioritise, and communicate. Waiting passively is not a plan.",
+    "explanation_fr": "La continuité, c'est exécuter malgré la perturbation - trouver une capacité de secours, prioriser, communiquer. Attendre passivement n'est pas un plan.",
+    "source": "Business continuity practice",
+    "verification_required": false,
+    "research_source_id": "AD-B17"
+  },
+  {
+    "id": "adm-b18",
+    "type": "mcq_single",
+    "topic": "stock_register",
+    "bloom_layer": "recall",
+    "time_limit_seconds": 75,
+    "question": "Which set of columns belongs in a basic stationery stock register?",
+    "question_fr": "Quel ensemble de colonnes appartient à un registre de stock de fournitures basique ?",
+    "options": [
+      "Item, opening balance, received, issued, closing balance, reorder level, custodian",
+      "Just item and quantity",
+      "Item, supplier, and price only",
+      "Item, opening balance, and a single notes field"
+    ],
+    "options_fr": [
+      "Article, stock initial, reçu, sorti, stock final, niveau de réapprovisionnement, responsable",
+      "Article et quantité uniquement",
+      "Article, fournisseur et prix uniquement",
+      "Article, stock initial et un seul champ remarques"
+    ],
+    "correct_index": 0,
+    "explanation": "A useful register tracks flows in and out, signals when to reorder, and identifies the custodian responsible for the count.",
+    "explanation_fr": "Un registre utile suit les flux entrants/sortants, signale le réapprovisionnement et identifie le responsable du décompte.",
+    "source": "Stock control good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B18"
+  },
+  {
+    "id": "adm-b20",
+    "type": "mcq_single",
+    "topic": "document_escalation",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 60,
+    "question": "A sealed tax document arrives while the finance manager is at lunch. What should happen immediately?",
+    "question_fr": "Un document fiscal scellé arrive pendant la pause déjeuner du directeur financier. Que doit-il se passer immédiatement ?",
+    "options": [
+      "Open it to see how urgent it is",
+      "Log receipt with timestamp, keep it sealed and secured, alert the delegate, hand over on the finance manager's return",
+      "Leave it on the manager's desk and continue with other tasks",
+      "Forward the envelope to the CEO"
+    ],
+    "options_fr": [
+      "L'ouvrir pour évaluer l'urgence",
+      "Enregistrer la réception avec horodatage, le garder scellé et sécurisé, prévenir le suppléant, le remettre au retour du directeur financier",
+      "Le laisser sur le bureau du responsable et continuer ses tâches",
+      "Transférer l'enveloppe au DG"
+    ],
+    "correct_index": 1,
+    "explanation": "Sealed regulatory mail must not be opened by intermediaries. Log, secure, and alert the delegate so it isn't lost or delayed.",
+    "explanation_fr": "Le courrier réglementaire scellé ne doit pas être ouvert par des intermédiaires. Enregistrer, sécuriser et prévenir un suppléant pour éviter perte ou retard.",
+    "source": "Office administration good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B20"
+  },
+  {
+    "id": "adm-b21",
+    "type": "ordering",
+    "topic": "compliance_routing",
+    "bloom_layer": "application",
+    "time_limit_seconds": 180,
+    "question": "A DGI notice arrives at the general office mailbox at 16:30. Put these four first-hour actions in the correct order.",
+    "question_fr": "Une notification de la DGI arrive dans la boîte mail générale à 16h30. Classez ces quatre actions de la première heure dans le bon ordre.",
+    "items": [
+      "Timestamp the notice and log it in the inward register",
+      "Notify the responsible finance or compliance lead",
+      "Save or print a backup copy and secure the file",
+      "Open a follow-up tracker entry for this notice"
+    ],
+    "items_fr": [
+      "Horodater la notification et l'enregistrer dans le registre du courrier entrant",
+      "Prévenir le responsable financier ou de conformité concerné",
+      "Sauvegarder ou imprimer une copie de secours et sécuriser le dossier",
+      "Ouvrir une entrée de suivi dédiée à cette notification"
+    ],
+    "correct_order": [0, 1, 2, 3],
+    "explanation": "Log first to fix the official receipt time, notify the owner quickly because some notices have short deadlines, backup the copy, then create the tracker. Logging precedes notifying because the owner will ask what the registered receipt time was.",
+    "explanation_fr": "Enregistrer d'abord pour fixer l'heure officielle, prévenir vite car certaines notifications ont des délais courts, sauvegarder la copie, puis créer le suivi. L'enregistrement précède la notification parce que le responsable demandera l'heure de réception consignée.",
+    "source": "Office administration / DGI workflow",
+    "verification_required": false,
+    "research_source_id": "AD-B21"
+  },
+  {
+    "id": "adm-b22",
+    "type": "mcq_single",
+    "topic": "cnps_basics",
+    "bloom_layer": "recall",
+    "time_limit_seconds": 75,
+    "question": "Someone walks in and asks for the employer's CNPS registration file. Which set of identifiers should be the easiest to retrieve immediately?",
+    "question_fr": "Quelqu'un demande le dossier d'enregistrement CNPS de l'employeur. Quel ensemble d'identifiants doit être le plus facile à retrouver immédiatement ?",
+    "options": [
+      "Employer CNPS number, registration certificate, contact details, responsible officer, latest compliance trail",
+      "Just the employer name and address",
+      "Only the most recent payment receipt",
+      "The list of all current employees and their CNPS numbers"
+    ],
+    "options_fr": [
+      "Numéro CNPS de l'employeur, certificat d'enregistrement, coordonnées, responsable, dernière trace de conformité",
+      "Le nom et l'adresse de l'employeur uniquement",
+      "Le dernier reçu de paiement uniquement",
+      "La liste de tous les employés actuels et leurs numéros CNPS"
+    ],
+    "correct_index": 0,
+    "explanation": "The CNPS registration file proves the employer is registered and currently in good standing. A name and address, a single receipt, or a personnel list does not establish the employer's CNPS identity.",
+    "explanation_fr": "Le dossier d'enregistrement CNPS prouve que l'employeur est immatriculé et à jour. Un simple nom et adresse, un reçu isolé ou la liste du personnel ne suffisent pas à établir l'identité CNPS de l'employeur.",
+    "source": "CNPS employer obligations",
+    "verification_required": true,
+    "research_source_id": "AD-B22"
+  },
+  {
+    "id": "adm-b25",
+    "type": "true_false",
+    "topic": "executive_confidentiality",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 45,
+    "question": "If a friend politely asks where the director is travelling this week, it is fine to share the itinerary since the friend is harmless.",
+    "question_fr": "Si un ami demande poliment où le directeur voyage cette semaine, il est correct de partager l'itinéraire puisque l'ami est sans danger.",
+    "options": ["True", "False"],
+    "options_fr": ["Vrai", "Faux"],
+    "correct_index": 1,
+    "explanation": "Travel itineraries are confidential - disclosure creates security and reputational risk regardless of who is asking. Only share through authorised channels.",
+    "explanation_fr": "Les itinéraires de voyage sont confidentiels - la divulgation crée des risques de sécurité et de réputation quelle que soit la personne. Ne partager que par les canaux autorisés.",
+    "source": "Executive assistant good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B25"
+  },
+  {
+    "id": "adm-b26",
+    "type": "mcq_single",
+    "topic": "fraud_detection",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 75,
+    "question": "You receive a WhatsApp message from an unknown number claiming to be your CEO and telling you to pay a supplier urgently. What is the safest first move?",
+    "question_fr": "Vous recevez un message WhatsApp d'un numéro inconnu prétendant être votre DG et vous demandant de payer un fournisseur en urgence. Quel est le premier geste le plus sûr ?",
+    "options": [
+      "Process the payment quickly to avoid upsetting the CEO",
+      "Do not act; verify the CEO's request through an official channel; preserve the message; escalate the suspicious request",
+      "Reply asking the sender to send the same instruction from the CEO's known number",
+      "Forward the message to colleagues for their opinion"
+    ],
+    "options_fr": [
+      "Traiter le paiement rapidement pour ne pas contrarier le DG",
+      "Ne pas agir ; vérifier la demande du DG par un canal officiel ; conserver le message ; faire remonter la demande suspecte",
+      "Répondre en demandant à l'expéditeur d'envoyer la même instruction depuis le numéro connu du DG",
+      "Transférer le message à des collègues pour avis"
+    ],
+    "correct_index": 1,
+    "explanation": "Classic CEO-impersonation fraud. Verify through an independent official channel, preserve the message as evidence, and escalate via the standard fraud-reporting path.",
+    "explanation_fr": "Fraude classique par usurpation du DG. Vérifier via un canal officiel indépendant, conserver le message comme preuve et faire remonter via la procédure standard de signalement.",
+    "source": "Office security good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B26"
+  },
+  {
+    "id": "adm-b27",
+    "type": "matching",
+    "topic": "communication_channel_choice",
+    "bloom_layer": "application",
+    "time_limit_seconds": 120,
+    "question": "Match each work situation to the communication channel an experienced assistant would normally pick first.",
+    "question_fr": "Faites correspondre chaque situation de travail au canal de communication qu'une assistante expérimentée choisirait normalement en premier.",
+    "left_items": [
+      "Sending a signed contract for the records",
+      "An urgent clarification before a meeting in 10 minutes",
+      "Locking in what was agreed on a phone call",
+      "A polite reminder about a recurring deadline a week away"
+    ],
+    "left_items_fr": [
+      "Envoi d'un contrat signé pour les archives",
+      "Clarification urgente avant une réunion dans 10 minutes",
+      "Formaliser ce qui a été convenu lors d'un appel téléphonique",
+      "Rappel poli pour une échéance récurrente dans une semaine"
+    ],
+    "right_items": ["Email", "Phone call", "Email after a phone call"],
+    "right_items_fr": ["Email", "Appel téléphonique", "Email après un appel téléphonique"],
+    "correct_pairs": [[0, 0], [1, 1], [2, 2], [3, 0]],
+    "explanation": "Email for records, attachments, and non-urgent reminders. A call for urgent clarification. Email-after-call to formalise what was agreed verbally.",
+    "explanation_fr": "Email pour archives, pièces jointes et rappels non urgents. Appel pour clarifications urgentes. Email après l'appel pour formaliser ce qui a été convenu oralement.",
+    "source": "Office administration practice",
+    "verification_required": false,
+    "research_source_id": "AD-B27"
+  },
+  {
+    "id": "adm-b28",
+    "type": "mcq_single",
+    "topic": "acknowledgment_messages",
+    "bloom_layer": "application",
+    "time_limit_seconds": 75,
+    "question": "Which structure makes a brief acknowledgment message confirming receipt of documents most useful?",
+    "question_fr": "Quelle structure rend le plus utile un court message d'accusé de réception de documents ?",
+    "options": [
+      "A single line: 'Received, thanks'",
+      "Receipt confirmed, document reference, next step, responsible contact, polite close",
+      "Long paragraph thanking the sender",
+      "Restate the entire content of what was received"
+    ],
+    "options_fr": [
+      "Une seule ligne : « Reçu, merci »",
+      "Confirmation de réception, référence du document, étape suivante, contact responsable, conclusion polie",
+      "Long paragraphe pour remercier l'expéditeur",
+      "Reformuler tout le contenu reçu"
+    ],
+    "correct_index": 1,
+    "explanation": "An acknowledgement should be concise but actionable: what was received, what happens next, and who owns it.",
+    "explanation_fr": "Un accusé de réception doit être bref mais actionnable : ce qui a été reçu, ce qui suit, qui est responsable.",
+    "source": "Office communications good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B28"
+  },
+  {
+    "id": "adm-b29",
+    "type": "mcq_single",
+    "topic": "de_escalation",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 75,
+    "question": "An angry visitor says they have been kept waiting too long. What should your response sound like?",
+    "question_fr": "Un visiteur en colère affirme avoir attendu trop longtemps. À quoi doit ressembler votre réponse ?",
+    "options": [
+      "Argue back that the delay was their fault for arriving early",
+      "Calm apology, verify their need, give a realistic update, escalate if needed",
+      "Walk away and ignore the visitor until they calm down",
+      "Tell them to come back another day"
+    ],
+    "options_fr": [
+      "Argumenter que le retard est de leur faute parce qu'ils sont arrivés en avance",
+      "Excuse calme, vérifier leur besoin, donner un point réaliste, escalader si nécessaire",
+      "S'éloigner et ignorer le visiteur jusqu'à ce qu'il se calme",
+      "Lui demander de revenir un autre jour"
+    ],
+    "correct_index": 1,
+    "explanation": "De-escalation: acknowledge the feeling, give a realistic update, and escalate if you can't resolve it yourself. Don't argue, don't ignore, don't punish.",
+    "explanation_fr": "Désamorçage : reconnaître le ressenti, donner un point réaliste et escalader si vous ne pouvez pas régler vous-même. Ne pas argumenter, ne pas ignorer, ne pas punir.",
+    "source": "Front desk good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B29"
+  },
+  {
+    "id": "adm-b30",
+    "type": "true_false",
+    "topic": "record_integrity",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 45,
+    "question": "A colleague asks you to amend an attendance sheet after it has been signed off, 'to help someone out.' It is acceptable as long as the amendment is small.",
+    "question_fr": "Un collègue vous demande de modifier une feuille de présence après qu'elle a été signée, « pour aider quelqu'un ». C'est acceptable tant que la modification est petite.",
+    "options": ["True", "False"],
+    "options_fr": ["Vrai", "Faux"],
+    "correct_index": 1,
+    "explanation": "Altering a signed-off record is record-falsification regardless of size. Refuse, route any legitimate correction through the formal process, and preserve the original.",
+    "explanation_fr": "Modifier un enregistrement signé est une falsification quelle que soit l'ampleur. Refuser, faire passer toute correction légitime par la procédure formelle, conserver l'original.",
+    "source": "Record integrity good practice",
+    "verification_required": false,
+    "research_source_id": "AD-B30"
+  },
+  {
+    "id": "adm-i01",
+    "type": "mcq_single",
+    "topic": "calendar_structure",
+    "bloom_layer": "application",
+    "time_limit_seconds": 90,
+    "question": "How should you structure an executive's weekly calendar so urgent work doesn't destroy every planned meeting?",
+    "question_fr": "Comment structurer le calendrier hebdomadaire d'un dirigeant pour que les urgences ne ruinent pas chaque réunion prévue ?",
+    "options": [
+      "Stack meetings back-to-back to maximise the number of slots",
+      "Fixed priorities, buffer blocks, preparation windows, travel time, and protected focus slots",
+      "Leave the calendar mostly empty and let the day organise itself",
+      "Only schedule meetings two days at a time"
+    ],
+    "options_fr": [
+      "Enchaîner les réunions pour maximiser les créneaux",
+      "Priorités fixes, blocs tampons, fenêtres de préparation, temps de trajet, créneaux protégés de concentration",
+      "Garder le calendrier presque vide et laisser la journée s'organiser seule",
+      "Ne planifier que sur deux jours à la fois"
+    ],
+    "correct_index": 1,
+    "explanation": "Structured calendars survive interruption because buffers and protected slots absorb the shocks. Back-to-back stacking guarantees a collapse on the first delay.",
+    "explanation_fr": "Un calendrier structuré survit aux interruptions grâce aux buffers et créneaux protégés. L'enchaînement garantit l'effondrement au premier retard.",
+    "source": "Executive assistant good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I01"
+  },
+  {
+    "id": "adm-i04",
+    "type": "mcq_single",
+    "topic": "action_tracker_design",
+    "bloom_layer": "application",
+    "time_limit_seconds": 75,
+    "question": "Which set of columns makes an action tracker genuinely useful rather than decorative?",
+    "question_fr": "Quel ensemble de colonnes rend un tableau de suivi des actions réellement utile et non purement décoratif ?",
+    "options": [
+      "Decision, owner, due date, status, evidence, blocker, next follow-up",
+      "Just decision and due date",
+      "Decision, the manager's mood, and a comment",
+      "Decision and status only"
+    ],
+    "options_fr": [
+      "Décision, responsable, échéance, statut, preuve, blocage, prochaine relance",
+      "Décision et échéance uniquement",
+      "Décision, humeur du responsable et un commentaire",
+      "Décision et statut uniquement"
+    ],
+    "correct_index": 0,
+    "explanation": "Owner + due date make actions enforceable; evidence + blocker columns force honest status updates rather than vague 'in progress' entries.",
+    "explanation_fr": "Responsable + échéance rendent les actions exécutables ; les colonnes preuve + blocage forcent des points honnêtes plutôt qu'un vague « en cours ».",
+    "source": "Project administration good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I04"
+  },
+  {
+    "id": "adm-i09",
+    "type": "mcq_single",
+    "topic": "expense_review",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 90,
+    "question": "Which three red flags should make an expense claim unsuitable for immediate processing?",
+    "question_fr": "Quels trois signaux d'alerte rendent une note de frais inapte au traitement immédiat ?",
+    "options": [
+      "The employee submitted it on a Monday",
+      "Missing support, unclear business purpose, no approval or mismatch with the travel or event record",
+      "The total amount is larger than last month",
+      "The claim is in a different language than the policy"
+    ],
+    "options_fr": [
+      "L'employé l'a soumise un lundi",
+      "Justificatifs manquants, objet d'affaires flou, absence d'approbation ou divergence avec le dossier voyage/événement",
+      "Le montant total est plus élevé que le mois précédent",
+      "La note est dans une autre langue que la politique"
+    ],
+    "correct_index": 1,
+    "explanation": "Substance, support, and approval - those are the three controls every expense claim must pass. Day of submission, total trend, and language don't decide validity.",
+    "explanation_fr": "Substance, justificatifs et approbation - ce sont les trois contrôles que doit passer toute note de frais. Le jour de soumission, la tendance du total et la langue ne décident pas de la validité.",
+    "source": "Expense control good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I09"
+  },
+  {
+    "id": "adm-i14",
+    "type": "mcq_single",
+    "topic": "procurement_change_control",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 90,
+    "question": "A vendor revises its quote upward after the approval was already granted. What should happen before procurement moves forward?",
+    "question_fr": "Un fournisseur révise son devis à la hausse après que l'approbation a été obtenue. Que doit-il se passer avant que les achats ne poursuivent ?",
+    "options": [
+      "Process the higher amount silently to keep the timeline",
+      "Re-evaluate against the approval threshold and competitive process, document the revision, obtain renewed sign-off if needed",
+      "Refuse the revised quote outright and find a new vendor",
+      "Split the difference informally with the vendor"
+    ],
+    "options_fr": [
+      "Traiter le montant supérieur en silence pour tenir le planning",
+      "Réévaluer par rapport au seuil d'approbation et au processus concurrentiel, documenter la révision, obtenir une nouvelle approbation si nécessaire",
+      "Refuser le devis révisé d'office et chercher un autre fournisseur",
+      "Couper la poire en deux de manière informelle avec le fournisseur"
+    ],
+    "correct_index": 1,
+    "explanation": "A material change resets the approval. Document the revision and get fresh sign-off - don't hide the change, don't reject reflexively.",
+    "explanation_fr": "Une modification matérielle remet à zéro l'approbation. Documenter la révision et obtenir une nouvelle approbation - ne pas cacher le changement, ne pas refuser par réflexe.",
+    "source": "Procurement control good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I14"
+  },
+  {
+    "id": "adm-i20",
+    "type": "ordering",
+    "topic": "inspection_preparation",
+    "bloom_layer": "application",
+    "time_limit_seconds": 240,
+    "question": "Finance says a DGI or CNPS inspection team may arrive soon. Put these five preparation steps in the right order.",
+    "question_fr": "La finance annonce qu'une équipe d'inspection DGI ou CNPS pourrait arriver bientôt. Classez ces cinq étapes de préparation dans le bon ordre.",
+    "items": [
+      "Confirm scope of inspection and the documents most likely to be requested",
+      "Pull and index the files most likely to be requested",
+      "Set up the document room: visitor sign-in, request log, copy/scan support",
+      "Brief the responsible finance or compliance lead on what is ready and any gaps",
+      "Open a document-request tracker for items the team asks for during the visit"
+    ],
+    "items_fr": [
+      "Confirmer le périmètre de l'inspection et les documents les plus probables",
+      "Sortir et indexer les dossiers les plus probables",
+      "Préparer la salle des documents : registre des visiteurs, journal des demandes, support copie/scan",
+      "Briefer le responsable financier ou de conformité sur ce qui est prêt et les écarts",
+      "Ouvrir un tracker des demandes pour les éléments réclamés pendant la visite"
+    ],
+    "correct_order": [0, 1, 2, 3, 4],
+    "explanation": "Scope first, then build the file pull against it, then logistics, then briefing, then run the tracker once the visit starts.",
+    "explanation_fr": "D'abord le périmètre, puis la constitution des dossiers, puis la logistique, puis le briefing, puis le tracker une fois la visite commencée.",
+    "source": "DGI / CNPS inspection good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I20"
+  },
+  {
+    "id": "adm-i25",
+    "type": "true_false",
+    "topic": "hr_confidentiality",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 45,
+    "question": "It is fine to store salary letters and performance evaluations in an open shared folder so the whole team can find them quickly.",
+    "question_fr": "Il est acceptable de stocker les lettres de salaire et les évaluations de performance dans un dossier partagé ouvert pour que toute l'équipe les retrouve rapidement.",
+    "options": ["True", "False"],
+    "options_fr": ["Vrai", "Faux"],
+    "correct_index": 1,
+    "explanation": "Salary and evaluation documents are confidential. Restricted access with a clear owner is required; convenience does not override confidentiality.",
+    "explanation_fr": "Les documents de salaire et d'évaluation sont confidentiels. Un accès restreint avec un responsable clair est obligatoire ; la commodité ne prime pas sur la confidentialité.",
+    "source": "HR confidentiality good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I25"
+  },
+  {
+    "id": "adm-i27",
+    "type": "mcq_single",
+    "topic": "continuity_planning",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 90,
+    "question": "A power cut and network failure hit the same morning a deadline-sensitive online compliance task is pending. What do you do?",
+    "question_fr": "Une coupure de courant et une panne réseau surviennent le matin même où une tâche de conformité en ligne sensible aux délais est en attente. Que faites-vous ?",
+    "options": [
+      "Wait passively until power and network return",
+      "Switch to a backup connectivity path or location, notify the owner, preserve evidence, and use the documented contingency route",
+      "Cancel the compliance task and explain after the fact",
+      "Ask the regulator for an indefinite extension"
+    ],
+    "options_fr": [
+      "Attendre passivement le retour du courant et du réseau",
+      "Basculer sur un canal de connectivité ou un site de secours, prévenir le responsable, conserver les preuves, suivre la procédure de contingence documentée",
+      "Annuler la tâche de conformité et expliquer après coup",
+      "Demander à l'administration un report sans date"
+    ],
+    "correct_index": 1,
+    "explanation": "Continuity plans exist precisely for this. Switch to backup, communicate, preserve evidence - don't wait, don't cancel, don't ask for an open-ended extension.",
+    "explanation_fr": "Les plans de continuité existent précisément pour cela. Basculer en secours, communiquer, conserver les preuves - ne pas attendre, ne pas annuler, ne pas demander de report indéfini.",
+    "source": "Business continuity good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I27"
+  },
+  {
+    "id": "adm-i29",
+    "type": "mcq_single",
+    "topic": "rumor_management",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 75,
+    "question": "Staff ask whether layoffs are coming because they saw many sealed HR envelopes. What should you say?",
+    "question_fr": "Le personnel demande si des licenciements arrivent parce qu'ils ont vu de nombreuses enveloppes RH scellées. Que devez-vous dire ?",
+    "options": [
+      "Tell them what you think is happening to calm them down",
+      "Do not speculate; keep confidentiality; direct concerns to the authorised communication channel (HR or leadership)",
+      "Refuse to talk and walk away",
+      "Forward their concerns anonymously to leadership without telling them"
+    ],
+    "options_fr": [
+      "Leur dire ce que vous pensez qu'il se passe pour les calmer",
+      "Ne pas spéculer ; maintenir la confidentialité ; rediriger les préoccupations vers le canal de communication autorisé (RH ou direction)",
+      "Refuser de parler et s'éloigner",
+      "Faire remonter leurs préoccupations anonymement à la direction sans les en informer"
+    ],
+    "correct_index": 1,
+    "explanation": "Speculation amplifies rumour and damages trust. Decline to speculate, name the authorised channel, and let staff escalate properly if they want answers.",
+    "explanation_fr": "La spéculation amplifie la rumeur et abîme la confiance. Refuser de spéculer, nommer le canal autorisé, et laisser le personnel faire remonter correctement.",
+    "source": "Office communications good practice",
+    "verification_required": false,
+    "research_source_id": "AD-I29"
+  },
+  {
+    "id": "adm-e20",
+    "type": "mcq_single",
+    "topic": "segregation_of_duties",
+    "bloom_layer": "judgment",
+    "time_limit_seconds": 90,
+    "question": "Why is it risky if the same person requests petty cash, approves it, holds the cash box, and records retirement?",
+    "question_fr": "Pourquoi est-il risqué que la même personne demande la petite caisse, l'approuve, détienne la caisse et enregistre les régularisations ?",
+    "options": [
+      "It is not risky as long as the person is trusted",
+      "Concentration of control over the entire cash cycle enables error and fraud and removes any independent check",
+      "It is risky only when amounts exceed 100,000 FCFA",
+      "It is risky only if the person is new to the company"
+    ],
+    "options_fr": [
+      "Ce n'est pas risqué tant que la personne est de confiance",
+      "Concentrer le contrôle sur tout le cycle de caisse permet erreur et fraude et supprime tout contrôle indépendant",
+      "Ce n'est risqué qu'au-delà de 100 000 FCFA",
+      "Ce n'est risqué que si la personne est nouvelle dans l'entreprise"
+    ],
+    "correct_index": 1,
+    "explanation": "Segregation of duties is structural, not personality-based. The same individual touching every stage of a cash cycle removes the independent check that catches mistakes and deters fraud.",
+    "explanation_fr": "La séparation des tâches est structurelle, pas une question de personne. La même personne intervenant à chaque étape du cycle de caisse supprime le contrôle indépendant qui détecte les erreurs et dissuade la fraude.",
+    "source": "Internal control good practice",
+    "verification_required": false,
+    "research_source_id": "AD-E20"
+  }
+]
