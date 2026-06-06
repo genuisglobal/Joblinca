@@ -6,76 +6,113 @@ import {
   replaceExternalJobsBySource,
 } from '@/lib/externalJobs';
 import { isAuthorizedCronRequest } from '@/lib/cron-auth';
-import { runAutoPipeline } from '@/lib/scrapers/auto-pipeline';
-import { processPendingFacebookRawPosts } from '@/lib/scrapers/facebook-pipeline';
+import { runAutoPipelineMaintenance } from '@/lib/scrapers/auto-pipeline';
+import {
+  AUTOMATED_SCRAPER_SOURCE_SLUGS,
+  FACEBOOK_SCRAPER_SOURCE_SLUG,
+} from '@/lib/scrapers/catalog';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300; // 5 minutes for full pipeline
+export const maxDuration = 300;
+
+const SCRAPE_MAX_PAGES = 2;
+
+interface SourceDispatchResult {
+  source: string;
+  ok: boolean;
+  status: number;
+  jobs?: number;
+  error?: string;
+}
 
 /**
- * Cron endpoint to refresh external jobs daily.
+ * Daily aggregation dispatcher.
  *
- * Triggered by:
- * - Vercel Cron (configured in vercel.json)
- * - External scheduler (GitHub Actions, etc.)
- * - Manual call with CRON_SECRET header
+ * Instead of scraping every source sequentially in one function (which exceeded
+ * the 300s limit and never reached the publish stage), this fans out one request
+ * per source to /api/cron/scrape-source — each running in its OWN serverless
+ * invocation with its own 300s budget, in parallel. Total wall-clock ≈ the
+ * slowest single source rather than the sum of all of them. It then runs the
+ * fast maintenance pass inline so trustworthy jobs publish in the same cycle.
  *
- * Authentication: supports CRON_SECRET bearer auth and Vercel cron headers.
+ * Triggered by Vercel Cron, or manually with a CRON_SECRET bearer token.
  */
 export async function GET(request: NextRequest) {
   if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Use service role key to bypass RLS
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json({ error: 'Supabase configuration missing' }, { status: 500 });
   }
-
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  const origin = new URL(request.url).origin;
+  const cronSecret = (process.env.CRON_SECRET || '').trim();
+
   try {
-    console.log('[cron] Refreshing legacy external feed (remote/international only)...');
+    // --- 1. Legacy external feed (remote/international; single fast pass) ---
     const jobs = await fetchExternalFeedJobs();
     const retiredSourceSummary = { cleared: true, error: null as string | null };
-
     try {
       await clearRetiredExternalFeedSources(supabase);
     } catch (retiredSourceError) {
       retiredSourceSummary.cleared = false;
       retiredSourceSummary.error = String(retiredSourceError);
-      console.error('[cron] Failed to clear retired Cameroon external feed rows:', retiredSourceError);
+      console.error('[cron] Failed to clear retired external feed rows:', retiredSourceError);
     }
-
     const externalFeedSummary = await replaceExternalJobsBySource(supabase, jobs);
     console.log(`[cron] Refreshed ${jobs.length} legacy external feed jobs`);
 
-    // --- Full auto pipeline: scrape → ingest → auto-publish → dedup cleanup ---
-    let pipelineSummary: any = null;
-    try {
-      console.log('[cron] Running auto pipeline (scrape → ingest → publish → dedup)...');
-      const pipelineResult = await runAutoPipeline('cron', 2);
-      pipelineSummary = pipelineResult;
-      console.log('[cron] Auto pipeline complete:', pipelineSummary);
-    } catch (pipelineErr) {
-      console.error('[cron] Auto pipeline error (non-fatal):', pipelineErr);
-      pipelineSummary = { error: String(pipelineErr) };
-    }
+    // --- 2. Fan out per-source scrapes (parallel, isolated invocations) ---
+    const sources = [...AUTOMATED_SCRAPER_SOURCE_SLUGS, FACEBOOK_SCRAPER_SOURCE_SLUG];
+    console.log(`[cron] Dispatching ${sources.length} per-source scrapes...`);
 
-    let facebookSummary: any = null;
+    const dispatch = await Promise.allSettled(
+      sources.map(async (source): Promise<SourceDispatchResult> => {
+        const url = `${origin}/api/cron/scrape-source?source=${encodeURIComponent(
+          source,
+        )}&maxPages=${SCRAPE_MAX_PAGES}`;
+        const res = await fetch(url, {
+          headers: cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {},
+        });
+        const body = (await res.json().catch(() => null)) as
+          | { jobs?: number; error?: string }
+          | null;
+        return {
+          source,
+          ok: res.ok,
+          status: res.status,
+          jobs: body?.jobs,
+          error: res.ok ? undefined : body?.error || `HTTP ${res.status}`,
+        };
+      }),
+    );
+
+    const scrapeResults: SourceDispatchResult[] = dispatch.map((d, i) =>
+      d.status === 'fulfilled'
+        ? d.value
+        : { source: sources[i], ok: false, status: 0, error: String(d.reason) },
+    );
+    const scrapeSummary = {
+      dispatched: sources.length,
+      succeeded: scrapeResults.filter((r) => r.ok).length,
+      failed: scrapeResults.filter((r) => !r.ok).length,
+      total_jobs: scrapeResults.reduce((s, r) => s + (r.jobs || 0), 0),
+      results: scrapeResults,
+    };
+    console.log('[cron] Scrape dispatch complete:', scrapeSummary);
+
+    // --- 3. Publish + dedup + archive (fast) so jobs go live this cycle ---
+    let maintenanceSummary: unknown = null;
     try {
-      console.log('[cron] Reprocessing pending Facebook raw posts...');
-      facebookSummary = await processPendingFacebookRawPosts(supabase, {
-        limit: 75,
-        triggerType: 'cron',
-      });
-      console.log('[cron] Facebook processing complete:', facebookSummary);
-    } catch (facebookErr) {
-      console.error('[cron] Facebook processing error (non-fatal):', facebookErr);
-      facebookSummary = { error: String(facebookErr) };
+      maintenanceSummary = await runAutoPipelineMaintenance();
+      console.log('[cron] Maintenance complete:', maintenanceSummary);
+    } catch (maintErr) {
+      console.error('[cron] Maintenance error (non-fatal):', maintErr);
+      maintenanceSummary = { error: String(maintErr) };
     }
 
     const summary = {
@@ -85,20 +122,20 @@ export async function GET(request: NextRequest) {
         inserted: externalFeedSummary.inserted,
         errors: externalFeedSummary.errors,
         sources: externalFeedSummary.sources,
-        retired_cameroon_sources: retiredSourceSummary,
+        retired_external_sources: retiredSourceSummary,
       },
-      pipeline: pipelineSummary,
-      facebook_pipeline: facebookSummary,
+      scrape_dispatch: scrapeSummary,
+      maintenance: maintenanceSummary,
       timestamp: new Date().toISOString(),
     };
 
-    console.log('[cron] Refresh complete:', summary);
+    console.log('[cron] Refresh complete');
     return NextResponse.json(summary);
   } catch (err) {
     console.error('[cron] Fatal error during job refresh:', err);
     return NextResponse.json(
       { error: 'Job refresh failed', details: String(err) },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
