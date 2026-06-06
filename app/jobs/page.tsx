@@ -6,7 +6,6 @@ import {
   Briefcase,
   Building2,
   Clock,
-  Globe,
   GraduationCap,
   MapPin,
   Rocket,
@@ -21,7 +20,8 @@ import {
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import { getRequestBaseUrl } from '@/lib/app-url';
 import { getRequestLocale } from '@/lib/i18n/server';
-import { normalizeLocale, type Locale } from '@/lib/i18n/locale';
+import { getServerT } from '@/lib/i18n/server-t';
+import { addLocalePrefix, normalizeLocale, type Locale } from '@/lib/i18n/locale';
 import JobSearchBar from './JobSearchBar';
 
 interface Job {
@@ -36,6 +36,10 @@ interface Job {
   eligible_roles: string[] | null;
   visibility: string | null;
   salary: number | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: string | null;
   created_at: string;
   work_type: string | null;
   language: Locale | null;
@@ -54,65 +58,110 @@ interface JobsPageProps {
   searchParams: Promise<{
     type?: string;
     q?: string;
+    search?: string;
+    title?: string;
     location?: string;
     remote?: string;
+    work_type?: string;
     language?: string;
+    date_posted?: string;
+    salary_min?: string;
+    salary_max?: string;
     page?: string;
   }>;
 }
 
-const FILTERS: Array<{
-  key: OpportunityBrowseFilter;
-  label: string;
-}> = [
-  { key: 'all', label: 'All Opportunities' },
-  { key: 'job', label: 'Jobs' },
-  { key: 'internship_education', label: 'Educational Internships' },
-  { key: 'internship_professional', label: 'Professional Internships' },
-  { key: 'gig', label: 'Gigs' },
+interface JobsApiPayload {
+  jobs?: Job[];
+  total?: number;
+  counts?: {
+    all?: number;
+    job?: number;
+    internship_education?: number;
+    internship_professional?: number;
+    gig?: number;
+  };
+}
+
+const FILTERS: OpportunityBrowseFilter[] = [
+  'all',
+  'job',
+  'internship_education',
+  'internship_professional',
+  'gig',
 ];
 
-const LANGUAGE_FILTERS: Array<{
-  key: 'recommended' | Locale;
-  label: string;
-}> = [
-  { key: 'recommended', label: 'Recommended' },
-  { key: 'en', label: 'English only' },
-  { key: 'fr', label: 'French only' },
-];
-
-export const metadata = {
-  title: 'Find Jobs - Joblinca',
-  description:
-    'Browse jobs, educational internships, professional internships, and remote opportunities on Joblinca.',
-};
+type PostedDateFilter = '24h' | '3d' | '1w' | '1m' | 'anytime';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-function formatDate(dateString: string) {
+export function generateMetadata() {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+
+  return {
+    title: t('jobs.metadataTitle'),
+    description: t('jobs.metadataDescription'),
+  };
+}
+
+function formatDate(
+  dateString: string,
+  locale: Locale,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
   const date = new Date(dateString);
   const now = new Date();
   const diffTime = Math.abs(now.getTime() - date.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 1) return 'Today';
-  if (diffDays === 2) return 'Yesterday';
-  if (diffDays <= 7) return `${diffDays} days ago`;
-  if (diffDays <= 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (diffDays === 1) return t('common.today');
+  if (diffDays === 2) return t('common.yesterday');
+  if (diffDays <= 7) return t('common.daysAgo', { count: diffDays });
+  if (diffDays <= 30) return t('common.weeksAgo', { count: Math.ceil(diffDays / 7) });
+  return date.toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
-function formatCompensation(job: Job) {
-  if (!job.salary) {
-    return 'Compensation not disclosed';
+function formatCompensation(
+  job: Job,
+  locale: Locale,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  const currency = job.salary_currency || 'XAF';
+  const min = job.salary_min ?? job.salary ?? null;
+  const max = job.salary_max ?? job.salary_min ?? job.salary ?? null;
+
+  if (min === null && max === null) {
+    return t('jobs.compensationUndisclosed');
   }
 
-  const formatter = new Intl.NumberFormat('en-US', {
+  const formatter = new Intl.NumberFormat(locale === 'fr' ? 'fr-FR' : 'en-US', {
     maximumFractionDigits: 0,
   });
 
-  return `${formatter.format(job.salary)} XAF`;
+  const formatAmount = (value: number) => `${formatter.format(value)} ${currency}`;
+
+  if (min !== null && max !== null && min !== max) {
+    return `${formatAmount(Math.min(min, max))} - ${formatAmount(Math.max(min, max))}`;
+  }
+
+  if (min !== null && max !== null && min === max) {
+    return formatAmount(min);
+  }
+
+  if (min !== null) {
+    return t('common.from', { value: formatAmount(min) });
+  }
+
+  if (max !== null) {
+    return t('common.upTo', { value: formatAmount(max) });
+  }
+
+  return t('jobs.compensationUndisclosed');
 }
 
 function badgeClasses(label: string) {
@@ -140,11 +189,116 @@ function getLanguageBadge(locale: Locale | null, preferredLocale: Locale) {
 
   return {
     label: locale.toUpperCase(),
-    description: locale === 'fr' ? 'French posting' : 'English posting',
+    descriptionKey: locale === 'fr' ? 'jobs.postingFrench' : 'jobs.postingEnglish',
     className: matchesPreference
       ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
       : 'border border-neutral-700 bg-neutral-800 text-neutral-300',
   };
+}
+
+function normalizePostedDateFilter(value: string | undefined): PostedDateFilter {
+  switch (value) {
+    case '24h':
+    case '3d':
+    case '1w':
+    case '1m':
+      return value;
+    default:
+      return 'anytime';
+  }
+}
+
+function normalizeWorkTypeQuery(value: string | undefined, legacyRemote: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+
+  if (normalized === 'remote' || normalized === 'onsite' || normalized === 'hybrid') {
+    return normalized;
+  }
+
+  if (legacyRemote === '1') {
+    return 'remote';
+  }
+
+  return '';
+}
+
+function translateOpportunityLabel(
+  label: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (label) {
+    case 'Educational Internship':
+      return t('common.opportunity.internshipEducation');
+    case 'Professional Internship':
+      return t('common.opportunity.internshipProfessional');
+    case 'Internship':
+      return t('common.opportunity.internship');
+    case 'Gig':
+      return t('common.opportunity.gig');
+    default:
+      return t('common.opportunity.job');
+  }
+}
+
+function translateEligibleRoleSummary(
+  summary: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (summary) {
+    case 'Talent profiles':
+      return t('common.talentProfiles');
+    case 'Job seeker profiles':
+      return t('common.jobSeekerProfiles');
+    default:
+      return t('common.jobSeekerAndTalentProfiles');
+  }
+}
+
+function getFilterLabel(
+  filter: OpportunityBrowseFilter,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (filter) {
+    case 'job':
+      return t('jobs.filter.jobs');
+    case 'internship_education':
+      return t('jobs.filter.educationalInternships');
+    case 'internship_professional':
+      return t('jobs.filter.professionalInternships');
+    case 'gig':
+      return t('jobs.filter.gigs');
+    default:
+      return t('jobs.filter.allOpportunities');
+  }
+}
+
+function getWorkTypeLabel(
+  workType: string | null,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (workType) {
+    case 'remote':
+      return t('common.remote');
+    case 'hybrid':
+      return t('common.hybrid');
+    case 'onsite':
+      return t('common.onSite');
+    default:
+      return t('common.notSpecified');
+  }
+}
+
+function getWorkTypeBadgeClasses(workType: string | null) {
+  switch (workType) {
+    case 'remote':
+      return 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+    case 'hybrid':
+      return 'border border-amber-500/30 bg-amber-500/10 text-amber-300';
+    case 'onsite':
+      return 'border border-neutral-700 bg-neutral-800 text-neutral-300';
+    default:
+      return 'border border-neutral-700 bg-neutral-800 text-neutral-300';
+  }
 }
 
 export default async function JobsPage({ searchParams }: JobsPageProps) {
@@ -152,16 +306,51 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
 
   const query = await searchParams;
   const preferredLocale = getRequestLocale();
+  const t = getServerT(preferredLocale);
   const activeFilter = resolveOpportunityBrowseFilter(query.type);
   const activeLanguageFilter = normalizeLocale(query.language);
-  const searchQuery = (query.q || '').trim();
+  const searchQuery = (query.title || query.q || query.search || '').trim();
   const locationQuery = (query.location || '').trim();
-  const remoteOnly = query.remote === '1';
+  const workTypeQuery = normalizeWorkTypeQuery(query.work_type, query.remote);
+  const datePostedQuery = normalizePostedDateFilter(query.date_posted);
+  const salaryMinQuery = (query.salary_min || '').trim();
+  const salaryMaxQuery = (query.salary_max || '').trim();
   const currentPage = Math.max(1, parseInt(query.page || '1', 10) || 1);
   const PAGE_SIZE = 24;
 
+  function buildJobsHref(overrides: Record<string, string | null>) {
+    const params = new URLSearchParams();
+    const nextValues: Record<string, string | null> = {
+      type: activeFilter !== 'all' ? activeFilter : null,
+      q: searchQuery || null,
+      location: locationQuery || null,
+      work_type: workTypeQuery || null,
+      language: activeLanguageFilter || null,
+      date_posted: datePostedQuery !== 'anytime' ? datePostedQuery : null,
+      salary_min: salaryMinQuery || null,
+      salary_max: salaryMaxQuery || null,
+      ...overrides,
+    };
+
+    for (const [key, value] of Object.entries(nextValues)) {
+      if (value) {
+        params.set(key, value);
+      }
+    }
+
+    const queryString = params.toString();
+    return addLocalePrefix(queryString ? `/jobs?${queryString}` : '/jobs', preferredLocale);
+  }
+
   let jobs: Job[] = [];
   let totalCount = 0;
+  let counts = {
+    all: 0,
+    job: 0,
+    internship_education: 0,
+    internship_professional: 0,
+    gig: 0,
+  };
   let error: { message: string } | null = null;
 
   try {
@@ -179,8 +368,20 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
     if (locationQuery) {
       jobsParams.set('location', locationQuery);
     }
-    if (remoteOnly) {
-      jobsParams.set('work_type', 'remote');
+    if (workTypeQuery) {
+      jobsParams.set('work_type', workTypeQuery);
+    }
+    if (datePostedQuery !== 'anytime') {
+      jobsParams.set('date_posted', datePostedQuery);
+    }
+    if (salaryMinQuery) {
+      jobsParams.set('salary_min', salaryMinQuery);
+    }
+    if (salaryMaxQuery) {
+      jobsParams.set('salary_max', salaryMaxQuery);
+    }
+    if (activeFilter !== 'all') {
+      jobsParams.set('browse_type', activeFilter);
     }
 
     const response = await fetch(`${getRequestBaseUrl()}/api/jobs?${jobsParams.toString()}`, {
@@ -188,15 +389,47 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
     });
 
     if (!response.ok) {
-      error = { message: `Failed to load jobs (${response.status})` };
+      error = {
+        message:
+          preferredLocale === 'fr'
+            ? `Impossible de charger les offres (${response.status})`
+            : `Failed to load jobs (${response.status})`,
+      };
     } else {
-      const payload = await response.json();
-      jobs = Array.isArray(payload.jobs) ? (payload.jobs as Job[]) : Array.isArray(payload) ? (payload as Job[]) : [];
-      totalCount = typeof payload.total === 'number' ? payload.total : jobs.length;
+      const rawPayload = await response.json();
+      const payload =
+        !Array.isArray(rawPayload) && rawPayload && typeof rawPayload === 'object'
+          ? (rawPayload as JobsApiPayload)
+          : null;
+
+      jobs = payload && Array.isArray(payload.jobs)
+        ? payload.jobs
+        : Array.isArray(rawPayload)
+          ? (rawPayload as Job[])
+          : [];
+      totalCount = payload && typeof payload.total === 'number' ? payload.total : jobs.length;
+      counts = {
+        all: typeof payload?.counts?.all === 'number' ? payload.counts.all : jobs.length,
+        job: typeof payload?.counts?.job === 'number' ? payload.counts.job : 0,
+        internship_education:
+          typeof payload?.counts?.internship_education === 'number'
+            ? payload.counts.internship_education
+            : 0,
+        internship_professional:
+          typeof payload?.counts?.internship_professional === 'number'
+            ? payload.counts.internship_professional
+            : 0,
+        gig: typeof payload?.counts?.gig === 'number' ? payload.counts.gig : 0,
+      };
     }
   } catch (fetchError) {
     error = {
-      message: fetchError instanceof Error ? fetchError.message : 'Failed to load jobs',
+      message:
+        fetchError instanceof Error
+          ? fetchError.message
+          : preferredLocale === 'fr'
+            ? 'Impossible de charger les offres'
+            : 'Failed to load jobs',
     };
   }
 
@@ -205,17 +438,6 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   const filteredJobs = allJobs.filter((job) =>
     matchesOpportunityBrowseFilter(activeFilter, job.job_type, job.internship_track)
   );
-  const counts = {
-    all: allJobs.length,
-    job: allJobs.filter((job) => matchesOpportunityBrowseFilter('job', job.job_type, job.internship_track)).length,
-    internship_education: allJobs.filter((job) =>
-      matchesOpportunityBrowseFilter('internship_education', job.job_type, job.internship_track)
-    ).length,
-    internship_professional: allJobs.filter((job) =>
-      matchesOpportunityBrowseFilter('internship_professional', job.job_type, job.internship_track)
-    ).length,
-    gig: allJobs.filter((job) => matchesOpportunityBrowseFilter('gig', job.job_type, job.internship_track)).length,
-  };
 
   return (
     <main className="min-h-screen bg-neutral-950">
@@ -225,29 +447,29 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
             <div className="max-w-2xl">
               <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900/70 px-3 py-1 text-xs uppercase tracking-[0.22em] text-neutral-300">
                 <Rocket className="h-3.5 w-3.5" />
-                Opportunity marketplace
+                {t('jobs.marketplaceBadge')}
               </p>
-              <h1 className="text-3xl font-bold text-white sm:text-4xl">Find the right opportunity</h1>
+              <h1 className="text-3xl font-bold text-white sm:text-4xl">{t('jobs.marketplaceTitle')}</h1>
               <p className="mt-3 text-neutral-300">
-                Browse jobs, educational internships, professional internships, and gigs with clearer role targeting and intake paths.
+                {t('jobs.marketplaceSubtitle')}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:w-auto w-full">
               <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 truncate">Jobs</p>
+                <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 truncate">{t('jobs.stats.jobs')}</p>
                 <p className="mt-1 text-2xl font-semibold text-white">{counts.job}</p>
               </div>
               <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-emerald-300 truncate">Internships (Edu)</p>
+                <p className="text-[10px] uppercase tracking-[0.15em] text-emerald-300 truncate">{t('jobs.stats.internshipsEdu')}</p>
                 <p className="mt-1 text-2xl font-semibold text-white">{counts.internship_education}</p>
               </div>
               <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-sky-300 truncate">Internships (Pro)</p>
+                <p className="text-[10px] uppercase tracking-[0.15em] text-sky-300 truncate">{t('jobs.stats.internshipsPro')}</p>
                 <p className="mt-1 text-2xl font-semibold text-white">{counts.internship_professional}</p>
               </div>
               <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-amber-300 truncate">Gigs</p>
+                <p className="text-[10px] uppercase tracking-[0.15em] text-amber-300 truncate">{t('jobs.stats.gigs')}</p>
                 <p className="mt-1 text-2xl font-semibold text-white">{counts.gig}</p>
               </div>
             </div>
@@ -255,20 +477,16 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
 
           <div className="mt-8 flex flex-wrap gap-2">
             {FILTERS.map((filter) => {
-              const isActive = activeFilter === filter.key;
-              // Preserve existing search params when switching type tabs
-              const tabParams = new URLSearchParams();
-              if (filter.key !== 'all') tabParams.set('type', filter.key);
-              if (searchQuery) tabParams.set('q', searchQuery);
-              if (locationQuery) tabParams.set('location', locationQuery);
-              if (remoteOnly) tabParams.set('remote', '1');
-              if (activeLanguageFilter) tabParams.set('language', activeLanguageFilter);
-              const href = tabParams.toString() ? `/jobs?${tabParams.toString()}` : '/jobs';
-              const count = counts[filter.key];
+              const isActive = activeFilter === filter;
+              const href = buildJobsHref({
+                type: filter !== 'all' ? filter : null,
+                page: null,
+              });
+              const count = counts[filter];
 
               return (
                 <Link
-                  key={filter.key}
+                  key={filter}
                   href={href}
                   className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                     isActive
@@ -276,44 +494,11 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                       : 'border border-neutral-700 bg-neutral-900/80 text-neutral-400 hover:border-neutral-500 hover:text-white'
                   }`}
                 >
-                  <span>{filter.label}</span>
+                  <span>{getFilterLabel(filter, t)}</span>
                   <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs">{count}</span>
                 </Link>
               );
             })}
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            {LANGUAGE_FILTERS.map((filter) => {
-              const isActive =
-                filter.key === 'recommended'
-                  ? !activeLanguageFilter
-                  : activeLanguageFilter === filter.key;
-              const languageParams = new URLSearchParams();
-              if (activeFilter !== 'all') languageParams.set('type', activeFilter);
-              if (searchQuery) languageParams.set('q', searchQuery);
-              if (locationQuery) languageParams.set('location', locationQuery);
-              if (remoteOnly) languageParams.set('remote', '1');
-              if (filter.key !== 'recommended') languageParams.set('language', filter.key);
-              const href = languageParams.toString() ? `/jobs?${languageParams.toString()}` : '/jobs';
-
-              return (
-                <Link
-                  key={filter.key}
-                  href={href}
-                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-200'
-                      : 'border border-neutral-700 bg-neutral-900/80 text-neutral-400 hover:border-neutral-500 hover:text-white'
-                  }`}
-                >
-                  {filter.label}
-                </Link>
-              );
-            })}
-            <span className="text-sm text-neutral-400">
-              Prioritized for {preferredLocale === 'fr' ? 'French' : 'English'} readers.
-            </span>
           </div>
 
           <Suspense>
@@ -334,15 +519,15 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
             <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-neutral-800">
               <Briefcase className="h-10 w-10 text-neutral-600" />
             </div>
-            <h2 className="mb-3 text-2xl font-bold text-white">No matching opportunities right now</h2>
+            <h2 className="mb-3 text-2xl font-bold text-white">{t('jobs.noMatchesTitle')}</h2>
             <p className="mx-auto mb-8 max-w-md text-neutral-400">
-              Try another opportunity type or create your profile so Joblinca can alert you when matching roles are published.
+              {t('jobs.noMatchesDescription')}
             </p>
             <Link
-              href="/auth/register?role=candidate"
+              href={addLocalePrefix('/auth/register?role=candidate', preferredLocale)}
               className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-6 py-3 font-semibold text-white transition-all hover:bg-primary-700"
             >
-              Get Job Alerts
+              {t('jobs.getAlerts')}
               <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
@@ -357,12 +542,17 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                   job.internship_track,
                   job.visibility
                 );
+                const localizedOpportunityLabel = translateOpportunityLabel(opportunityLabel, t);
+                const localizedEligibleRoleSummary = translateEligibleRoleSummary(
+                  eligibleRoleSummary,
+                  t
+                );
                 const languageBadge = getLanguageBadge(job.language, preferredLocale);
 
                 return (
                   <Link
                     key={job.id}
-                    href={`/jobs/${job.id}`}
+                    href={addLocalePrefix(`/jobs/${job.id}`, preferredLocale)}
                     className="group block rounded-2xl border border-neutral-800 bg-neutral-900 p-6 transition-all hover:border-primary-600/40 hover:bg-neutral-900/90"
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start">
@@ -377,51 +567,50 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                       <div className="min-w-0 flex-1">
                         <div className="mb-3 flex flex-wrap items-center gap-2">
                           <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${badgeClasses(opportunityLabel)}`}>
-                            {opportunityLabel}
+                            {localizedOpportunityLabel}
                           </span>
                           {languageBadge && (
                             <span
                               className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${languageBadge.className}`}
-                              title={languageBadge.description}
+                              title={t(languageBadge.descriptionKey)}
                             >
                               {languageBadge.label}
                             </span>
                           )}
-                          {job.work_type === 'remote' && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400">
-                              <Globe className="h-3 w-3" />
-                              Remote
+                          {job.work_type && (
+                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getWorkTypeBadgeClasses(job.work_type)}`}>
+                              {getWorkTypeLabel(job.work_type, t)}
                             </span>
                           )}
                           {/* Origin badge: Joblinca vs External */}
                           {job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered' ? (
                             <>
                               <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-300 border border-orange-500/20">
-                                External
+                                {t('jobs.external')}
                               </span>
                               {(() => {
                                 const trust = job.source_attribution_json?.trust_score;
                                 if (trust == null) return null;
                                 if (trust >= 80) return (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400 border border-green-500/20">
-                                    High Trust
+                                    {t('jobs.highTrust')}
                                   </span>
                                 );
                                 if (trust >= 60) return (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-400 border border-yellow-500/20">
-                                    Moderate Trust
+                                    {t('jobs.moderateTrust')}
                                   </span>
                                 );
                                 return (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400 border border-red-500/20">
-                                    Low Trust
+                                    {t('jobs.lowTrust')}
                                   </span>
                                 );
                               })()}
                             </>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300 border border-blue-500/20">
-                              Joblinca
+                              {t('jobs.joblinca')}
                             </span>
                           )}
                         </div>
@@ -434,7 +623,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                         )}
 
                         <p className="mt-3 line-clamp-2 text-sm text-neutral-400">
-                          {job.description || 'No description provided yet.'}
+                          {job.description || t('jobs.noDescriptionYet')}
                         </p>
 
                         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-neutral-500">
@@ -446,20 +635,22 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                           )}
                           <div className="flex items-center gap-1.5">
                             <Briefcase className="h-4 w-4" />
-                            <span>{eligibleRoleSummary}</span>
+                            <span>{localizedEligibleRoleSummary}</span>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <Clock className="h-4 w-4" />
-                            <span>{formatDate(job.created_at)}</span>
+                            <span>{formatDate(job.created_at, preferredLocale, t)}</span>
                           </div>
                         </div>
 
-                        <p className="mt-4 text-sm font-medium text-neutral-300">{formatCompensation(job)}</p>
+                        <p className="mt-4 text-sm font-medium text-neutral-300">
+                          {formatCompensation(job, preferredLocale, t)}
+                        </p>
                       </div>
 
                       <div className="flex-shrink-0 md:text-right">
                         <span className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 font-medium text-white transition-all group-hover:bg-primary-500">
-                          View Opportunity
+                          {t('jobs.viewOpportunity')}
                           <ArrowRight className="h-4 w-4" />
                         </span>
                       </div>
@@ -475,15 +666,9 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
               if (totalPages <= 1) return null;
 
               function buildPageUrl(page: number) {
-                const params = new URLSearchParams();
-                if (query.type) params.set('type', query.type);
-                if (query.q) params.set('q', query.q);
-                if (query.location) params.set('location', query.location);
-                if (query.remote) params.set('remote', query.remote);
-                if (query.language) params.set('language', query.language);
-                if (page > 1) params.set('page', String(page));
-                const qs = params.toString();
-                return `/jobs${qs ? `?${qs}` : ''}`;
+                return buildJobsHref({
+                  page: page > 1 ? String(page) : null,
+                });
               }
 
               return (
@@ -493,18 +678,20 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                       href={buildPageUrl(currentPage - 1)}
                       className="px-4 py-2 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 text-sm"
                     >
-                      Previous
+                      {t('jobs.previous')}
                     </Link>
                   )}
                   <span className="px-3 py-2 text-sm text-neutral-400">
-                    Page {currentPage} of {totalPages}
+                    {preferredLocale === 'fr'
+                      ? `Page ${currentPage} sur ${totalPages}`
+                      : `Page ${currentPage} of ${totalPages}`}
                   </span>
                   {currentPage < totalPages && (
                     <Link
                       href={buildPageUrl(currentPage + 1)}
                       className="px-4 py-2 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 text-sm"
                     >
-                      Next
+                      {t('jobs.next')}
                     </Link>
                   )}
                 </nav>

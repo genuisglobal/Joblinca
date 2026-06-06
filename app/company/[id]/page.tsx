@@ -5,20 +5,49 @@ import { unstable_noStore as noStore } from 'next/cache';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import { getOpportunityTypeLabel } from '@/lib/opportunities';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
+import { addLocalePrefix, type Locale } from '@/lib/i18n/locale';
 import {
   ArrowRight,
   Briefcase,
   Building2,
+  CheckCircle,
   Globe,
   MapPin,
-  CheckCircle,
 } from 'lucide-react';
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
 
+function translateOpportunityLabel(
+  label: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (label) {
+    case 'Educational Internship':
+      return t('common.opportunity.internshipEducation');
+    case 'Professional Internship':
+      return t('common.opportunity.internshipProfessional');
+    case 'Internship':
+      return t('common.opportunity.internship');
+    case 'Gig':
+      return t('common.opportunity.gig');
+    default:
+      return t('common.opportunity.job');
+  }
+}
+
+function formatAmount(amount: number, locale: Locale) {
+  return new Intl.NumberFormat(locale === 'fr' ? 'fr-FR' : 'en-US', {
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
   const { id } = await params;
   const supabase = createServiceSupabaseClient();
   const { data: recruiter } = await supabase
@@ -27,10 +56,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     .eq('id', id)
     .maybeSingle();
 
-  if (!recruiter) return { title: 'Company Not Found' };
+  if (!recruiter) {
+    return { title: t('company.notFound') };
+  }
 
-  const title = `${recruiter.company_name} — Jobs on Joblinca`;
-  const description = `Browse open positions at ${recruiter.company_name} on Joblinca.`;
+  const title = t('company.metadataTitle', { name: recruiter.company_name });
+  const description = t('company.metadataBrowseDescription', {
+    name: recruiter.company_name,
+  });
 
   return {
     title,
@@ -42,6 +75,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function CompanyPage({ params }: PageProps) {
   noStore();
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
   const { id } = await params;
   const supabase = createServiceSupabaseClient();
 
@@ -55,17 +90,17 @@ export default async function CompanyPage({ params }: PageProps) {
     notFound();
   }
 
-  // Also fetch profile for avatar
   const { data: profile } = await supabase
     .from('profiles')
     .select('avatar_url, full_name')
     .eq('id', id)
     .maybeSingle();
 
-  // Fetch active jobs
   const { data: jobs } = await supabase
     .from('jobs')
-    .select('id, title, location, work_type, job_type, internship_track, salary, created_at, closes_at, lifecycle_status, visibility, published, approval_status')
+    .select(
+      'id, title, location, work_type, job_type, internship_track, salary, created_at, closes_at, lifecycle_status, visibility, published, approval_status'
+    )
     .eq('recruiter_id', id)
     .eq('published', true)
     .eq('approval_status', 'approved')
@@ -74,6 +109,17 @@ export default async function CompanyPage({ params }: PageProps) {
     .limit(50);
 
   const activeJobs = (jobs || []).filter((job) => isJobPubliclyListable(job));
+  const openPositionsLabel =
+    activeJobs.length === 1
+      ? t('company.openPositionSingular', { count: activeJobs.length })
+      : t('company.openPositionPlural', { count: activeJobs.length });
+  const memberSince = new Date(recruiter.created_at).toLocaleDateString(
+    locale === 'fr' ? 'fr-FR' : 'en-US',
+    {
+      month: 'long',
+      year: 'numeric',
+    }
+  );
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -90,7 +136,6 @@ export default async function CompanyPage({ params }: PageProps) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <main className="min-h-screen bg-neutral-950">
-        {/* Company Header */}
         <section className="border-b border-neutral-800 bg-gradient-to-b from-neutral-900 to-neutral-950">
           <div className="mx-auto max-w-5xl px-6 py-12">
             <div className="flex items-start gap-6">
@@ -111,7 +156,10 @@ export default async function CompanyPage({ params }: PageProps) {
                     {recruiter.company_name}
                   </h1>
                   {recruiter.verified && (
-                    <CheckCircle className="h-5 w-5 text-blue-400" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300">
+                      <CheckCircle className="h-3.5 w-3.5" />
+                      {t('company.verified')}
+                    </span>
                   )}
                 </div>
                 {recruiter.company_description && (
@@ -128,50 +176,44 @@ export default async function CompanyPage({ params }: PageProps) {
                       className="flex items-center gap-1.5 hover:text-blue-400 transition-colors"
                     >
                       <Globe className="h-4 w-4" />
-                      Website
+                      {t('company.website')}
                     </a>
                   )}
                   <span className="flex items-center gap-1.5">
                     <Briefcase className="h-4 w-4" />
-                    {activeJobs.length} open position{activeJobs.length !== 1 ? 's' : ''}
+                    {openPositionsLabel}
                   </span>
-                  <span>
-                    Member since{' '}
-                    {new Date(recruiter.created_at).toLocaleDateString('en-US', {
-                      month: 'long',
-                      year: 'numeric',
-                    })}
-                  </span>
+                  <span>{t('company.memberSince', { date: memberSince })}</span>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Job Listings */}
         <section className="mx-auto max-w-5xl px-6 py-10">
           <h2 className="mb-6 text-xl font-semibold text-white">
-            Open Positions
+            {t('company.openPositions')}
           </h2>
 
           {activeJobs.length === 0 ? (
             <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-12 text-center">
               <Briefcase className="mx-auto h-10 w-10 text-neutral-600" />
               <p className="mt-3 text-neutral-400">
-                No open positions at the moment.
+                {t('company.noOpenPositionsShort')}
               </p>
             </div>
           ) : (
             <div className="space-y-3">
               {activeJobs.map((job) => {
-                const opportunityLabel = getOpportunityTypeLabel(
-                  job.job_type,
-                  job.internship_track
+                const opportunityLabel = translateOpportunityLabel(
+                  getOpportunityTypeLabel(job.job_type, job.internship_track),
+                  t
                 );
+
                 return (
                   <Link
                     key={job.id}
-                    href={`/jobs/${job.id}`}
+                    href={addLocalePrefix(`/jobs/${job.id}`, locale)}
                     className="group flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 p-5 transition-all hover:border-neutral-600 hover:bg-neutral-800/60"
                   >
                     <div className="min-w-0 flex-1">
@@ -191,16 +233,11 @@ export default async function CompanyPage({ params }: PageProps) {
                         {job.work_type === 'remote' && (
                           <span className="flex items-center gap-1 text-emerald-400">
                             <Globe className="h-3.5 w-3.5" />
-                            Remote
+                            {t('common.remote')}
                           </span>
                         )}
                         {job.salary && (
-                          <span>
-                            {new Intl.NumberFormat('en-US', {
-                              maximumFractionDigits: 0,
-                            }).format(job.salary)}{' '}
-                            XAF
-                          </span>
+                          <span>{formatAmount(job.salary, locale)} XAF</span>
                         )}
                       </div>
                     </div>

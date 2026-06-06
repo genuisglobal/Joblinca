@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { Target } from 'lucide-react';
 import MultiSelectLocations from '@/components/ui/MultiSelectLocations';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface LocationInterestStepProps {
   locationInterests: string[];
@@ -13,6 +14,8 @@ export default function LocationInterestStep({
   locationInterests,
   onLocationInterestsChange,
 }: LocationInterestStepProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -25,10 +28,10 @@ export default function LocationInterestStep({
           <Target className="w-8 h-8 text-blue-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          Where do you want to work?
+          {t('onboarding.locationInterest.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          Select locations where you&apos;re interested in finding jobs
+          {t('onboarding.locationInterest.subtitle')}
         </p>
       </motion.div>
 
@@ -51,7 +54,7 @@ export default function LocationInterestStep({
         transition={{ delay: 0.3 }}
         className="text-sm text-gray-500 text-center mt-4"
       >
-        You can select multiple locations. We&apos;ll use this to show you relevant job opportunities.
+        {t('onboarding.locationInterest.hint')}
       </motion.p>
     </div>
   );

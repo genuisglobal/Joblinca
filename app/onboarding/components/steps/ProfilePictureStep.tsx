@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { Camera } from 'lucide-react';
 import AvatarUpload from '@/components/ui/AvatarUpload';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface ProfilePictureStepProps {
   avatarUrl: string | null;
@@ -15,6 +16,7 @@ export default function ProfilePictureStep({
   avatarFile,
   onFileSelect,
 }: ProfilePictureStepProps) {
+  const { t } = useTranslation();
   // Create a preview URL from the file if available
   const previewUrl = avatarFile ? URL.createObjectURL(avatarFile) : null;
 
@@ -30,10 +32,10 @@ export default function ProfilePictureStep({
           <Camera className="w-8 h-8 text-blue-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          Add a profile photo
+          {t('onboarding.profilePhoto.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          A photo helps people recognize you (optional)
+          {t('onboarding.profilePhoto.subtitle')}
         </p>
       </motion.div>
 
@@ -60,13 +62,13 @@ export default function ProfilePictureStep({
         className="bg-gray-800/50 rounded-lg p-4 mt-8"
       >
         <h3 className="text-sm font-medium text-gray-300 mb-2">
-          Tips for a great photo:
+          {t('onboarding.profilePhoto.tipsTitle')}
         </h3>
         <ul className="text-sm text-gray-500 space-y-1">
-          <li>- Use a recent, clear photo of yourself</li>
-          <li>- Make sure your face is visible</li>
-          <li>- Good lighting makes a difference</li>
-          <li>- Professional attire is recommended</li>
+          <li>- {t('onboarding.profilePhoto.tip1')}</li>
+          <li>- {t('onboarding.profilePhoto.tip2')}</li>
+          <li>- {t('onboarding.profilePhoto.tip3')}</li>
+          <li>- {t('onboarding.profilePhoto.tip4')}</li>
         </ul>
       </motion.div>
     </div>

@@ -1,0 +1,82 @@
+[
+  {
+    "file": "01-homepage-hero.png",
+    "pageType": "homepage",
+    "description": "Homepage hero with the main promise, search surface, and browse CTA.",
+    "recommendedUse": "Opening awareness creative.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to the first strong homepage section, then a homepage full capture."
+  },
+  {
+    "file": "02-homepage-how-it-works.png",
+    "pageType": "homepage",
+    "description": "How-it-works proof section that explains discovery and application flow.",
+    "recommendedUse": "Explainer or conversion creative.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to a strong homepage proof section such as features or jobs."
+  },
+  {
+    "file": "03-jobs-listing-page.png",
+    "pageType": "jobs-listing",
+    "description": "Jobs listing overview with visible opportunities.",
+    "recommendedUse": "Proof that Joblinca has active roles.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to the homepage jobs section or current jobs page full capture."
+  },
+  {
+    "file": "04-jobs-count-focus.png",
+    "pageType": "jobs-proof",
+    "description": "Focused capture of visible counts or equivalent jobs proof.",
+    "recommendedUse": "Performance frame that emphasizes available opportunities.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to the jobs header, filter counts, or another live-proof block."
+  },
+  {
+    "file": "05-single-job-card.png",
+    "pageType": "jobs-listing",
+    "description": "Complete job card with title, employer, metadata, and CTA.",
+    "recommendedUse": "Concrete job example in ad creatives.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to the best visible listing card or listing overview."
+  },
+  {
+    "file": "06-single-job-detail-page.png",
+    "pageType": "job-detail",
+    "description": "Job detail page with context and apply surface visible above the fold.",
+    "recommendedUse": "Trust-building conversion frame.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to the strongest opened job region or the best listing region."
+  },
+  {
+    "file": "07-apply-button-focus.png",
+    "pageType": "apply-cta",
+    "description": "Focused apply CTA capture with enough surrounding context.",
+    "recommendedUse": "Direct-response CTA frame.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to the apply options card, closed notice, or best visible CTA equivalent."
+  },
+  {
+    "file": "08-application-flow-step.png",
+    "pageType": "application-flow",
+    "description": "First meaningful application step, auth wall, or safe external-apply context.",
+    "recommendedUse": "Final story beat showing how the flow continues.",
+    "viewport": "desktop",
+    "fallbackBehavior": "Falls back to the safest meaningful next-step surface for the detected flow type."
+  },
+  {
+    "file": "09-mobile-homepage.png",
+    "pageType": "homepage",
+    "description": "Mobile homepage hero optimized for vertical creatives.",
+    "recommendedUse": "Stories and mobile-first awareness ads.",
+    "viewport": "mobile",
+    "fallbackBehavior": "Falls back to the first homepage section or a mobile homepage full capture."
+  },
+  {
+    "file": "10-mobile-jobs-page.png",
+    "pageType": "jobs-listing",
+    "description": "Mobile jobs listing with visible opportunity proof.",
+    "recommendedUse": "Mobile conversion creative.",
+    "viewport": "mobile",
+    "fallbackBehavior": "Falls back to the mobile jobs header, homepage jobs block, or full mobile listing capture."
+  }
+]

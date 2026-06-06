@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { buildInterviewCalendarEvent } from '@/lib/interview-scheduling/calendar';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface InterviewCalendarActionsProps {
   interviewId: string;
@@ -26,6 +27,7 @@ export default function InterviewCalendarActions({
   notes,
   compact = false,
 }: InterviewCalendarActionsProps) {
+  const { t } = useTranslation();
   const calendarEvent = useMemo(
     () =>
       buildInterviewCalendarEvent({
@@ -53,7 +55,7 @@ export default function InterviewCalendarActions({
         rel="noopener noreferrer"
         className={className}
       >
-        Google Calendar
+        {t('calendar.google')}
       </a>
       <a
         href={calendarEvent.outlookCalendarUrl}
@@ -61,10 +63,10 @@ export default function InterviewCalendarActions({
         rel="noopener noreferrer"
         className={className}
       >
-        Outlook
+        {t('calendar.outlook')}
       </a>
       <a href={`/api/interviews/${interviewId}/calendar`} className={className}>
-        Download .ics
+        {t('calendar.downloadIcs')}
       </a>
     </div>
   );

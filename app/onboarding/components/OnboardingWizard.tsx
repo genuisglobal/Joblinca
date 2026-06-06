@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import {
@@ -14,6 +13,8 @@ import {
   getStepsForRole,
 } from '@/lib/onboarding/types';
 import { validateBasicInfo } from '@/lib/onboarding/schemas';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 
 import ProgressIndicator from './ProgressIndicator';
 import StepContainer from './StepContainer';
@@ -33,9 +34,31 @@ interface OnboardingWizardProps {
   initialStatus: OnboardingStatus;
 }
 
+function getBasicInfoErrorMessage(
+  field: string,
+  message: string,
+  t: (key: string) => string
+) {
+  switch (field) {
+    case 'firstName':
+      if (message.includes('required')) return t('onboarding.validation.firstNameRequired');
+      if (message.includes('less than')) return t('onboarding.validation.firstNameTooLong');
+      return t('onboarding.validation.firstNameInvalid');
+    case 'lastName':
+      if (message.includes('required')) return t('onboarding.validation.lastNameRequired');
+      if (message.includes('less than')) return t('onboarding.validation.lastNameTooLong');
+      return t('onboarding.validation.lastNameInvalid');
+    case 'phone':
+      return t('onboarding.validation.phoneInvalid');
+    default:
+      return message;
+  }
+}
+
 export default function OnboardingWizard({ initialStatus }: OnboardingWizardProps) {
-  const router = useRouter();
+  const { t, locale } = useTranslation();
   const supabase = createClient();
+  const localizedHref = useCallback((href: string) => addLocalePrefix(href, locale), [locale]);
 
   // Navigation state
   const [currentStep, setCurrentStep] = useState(initialStatus.currentStep);
@@ -95,9 +118,9 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
         console.error(`Storage upload error for ${bucket}:`, error);
         // Show user-friendly error message
         if (error.message.includes('bucket') || error.message.includes('not found')) {
-          setErrors(prev => ({ ...prev, upload: 'Storage not configured. Please contact support.' }));
+          setErrors(prev => ({ ...prev, upload: t('onboarding.uploadNotConfigured') }));
         } else if (error.message.includes('permission') || error.message.includes('policy')) {
-          setErrors(prev => ({ ...prev, upload: 'Permission denied. Please try logging in again.' }));
+          setErrors(prev => ({ ...prev, upload: t('onboarding.uploadPermissionDenied') }));
         }
         return null;
       }
@@ -106,9 +129,10 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
       return urlData.publicUrl;
     } catch (err) {
       console.error('Upload error:', err);
+      setErrors(prev => ({ ...prev, upload: t('onboarding.uploadFailed') }));
       return null;
     }
-  }, [supabase]);
+  }, [supabase, t]);
 
   // Save current step data
   const saveStep = useCallback(async () => {
@@ -213,7 +237,7 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
 
         if (profileError) {
           console.error('Profile update error:', profileError);
-          setErrors(prev => ({ ...prev, save: 'Failed to save. Please try again.' }));
+          setErrors(prev => ({ ...prev, save: t('onboarding.saveFailed') }));
           return false;
         }
 
@@ -283,6 +307,7 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
     supabase,
     uploadFile,
     role,
+    t,
   ]);
 
   // Validate current step
@@ -295,16 +320,16 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
       if (!result.success) {
         result.error.errors.forEach((err) => {
           const field = err.path[0] as string;
-          newErrors[field] = err.message;
+          newErrors[field] = getBasicInfoErrorMessage(field, err.message, t);
         });
       }
     } else if (stepId === 'recruiter-type' && role === 'recruiter' && !recruiterType) {
-      newErrors.recruiterType = 'Please select a recruiter type';
+      newErrors.recruiterType = t('onboarding.validation.recruiterTypeRequired');
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [currentStepConfig, firstName, lastName, phone, recruiterType, role]);
+  }, [currentStepConfig, firstName, lastName, phone, recruiterType, role, t]);
 
   // Navigate to next step
   const goNext = useCallback(async () => {
@@ -347,7 +372,7 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
 
       if (authError || !user) {
         console.error('Auth error on skip:', authError);
-        window.location.href = '/auth/login?redirect=/onboarding';
+        window.location.href = `${localizedHref('/auth/login')}?redirect=${encodeURIComponent(localizedHref('/onboarding'))}`;
         return;
       }
 
@@ -362,18 +387,18 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
 
       if (updateError) {
         console.error('Skip update error:', updateError);
-        setErrors(prev => ({ ...prev, skip: 'Failed to skip onboarding. Please try again.' }));
+        setErrors(prev => ({ ...prev, skip: t('onboarding.skipFailed') }));
         setIsLoading(false);
         return;
       }
 
       // Redirect to dashboard
-      window.location.href = '/dashboard';
+      window.location.href = localizedHref('/dashboard');
     } catch (err) {
       console.error('Skip error:', err);
       setIsLoading(false);
     }
-  }, [supabase]);
+  }, [localizedHref, supabase, t]);
 
   // Complete onboarding - use client-side Supabase directly to avoid server auth issues
   const completeOnboarding = useCallback(async () => {
@@ -384,7 +409,7 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
 
       if (authError || !user) {
         console.error('Auth error on complete:', authError);
-        window.location.href = '/auth/login?redirect=/onboarding';
+        window.location.href = `${localizedHref('/auth/login')}?redirect=${encodeURIComponent(localizedHref('/onboarding'))}`;
         return;
       }
 
@@ -400,18 +425,18 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
 
       if (updateError) {
         console.error('Complete update error:', updateError);
-        setErrors(prev => ({ ...prev, complete: 'Failed to complete onboarding. Please try again.' }));
+        setErrors(prev => ({ ...prev, complete: t('onboarding.completeFailed') }));
         setIsLoading(false);
         return;
       }
 
       // Redirect to dashboard
-      window.location.href = '/dashboard';
+      window.location.href = localizedHref('/dashboard');
     } catch (err) {
       console.error('Complete error:', err);
       setIsLoading(false);
     }
-  }, [supabase]);
+  }, [localizedHref, supabase, t]);
 
   // Render current step component
   const renderStep = () => {
@@ -547,11 +572,11 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
             {isLoading ? (
               <>
                 <span className="animate-spin rounded-full h-4 w-4 border-2 border-gray-400 border-t-transparent" />
-                Skipping...
+                {t('onboarding.header.skipping')}
               </>
             ) : (
               <>
-                Skip for now
+                {t('onboarding.header.skipForNow')}
                 <X className="w-4 h-4" />
               </>
             )}
@@ -569,6 +594,11 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
       {/* Main content */}
       <main className="flex-1 flex items-center justify-center px-6 py-8">
         <div className="w-full max-w-lg">
+          {(errors.upload || errors.save || errors.skip || errors.complete) && (
+            <div className="mb-4 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+              {errors.upload || errors.save || errors.skip || errors.complete}
+            </div>
+          )}
           <StepContainer stepKey={currentStepConfig?.id || ''} direction={direction}>
             {renderStep()}
           </StepContainer>
@@ -591,7 +621,7 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
               `}
             >
               <ChevronLeft className="w-5 h-5" />
-              Back
+              {t('onboarding.navigation.back')}
             </button>
 
             {/* Next button */}
@@ -610,11 +640,11 @@ export default function OnboardingWizard({ initialStatus }: OnboardingWizardProp
               {isSaving ? (
                 <>
                   <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  Saving...
+                  {t('onboarding.navigation.saving')}
                 </>
               ) : (
                 <>
-                  Continue
+                  {t('onboarding.navigation.continue')}
                   <ChevronRight className="w-5 h-5" />
                 </>
               )}

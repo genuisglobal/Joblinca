@@ -1,12 +1,18 @@
+import type { Metadata } from 'next';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
-import { Metadata } from 'next';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
 import SalaryInsightsClient from './SalaryInsightsClient';
 
-export const metadata: Metadata = {
-  title: 'Salary Insights — Cameroon Job Market',
-  description:
-    'Explore salary ranges across industries and cities in Cameroon. Transparent salary data from real job postings on Joblinca.',
-};
+export function generateMetadata(): Metadata {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+
+  return {
+    title: t('salary.metadataTitle'),
+    description: t('salary.metadataDescription'),
+  };
+}
 
 interface SalaryStats {
   count: number;
@@ -21,7 +27,6 @@ interface SalaryStats {
 export default async function SalaryInsightsPage() {
   const supabase = createServerSupabaseClient();
 
-  // Fetch published jobs with salary
   const { data: jobs } = await supabase
     .from('jobs')
     .select('title, location, salary, work_type')
@@ -32,8 +37,6 @@ export default async function SalaryInsightsPage() {
     .limit(1000);
 
   const allJobs = jobs || [];
-
-  // Categorize
   const categories = new Map<string, number[]>();
   const locations = new Map<string, number[]>();
 
@@ -92,36 +95,37 @@ function computeStats(salaries: number[]): SalaryStats {
 }
 
 function categorizeJob(title: string): string {
-  const t = title.toLowerCase();
-  if (/engineer|developer|programm|software|fullstack|full.stack|backend|frontend/.test(t))
-    return 'Software Engineering';
-  if (/design|ui|ux|graphic/.test(t)) return 'Design';
-  if (/market|seo|content|social media|digital/.test(t)) return 'Marketing';
-  if (/sales|business dev|account exec/.test(t)) return 'Sales';
-  if (/data|analyst|analytics|machine learn|ai|ml/.test(t)) return 'Data & Analytics';
-  if (/product|project|scrum|agile/.test(t)) return 'Product & Project Management';
-  if (/finance|account|audit|tax/.test(t)) return 'Finance & Accounting';
-  if (/admin|assistant|secretary|office/.test(t)) return 'Administration';
-  if (/hr|human resource|recruit|talent/.test(t)) return 'Human Resources';
-  if (/customer|support|service/.test(t)) return 'Customer Support';
-  if (/teach|tutor|education|instruct/.test(t)) return 'Education';
-  if (/health|medical|nurs|doctor|pharm/.test(t)) return 'Healthcare';
-  return 'Other';
+  const value = title.toLowerCase();
+  if (/engineer|developer|programm|software|fullstack|full.stack|backend|frontend/.test(value)) {
+    return 'software_engineering';
+  }
+  if (/design|ui|ux|graphic/.test(value)) return 'design';
+  if (/market|seo|content|social media|digital/.test(value)) return 'marketing';
+  if (/sales|business dev|account exec/.test(value)) return 'sales';
+  if (/data|analyst|analytics|machine learn|ai|ml/.test(value)) return 'data_analytics';
+  if (/product|project|scrum|agile/.test(value)) return 'product_project';
+  if (/finance|account|audit|tax/.test(value)) return 'finance_accounting';
+  if (/admin|assistant|secretary|office/.test(value)) return 'administration';
+  if (/hr|human resource|recruit|talent/.test(value)) return 'human_resources';
+  if (/customer|support|service/.test(value)) return 'customer_support';
+  if (/teach|tutor|education|instruct/.test(value)) return 'education';
+  if (/health|medical|nurs|doctor|pharm/.test(value)) return 'healthcare';
+  return 'other';
 }
 
 function normalizeLocation(location: string | null): string | null {
   if (!location) return null;
-  const l = location.toLowerCase().trim();
-  if (/douala/.test(l)) return 'Douala';
-  if (/yaound/.test(l)) return 'Yaoundé';
-  if (/bamenda/.test(l)) return 'Bamenda';
-  if (/buea/.test(l)) return 'Buea';
-  if (/limb/.test(l)) return 'Limbé';
-  if (/bafoussam/.test(l)) return 'Bafoussam';
-  if (/garoua/.test(l)) return 'Garoua';
-  if (/maroua/.test(l)) return 'Maroua';
-  if (/kribi/.test(l)) return 'Kribi';
-  if (/bertoua/.test(l)) return 'Bertoua';
-  if (/remote/.test(l)) return 'Remote';
+  const value = location.toLowerCase().trim();
+  if (/douala/.test(value)) return 'Douala';
+  if (/yaound/.test(value)) return 'Yaounde';
+  if (/bamenda/.test(value)) return 'Bamenda';
+  if (/buea/.test(value)) return 'Buea';
+  if (/limb/.test(value)) return 'Limbe';
+  if (/bafoussam/.test(value)) return 'Bafoussam';
+  if (/garoua/.test(value)) return 'Garoua';
+  if (/maroua/.test(value)) return 'Maroua';
+  if (/kribi/.test(value)) return 'Kribi';
+  if (/bertoua/.test(value)) return 'Bertoua';
+  if (/remote/.test(value)) return 'Remote';
   return location.split(',')[0].trim();
 }

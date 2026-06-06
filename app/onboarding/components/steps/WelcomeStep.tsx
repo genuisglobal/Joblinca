@@ -3,34 +3,50 @@
 import { motion } from 'framer-motion';
 import { Briefcase, GraduationCap, Building2, ArrowRight, Sparkles } from 'lucide-react';
 import { Role } from '@/lib/onboarding/types';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface WelcomeStepProps {
   role: Role;
   onNext: () => void;
 }
 
-const roleConfig = {
-  job_seeker: {
-    icon: Briefcase,
-    title: 'Welcome, Job Seeker!',
-    description: "Let's set up your profile to help you land your dream job in Cameroon.",
-    color: 'blue',
-  },
-  talent: {
-    icon: GraduationCap,
-    title: 'Welcome, Talent!',
-    description: "Let's build your profile to showcase your skills and connect with opportunities.",
-    color: 'purple',
-  },
-  recruiter: {
-    icon: Building2,
-    title: 'Welcome, Recruiter!',
-    description: "Let's set up your profile to start finding the best candidates.",
-    color: 'yellow',
-  },
-};
-
 export default function WelcomeStep({ role, onNext }: WelcomeStepProps) {
+  const { t } = useTranslation();
+  const roleConfig = {
+    job_seeker: {
+      icon: Briefcase,
+      title: t('onboarding.welcome.jobSeekerTitle'),
+      description: t('onboarding.welcome.jobSeekerDescription'),
+      color: 'blue',
+      features: [
+        t('onboarding.welcome.jobSeekerFeature1'),
+        t('onboarding.welcome.jobSeekerFeature2'),
+        t('onboarding.welcome.jobSeekerFeature3'),
+      ],
+    },
+    talent: {
+      icon: GraduationCap,
+      title: t('onboarding.welcome.talentTitle'),
+      description: t('onboarding.welcome.talentDescription'),
+      color: 'purple',
+      features: [
+        t('onboarding.welcome.talentFeature1'),
+        t('onboarding.welcome.talentFeature2'),
+        t('onboarding.welcome.talentFeature3'),
+      ],
+    },
+    recruiter: {
+      icon: Building2,
+      title: t('onboarding.welcome.recruiterTitle'),
+      description: t('onboarding.welcome.recruiterDescription'),
+      color: 'yellow',
+      features: [
+        t('onboarding.welcome.recruiterFeature1'),
+        t('onboarding.welcome.recruiterFeature2'),
+        t('onboarding.welcome.recruiterFeature3'),
+      ],
+    },
+  } as const;
   const config = roleConfig[role] || roleConfig.job_seeker;
   const Icon = config.icon;
 
@@ -94,27 +110,9 @@ export default function WelcomeStep({ role, onNext }: WelcomeStepProps) {
         transition={{ delay: 0.5 }}
         className="flex flex-col gap-3 mb-8 text-left"
       >
-        {role === 'job_seeker' && (
-          <>
-            <Feature text="Upload your resume for quick applications" />
-            <Feature text="Set your preferred work locations" />
-            <Feature text="Get matched with relevant opportunities" />
-          </>
-        )}
-        {role === 'talent' && (
-          <>
-            <Feature text="Showcase your skills with ratings" />
-            <Feature text="Add your education background" />
-            <Feature text="Connect with internships and projects" />
-          </>
-        )}
-        {role === 'recruiter' && (
-          <>
-            <Feature text="Set up your company profile" />
-            <Feature text="Post jobs and reach candidates" />
-            <Feature text="Use AI to screen applicants" />
-          </>
-        )}
+        {config.features.map((feature) => (
+          <Feature key={feature} text={feature} />
+        ))}
       </motion.div>
 
       {/* CTA Button */}
@@ -137,7 +135,7 @@ export default function WelcomeStep({ role, onNext }: WelcomeStepProps) {
           }
         `}
       >
-        Let&apos;s Get Started
+        {t('onboarding.welcome.cta')}
         <ArrowRight className="w-5 h-5" />
       </motion.button>
 
@@ -148,7 +146,7 @@ export default function WelcomeStep({ role, onNext }: WelcomeStepProps) {
         transition={{ delay: 0.7 }}
         className="mt-4 text-sm text-gray-500"
       >
-        Takes about 2-3 minutes
+        {t('onboarding.welcome.timeEstimate')}
       </motion.p>
     </motion.div>
   );

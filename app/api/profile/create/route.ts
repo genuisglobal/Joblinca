@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { completeLeadFromInviteToken } from "@/lib/field-registration/service";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { sendSignupWelcomeFromAgent } from "@/lib/whatsapp-agent/signup-welcome";
 import { claimRegistrationAttribution } from "@/lib/registration-officers";
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
       recruiterType,
       referralCode,
       registrationOfficerCode,
+      registrationInviteToken,
     } = body as {
       userId?: string;
       role?: IncomingRole;
@@ -81,6 +83,7 @@ export async function POST(request: Request) {
       recruiterType?: string;
       referralCode?: string;
       registrationOfficerCode?: string;
+      registrationInviteToken?: string;
     };
 
     if (!userId || !role) {
@@ -90,6 +93,7 @@ export async function POST(request: Request) {
     const dbRole = mapRoleToDb(role);
 
     const supabase = createServiceSupabaseClient();
+    const warnings: string[] = [];
     const { data: existingProfile, error: existingProfileError } = await supabase
       .from("profiles")
       .select("id")
@@ -234,23 +238,44 @@ export async function POST(request: Request) {
 
       // If recruiter_profiles doesn't exist yet, don't block account creation
       if (recruiterProfilesError) {
-        // If you prefer strict behavior, change this to return 500.
-        // For now we allow signup to succeed as long as recruiters row exists.
-        return NextResponse.json({
-          success: true,
-          warning: `recruiter_profiles upsert failed (non-blocking): ${recruiterProfilesError.message}`,
+        warnings.push(
+          `recruiter_profiles upsert failed (non-blocking): ${recruiterProfilesError.message}`
+        );
+      }
+    }
+
+    let officerCodeToClaim = registrationOfficerCode || null;
+    if (registrationInviteToken) {
+      try {
+        const completedLead = await completeLeadFromInviteToken(supabase, {
+          rawToken: registrationInviteToken,
+          completedUserId: userId,
         });
+
+        if (completedLead?.officer_code_snapshot) {
+          officerCodeToClaim = completedLead.officer_code_snapshot;
+        } else {
+          warnings.push('Registration invite token was invalid or already claimed.');
+        }
+      } catch (leadCompletionError) {
+        warnings.push(
+          `registration lead completion failed (non-blocking): ${
+            leadCompletionError instanceof Error
+              ? leadCompletionError.message
+              : 'unknown_error'
+          }`
+        );
       }
     }
 
     if (
-      registrationOfficerCode &&
+      officerCodeToClaim &&
       !["field_agent", "admin", "staff", "vetting_officer", "verification_officer"].includes(role)
     ) {
       try {
         await claimRegistrationAttribution(supabase, {
           userId,
-          officerCode: registrationOfficerCode,
+          officerCode: officerCodeToClaim,
           source: "prefilled_link",
           confirmedByUser: true,
           actorUserId: userId,
@@ -259,6 +284,11 @@ export async function POST(request: Request) {
         console.error(
           "registration officer attribution failed (non-blocking):",
           attributionError instanceof Error ? attributionError.message : attributionError
+        );
+        warnings.push(
+          `registration officer attribution failed (non-blocking): ${
+            attributionError instanceof Error ? attributionError.message : 'unknown_error'
+          }`
         );
       }
     }
@@ -275,10 +305,19 @@ export async function POST(request: Request) {
           "signup WhatsApp welcome failed (non-blocking):",
           welcomeError instanceof Error ? welcomeError.message : welcomeError
         );
+        warnings.push(
+          `signup WhatsApp welcome failed (non-blocking): ${
+            welcomeError instanceof Error ? welcomeError.message : 'unknown_error'
+          }`
+        );
       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json(
+      warnings.length > 0
+        ? { success: true, warning: warnings.join(" | ") }
+        : { success: true }
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 500 });

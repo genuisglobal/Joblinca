@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
 import type { HiringPipelineStage } from '@/lib/hiring-pipeline/types';
 import { validatePipelineStageOrder } from '@/lib/hiring-pipeline/validation';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface PipelineEditorProps {
   pipelineName: string;
@@ -34,6 +35,7 @@ export default function PipelineEditor({
   saving = false,
   onSave,
 }: PipelineEditorProps) {
+  const { t } = useTranslation();
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState(pipelineName);
   const [stageDrafts, setStageDrafts] = useState<EditableStage[]>([]);
@@ -81,7 +83,7 @@ export default function PipelineEditor({
   const handleSave = async () => {
     const normalizedStages = stageDrafts.map((stage) => ({
       id: stage.id,
-      label: stage.label.trim() || 'Untitled stage',
+      label: stage.label.trim() || t('pipelineEditor.untitledStage'),
       stageType: stage.stageType,
       isTerminal: stage.stageType === 'hire' || stage.stageType === 'rejected',
       orderIndex: stage.orderIndex,
@@ -91,7 +93,7 @@ export default function PipelineEditor({
     if (!validation.valid) {
       setStatus({
         type: 'error',
-        message: validation.message || 'Invalid pipeline stage ordering.',
+        message: validation.message || t('pipelineEditor.invalidOrder'),
       });
       return;
     }
@@ -101,20 +103,21 @@ export default function PipelineEditor({
         name: nameDraft.trim() || pipelineName,
         stages: stageDrafts.map((stage) => ({
           id: stage.id,
-          label: stage.label.trim() || 'Untitled stage',
+          label: stage.label.trim() || t('pipelineEditor.untitledStage'),
           orderIndex: stage.orderIndex,
           allowsFeedback: stage.allowsFeedback,
         })),
       });
       setStatus({
         type: 'success',
-        message: 'Hiring pipeline saved.',
+        message: t('pipelineEditor.saved'),
       });
       setEditing(false);
     } catch (error) {
       setStatus({
         type: 'error',
-        message: error instanceof Error ? error.message : 'Failed to save hiring pipeline.',
+        message:
+          error instanceof Error ? error.message : t('pipelineEditor.saveFailed'),
       });
     }
   };
@@ -154,7 +157,7 @@ export default function PipelineEditor({
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-              Pipeline Name
+              {t('pipelineEditor.pipelineName')}
             </p>
             <h3 className="mt-1 text-lg font-semibold text-white">{pipelineName}</h3>
           </div>
@@ -162,7 +165,7 @@ export default function PipelineEditor({
             onClick={() => setEditing(true)}
             className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
-            Edit Pipeline
+            {t('pipelineEditor.edit')}
           </button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -175,7 +178,7 @@ export default function PipelineEditor({
                 className="rounded-xl border border-gray-700 bg-gray-900/30 px-3 py-2"
               >
                 <p className="text-[11px] uppercase tracking-[0.2em] text-gray-500">
-                  Step {stage.orderIndex}
+                  {t('pipelineEditor.step', { order: stage.orderIndex })}
                 </p>
                 <div className="mt-1">
                   <StageBadge label={stage.label} stageType={stage.stageType} />
@@ -202,7 +205,7 @@ export default function PipelineEditor({
       )}
       <div>
         <label className="mb-2 block text-sm font-medium text-gray-400">
-          Pipeline Name
+          {t('pipelineEditor.pipelineName')}
         </label>
         <input
           type="text"
@@ -221,7 +224,7 @@ export default function PipelineEditor({
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-[220px] flex-1">
                 <label className="mb-2 block text-xs uppercase tracking-[0.2em] text-gray-500">
-                  Stage {stage.orderIndex}
+                  {t('pipelineEditor.stage', { order: stage.orderIndex })}
                 </label>
                 <input
                   type="text"
@@ -257,21 +260,21 @@ export default function PipelineEditor({
                     }
                     className="h-4 w-4 rounded border-gray-600 bg-gray-700 text-blue-600 focus:ring-blue-500"
                   />
-                  Feedback
+                  {t('pipelineEditor.feedback')}
                 </label>
                 <button
                   onClick={() => moveStage(index, -1)}
                   disabled={index === 0}
                   className="rounded-lg bg-gray-700 px-3 py-2 text-sm text-gray-100 hover:bg-gray-600 disabled:opacity-40"
                 >
-                  Up
+                  {t('pipelineEditor.up')}
                 </button>
                 <button
                   onClick={() => moveStage(index, 1)}
                   disabled={index === stageDrafts.length - 1}
                   className="rounded-lg bg-gray-700 px-3 py-2 text-sm text-gray-100 hover:bg-gray-600 disabled:opacity-40"
                 >
-                  Down
+                  {t('pipelineEditor.down')}
                 </button>
               </div>
             </div>
@@ -285,14 +288,14 @@ export default function PipelineEditor({
           disabled={saving}
           className="rounded-lg bg-gray-700 px-4 py-2 text-gray-100 hover:bg-gray-600 disabled:opacity-50"
         >
-          Cancel
+          {t('common.cancel')}
         </button>
         <button
           onClick={handleSave}
           disabled={saving}
           className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save Pipeline'}
+          {saving ? t('pipelineEditor.saving') : t('pipelineEditor.save')}
         </button>
       </div>
     </div>

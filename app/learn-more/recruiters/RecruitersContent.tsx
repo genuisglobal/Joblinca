@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { Users, Filter, Smartphone } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 
 export default function RecruitersContent() {
-  const { t } = useTranslation();
+  const { locale, t } = useTranslation();
 
   return (
     <main className="bg-gray-900 text-gray-100">
@@ -21,13 +22,13 @@ export default function RecruitersContent() {
         </p>
         <div className="mt-8 flex justify-center gap-4 flex-wrap">
           <Link
-            href="/recruiter/post-job"
+            href={addLocalePrefix('/recruiter/post-job', locale)}
             className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors"
           >
             {t('learnRecruiters.hero.cta1')}
           </Link>
           <Link
-            href="/jobs"
+            href={addLocalePrefix('/jobs', locale)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md transition-colors"
           >
             {t('learnRecruiters.hero.cta2')}
@@ -92,13 +93,13 @@ export default function RecruitersContent() {
           <p className="mb-8 text-sm text-gray-300">{t('learnRecruiters.cta.subtitle')}</p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link
-              href="/recruiter/post-job"
+              href={addLocalePrefix('/recruiter/post-job', locale)}
               className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors"
             >
               {t('learnRecruiters.hero.cta1')}
             </Link>
             <Link
-              href="/jobs"
+              href={addLocalePrefix('/jobs', locale)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md transition-colors"
             >
               {t('learnRecruiters.hero.cta2')}

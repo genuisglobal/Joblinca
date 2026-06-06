@@ -89,6 +89,59 @@ export async function sendWhatsappQuickReplies(opts: {
 
 // ─── Common templates ─────────────────────────────────────────────────────────
 
+export async function sendFieldRegistrationInviteWhatsapp(opts: {
+  to: string;
+  fullName: string;
+  roleLabel: string;
+  completionUrl: string;
+  userId?: string | null;
+}): Promise<'template' | 'text'> {
+  const templateName =
+    process.env.WA_FIELD_REGISTRATION_TEMPLATE || 'field_registration_complete_v1';
+  const languageCode =
+    process.env.WA_FIELD_REGISTRATION_TEMPLATE_LANG || 'en';
+  const components: WATemplateComponent[] = [
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: opts.fullName || 'there' },
+        { type: 'text', text: opts.roleLabel || 'account' },
+        { type: 'text', text: opts.completionUrl },
+      ],
+    },
+  ];
+
+  try {
+    await sendWhatsappTemplate(
+      opts.to,
+      templateName,
+      languageCode,
+      components,
+      opts.userId
+    );
+    return 'template';
+  } catch (templateError) {
+    const fallback = [
+      `JobLinca registration follow-up for ${opts.fullName || 'you'}.`,
+      `Role: ${opts.roleLabel}`,
+      `Complete your registration here: ${opts.completionUrl}`,
+    ].join('\n');
+
+    try {
+      await sendWhatsappMessage(opts.to, fallback, opts.userId);
+      return 'text';
+    } catch (fallbackError) {
+      const templateMsg =
+        templateError instanceof Error ? templateError.message : 'unknown_template_error';
+      const fallbackMsg =
+        fallbackError instanceof Error ? fallbackError.message : 'unknown_fallback_error';
+      throw new Error(
+        `Field registration invite send failed. template=${templateMsg}; fallback=${fallbackMsg}`
+      );
+    }
+  }
+}
+
 /**
  * Notify a job seeker that a new job matching their profile has been found.
  * Requires a Meta-approved template named `job_alert_v1`.

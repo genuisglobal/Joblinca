@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { CAMEROON_PHONE_CODE } from '@/lib/onboarding/constants';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface PhoneInputProps {
   value: string;
@@ -16,6 +17,7 @@ export default function PhoneInput({
   error,
   disabled = false,
 }: PhoneInputProps) {
+  const { t } = useTranslation();
   const [displayValue, setDisplayValue] = useState('');
 
   // Format the display value with spaces: XXX XXX XXX
@@ -45,7 +47,7 @@ export default function PhoneInput({
           value={displayValue}
           onChange={handleChange}
           disabled={disabled}
-          placeholder="6XX XXX XXX"
+          placeholder={t('onboarding.basicInfo.phonePlaceholder')}
           className={`
             flex-1 px-4 py-3 bg-gray-800 text-gray-100
             border border-gray-600 rounded-r-lg
@@ -60,7 +62,7 @@ export default function PhoneInput({
         <p className="mt-1 text-sm text-red-400">{error}</p>
       )}
       <p className="mt-1 text-xs text-gray-500">
-        Enter your 9-digit phone number without the country code
+        {t('onboarding.basicInfo.phoneHint')}
       </p>
     </div>
   );

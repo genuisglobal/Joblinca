@@ -3,18 +3,20 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix, stripLocalePrefix } from '@/lib/i18n/locale';
 
 type Role = 'recruiter' | 'job_seeker' | 'talent' | 'field_agent';
 
 interface NavItem {
-  label: string;
+  labelKey: string;
   href: string;
   icon: React.ReactNode;
 }
 
 const recruiterNav: NavItem[] = [
   {
-    label: 'Overview',
+    labelKey: 'dashboardNav.overview',
     href: '/dashboard/recruiter',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -23,7 +25,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'Applications',
+    labelKey: 'dashboardNav.applications',
     href: '/dashboard/recruiter/applications',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -32,7 +34,21 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'Messages',
+    labelKey: 'dashboardNav.candidateSearch',
+    href: '/dashboard/recruiter/candidates',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+          d="M17 20h5V4H2v16h5m10 0v-2a4 4 0 00-4-4H11a4 4 0 00-4 4v2m10 0H7m8-12a3 3 0 11-6 0 3 3 0 016 0z"
+        />
+      </svg>
+    ),
+  },
+  {
+    labelKey: 'dashboardNav.messages',
     href: '/dashboard/recruiter/messages',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,7 +57,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'WhatsApp Screening',
+    labelKey: 'dashboardNav.whatsAppScreening',
     href: '/dashboard/recruiter/whatsapp-applications',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,7 +66,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'My Jobs',
+    labelKey: 'dashboardNav.myJobs',
     href: '/dashboard/recruiter/jobs',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -59,7 +75,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'Post New Job',
+    labelKey: 'dashboardNav.postNewJob',
     href: '/jobs/new',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -68,7 +84,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'Billing',
+    labelKey: 'dashboardNav.billing',
     href: '/dashboard/subscription',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -77,7 +93,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'Verification',
+    labelKey: 'dashboardNav.verification',
     href: '/dashboard/recruiter/verification',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -86,7 +102,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'API Keys',
+    labelKey: 'dashboardNav.apiKeys',
     href: '/dashboard/recruiter/api-keys',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -95,7 +111,7 @@ const recruiterNav: NavItem[] = [
     ),
   },
   {
-    label: 'Profile',
+    labelKey: 'dashboardNav.profile',
     href: '/dashboard/recruiter/profile',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -107,7 +123,7 @@ const recruiterNav: NavItem[] = [
 
 const jobSeekerNav: NavItem[] = [
   {
-    label: 'Overview',
+    labelKey: 'dashboardNav.overview',
     href: '/dashboard/job-seeker',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -116,7 +132,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Browse Jobs',
+    labelKey: 'dashboardNav.browseJobs',
     href: '/dashboard/job-seeker/browse',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -125,7 +141,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'My Applications',
+    labelKey: 'dashboardNav.myApplications',
     href: '/dashboard/job-seeker/applications',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,7 +150,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Interview Prep',
+    labelKey: 'dashboardNav.interviewPrep',
     href: '/dashboard/job-seeker/interview-prep',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -148,7 +164,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Messages',
+    labelKey: 'dashboardNav.messages',
     href: '/dashboard/job-seeker/messages',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -157,7 +173,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Skill Up',
+    labelKey: 'dashboardNav.skillUp',
     href: '/dashboard/skillup',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -166,7 +182,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Challenges',
+    labelKey: 'dashboardNav.challenges',
     href: '/dashboard/talent/challenges',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -180,7 +196,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Leaderboard',
+    labelKey: 'dashboardNav.leaderboard',
     href: '/dashboard/talent/leaderboard',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -194,7 +210,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Billing',
+    labelKey: 'dashboardNav.billing',
     href: '/dashboard/subscription',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -203,7 +219,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Saved Jobs',
+    labelKey: 'dashboardNav.savedJobs',
     href: '/dashboard/job-seeker/saved-jobs',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,7 +228,7 @@ const jobSeekerNav: NavItem[] = [
     ),
   },
   {
-    label: 'Profile',
+    labelKey: 'dashboardNav.profile',
     href: '/dashboard/job-seeker/profile',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -224,7 +240,7 @@ const jobSeekerNav: NavItem[] = [
 
 const talentNav: NavItem[] = [
   {
-    label: 'Overview',
+    labelKey: 'dashboardNav.overview',
     href: '/dashboard/talent',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,7 +249,7 @@ const talentNav: NavItem[] = [
     ),
   },
   {
-    label: 'My Projects',
+    labelKey: 'dashboardNav.myProjects',
     href: '/dashboard/talent/projects',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -242,7 +258,7 @@ const talentNav: NavItem[] = [
     ),
   },
   {
-    label: 'Add Project',
+    labelKey: 'dashboardNav.addProject',
     href: '/dashboard/talent/projects/new',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -251,7 +267,7 @@ const talentNav: NavItem[] = [
     ),
   },
   {
-    label: 'Skill Up',
+    labelKey: 'dashboardNav.skillUp',
     href: '/dashboard/skillup',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -260,7 +276,7 @@ const talentNav: NavItem[] = [
     ),
   },
   {
-    label: 'Billing',
+    labelKey: 'dashboardNav.billing',
     href: '/dashboard/subscription',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -269,7 +285,7 @@ const talentNav: NavItem[] = [
     ),
   },
   {
-    label: 'Achievements',
+    labelKey: 'dashboardNav.achievements',
     href: '/dashboard/talent/achievements',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -278,7 +294,7 @@ const talentNav: NavItem[] = [
     ),
   },
   {
-    label: 'Profile',
+    labelKey: 'dashboardNav.profile',
     href: '/dashboard/talent/profile',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -290,7 +306,7 @@ const talentNav: NavItem[] = [
 
 const fieldAgentNav: NavItem[] = [
   {
-    label: 'Overview',
+    labelKey: 'dashboardNav.overview',
     href: '/dashboard/field-agent',
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -305,8 +321,10 @@ interface DashboardSidebarProps {
 }
 
 export default function DashboardSidebar({ role }: DashboardSidebarProps) {
+  const { t, locale } = useTranslation();
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const normalizedPathname = stripLocalePrefix(pathname || '/');
 
   const navItems =
     role === 'recruiter'
@@ -323,6 +341,7 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-gray-800 rounded-lg text-white"
+        aria-label={isOpen ? t('nav.closeMenu') : t('nav.openMenu')}
       >
         <svg
           className="w-6 h-6"
@@ -365,7 +384,7 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
         <div className="h-full flex flex-col">
           {/* Logo */}
           <div className="p-6 border-b border-gray-700">
-            <Link href="/" className="flex items-center gap-2">
+            <Link href={addLocalePrefix('/', locale)} className="flex items-center gap-2">
               <span className="text-2xl font-bold text-blue-500">Joblinca</span>
             </Link>
           </div>
@@ -373,11 +392,15 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
             {navItems.map((item) => {
-              const isActive = pathname === item.href;
+              const localizedHref = addLocalePrefix(item.href, locale);
+              const allowPrefixMatch = item.href.split('/').filter(Boolean).length > 2;
+              const isActive =
+                normalizedPathname === item.href ||
+                (allowPrefixMatch && normalizedPathname.startsWith(`${item.href}/`));
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={localizedHref}
                   onClick={() => setIsOpen(false)}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                     isActive
@@ -386,7 +409,7 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
                   }`}
                 >
                   {item.icon}
-                  <span>{item.label}</span>
+                  <span>{t(item.labelKey)}</span>
                 </Link>
               );
             })}
@@ -395,7 +418,7 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
           {/* Footer */}
           <div className="p-4 border-t border-gray-700">
             <Link
-              href="/auth/logout"
+              href={addLocalePrefix('/auth/logout', locale)}
               prefetch={false}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
             >
@@ -412,7 +435,7 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
                   d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
                 />
               </svg>
-              <span>Logout</span>
+              <span>{t('nav.logout')}</span>
             </Link>
           </div>
         </div>

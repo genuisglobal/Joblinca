@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { JobInterviewAutomationSettings } from '@/lib/interview-scheduling/automation';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface InterviewAutomationEditorProps {
   settings: JobInterviewAutomationSettings;
@@ -14,6 +15,7 @@ export default function InterviewAutomationEditor({
   saving = false,
   onSave,
 }: InterviewAutomationEditorProps) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState<JobInterviewAutomationSettings>(settings);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
@@ -27,14 +29,14 @@ export default function InterviewAutomationEditor({
     setMessage(null);
     try {
       await onSave(draft);
-      setMessage({ type: 'success', text: 'Interview automation settings saved.' });
+      setMessage({ type: 'success', text: t('interviewAutomation.saved') });
     } catch (error) {
       setMessage({
         type: 'error',
         text:
           error instanceof Error
             ? error.message
-            : 'Failed to save interview automation settings',
+            : t('interviewAutomation.saveFailed'),
       });
     }
   }
@@ -43,9 +45,11 @@ export default function InterviewAutomationEditor({
     <div className="rounded-xl bg-gray-800 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Interview Automation</h2>
+          <h2 className="text-lg font-semibold text-white">
+            {t('interviewAutomation.title')}
+          </h2>
           <p className="mt-1 text-sm text-gray-400">
-            Configure which candidate follow-ups are sent automatically for this job.
+            {t('interviewAutomation.subtitle')}
           </p>
         </div>
       </div>
@@ -76,8 +80,10 @@ export default function InterviewAutomationEditor({
             className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
           />
           <span>
-            <span className="block font-medium text-white">Auto-send reschedule notice</span>
-            Notify candidates when an interview time changes.
+            <span className="block font-medium text-white">
+              {t('interviewAutomation.rescheduleTitle')}
+            </span>
+            {t('interviewAutomation.rescheduleDescription')}
           </span>
         </label>
 
@@ -94,8 +100,10 @@ export default function InterviewAutomationEditor({
             className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
           />
           <span>
-            <span className="block font-medium text-white">Auto-send cancellation notice</span>
-            Notify candidates when a scheduled interview is cancelled.
+            <span className="block font-medium text-white">
+              {t('interviewAutomation.cancellationTitle')}
+            </span>
+            {t('interviewAutomation.cancellationDescription')}
           </span>
         </label>
 
@@ -112,8 +120,10 @@ export default function InterviewAutomationEditor({
             className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
           />
           <span>
-            <span className="block font-medium text-white">Auto-send completion follow-up</span>
-            Send a recruiter follow-up after interviews are marked completed.
+            <span className="block font-medium text-white">
+              {t('interviewAutomation.completionTitle')}
+            </span>
+            {t('interviewAutomation.completionDescription')}
           </span>
         </label>
 
@@ -130,8 +140,10 @@ export default function InterviewAutomationEditor({
             className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
           />
           <span>
-            <span className="block font-medium text-white">Auto-send no-show follow-up</span>
-            Send a follow-up when the recruiter marks a candidate as no-show.
+            <span className="block font-medium text-white">
+              {t('interviewAutomation.noShowTitle')}
+            </span>
+            {t('interviewAutomation.noShowDescription')}
           </span>
         </label>
       </div>
@@ -139,7 +151,7 @@ export default function InterviewAutomationEditor({
       <div className="mt-5 grid gap-4 md:grid-cols-2">
         <div>
           <label className="mb-2 block text-sm font-medium text-gray-400">
-            Completion follow-up message
+            {t('interviewAutomation.completionMessage')}
           </label>
           <textarea
             value={draft.completionFollowupMessage || ''}
@@ -150,13 +162,13 @@ export default function InterviewAutomationEditor({
               }))
             }
             rows={4}
-            placeholder="Optional custom message sent after completed interviews. Leave blank to use the default wording."
+            placeholder={t('interviewAutomation.completionPlaceholder')}
             className="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
           />
         </div>
         <div>
           <label className="mb-2 block text-sm font-medium text-gray-400">
-            No-show follow-up message
+            {t('interviewAutomation.noShowMessage')}
           </label>
           <textarea
             value={draft.noShowFollowupMessage || ''}
@@ -167,7 +179,7 @@ export default function InterviewAutomationEditor({
               }))
             }
             rows={4}
-            placeholder="Optional custom message sent after no-show status. Leave blank to use the default wording."
+            placeholder={t('interviewAutomation.noShowPlaceholder')}
             className="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
           />
         </div>
@@ -180,7 +192,7 @@ export default function InterviewAutomationEditor({
           disabled={saving}
           className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save automation'}
+          {saving ? t('interviewAutomation.saving') : t('interviewAutomation.save')}
         </button>
       </div>
     </div>

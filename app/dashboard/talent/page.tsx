@@ -7,6 +7,8 @@ import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../components/StatsCard';
 import ApplicationProgressCard from '@/components/applications/ApplicationProgressCard';
 import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterviewsPanel';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
   applyInterviewUpdateToApplications,
   attachInterviewsToApplications,
@@ -43,6 +45,8 @@ interface Certification {
 export default function TalentDashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useTranslation();
+  const localize = (href: string) => addLocalePrefix(href, locale);
   const [loading, setLoading] = useState(true);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -51,6 +55,9 @@ export default function TalentDashboardPage() {
 
   useEffect(() => {
     let mounted = true;
+    const loginHref = `${addLocalePrefix('/auth/login', locale)}?redirect=${encodeURIComponent(
+      addLocalePrefix('/dashboard/talent', locale)
+    )}`;
 
     async function loadDashboardData() {
       try {
@@ -62,7 +69,7 @@ export default function TalentDashboardPage() {
         if (!mounted) return;
 
         if (authError || !user) {
-          router.replace('/auth/login');
+          router.replace(loginHref);
           return;
         }
 
@@ -183,7 +190,7 @@ export default function TalentDashboardPage() {
       } catch (err) {
         console.error('Dashboard load error:', err);
         if (mounted) {
-          router.replace('/auth/login');
+          router.replace(loginHref);
         }
       }
     }
@@ -193,14 +200,14 @@ export default function TalentDashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [supabase, router]);
+  }, [supabase, router, locale]);
 
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-          <p className="text-gray-400">Loading dashboard...</p>
+          <p className="text-gray-400">{t('talentDashboard.loading')}</p>
         </div>
       </div>
     );
@@ -226,7 +233,7 @@ export default function TalentDashboardPage() {
     <div className="space-y-8">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
-          title="Active Applications"
+          title={t('talentDashboard.stats.activeApplications')}
           value={activeApplications.length}
           color="blue"
           icon={
@@ -241,7 +248,7 @@ export default function TalentDashboardPage() {
           }
         />
         <StatsCard
-          title="Educational Internships"
+          title={t('talentDashboard.stats.educationalInternships')}
           value={educationalInternships}
           color="green"
           icon={
@@ -256,7 +263,7 @@ export default function TalentDashboardPage() {
           }
         />
         <StatsCard
-          title="Professional Internships"
+          title={t('talentDashboard.stats.professionalInternships')}
           value={professionalInternships}
           color="purple"
           icon={
@@ -271,7 +278,7 @@ export default function TalentDashboardPage() {
           }
         />
         <StatsCard
-          title="Interviews"
+          title={t('talentDashboard.stats.interviews')}
           value={interviewsCount}
           color="yellow"
           icon={
@@ -289,41 +296,43 @@ export default function TalentDashboardPage() {
 
       <div className="flex flex-wrap gap-4">
         <Link
-          href="/dashboard/talent/projects/new"
+          href={localize('/dashboard/talent/projects/new')}
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
         >
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          Add Project
+          {t('talentDashboard.actions.addProject')}
         </Link>
         <Link
-          href="/dashboard/talent/applications"
+          href={localize('/dashboard/talent/applications')}
           className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
         >
-          My Applications
+          {t('talentDashboard.actions.myApplications')}
         </Link>
         <Link
-          href="/dashboard/talent/profile"
+          href={localize('/dashboard/talent/profile')}
           className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
         >
-          Edit Profile
+          {t('talentDashboard.actions.editProfile')}
         </Link>
       </div>
 
       <div className="rounded-xl bg-gray-800 p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-white">Recent Applications</h2>
+            <h2 className="text-xl font-semibold text-white">
+              {t('talentDashboard.recentApplications.title')}
+            </h2>
             <p className="mt-1 text-sm text-gray-400">
-              Monitor ATS progress without leaving your talent workspace.
+              {t('talentDashboard.recentApplications.description')}
             </p>
           </div>
           <Link
-            href="/dashboard/talent/applications"
+            href={localize('/dashboard/talent/applications')}
             className="text-sm text-blue-400 hover:text-blue-300"
           >
-            View All
+            {t('talentDashboard.recentApplications.viewAll')}
           </Link>
         </div>
 
@@ -343,13 +352,13 @@ export default function TalentDashboardPage() {
               />
             </svg>
             <p className="mb-4 text-gray-400">
-              No applications yet. Browse internships that fit your portfolio and skills.
+              {t('talentDashboard.recentApplications.empty')}
             </p>
             <Link
-              href="/jobs"
+              href={localize('/jobs')}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
             >
-              Browse Opportunities
+              {t('talentDashboard.recentApplications.cta')}
             </Link>
           </div>
         ) : (
@@ -367,8 +376,8 @@ export default function TalentDashboardPage() {
 
       <UpcomingInterviewsPanel
         applications={applications}
-        description="Upcoming interviews and recruiter instructions for your internships and opportunities."
-        emptyMessage="No interview has been scheduled on your applications yet."
+        description={t('talentDashboard.upcoming.description')}
+        emptyMessage={t('talentDashboard.upcoming.empty')}
         onInterviewUpdated={(interview) =>
           setApplications((current) =>
             applyInterviewUpdateToApplications(current, interview)
@@ -379,16 +388,22 @@ export default function TalentDashboardPage() {
       <div className="rounded-xl bg-gray-800 p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-white">Recent Projects</h2>
+            <h2 className="text-xl font-semibold text-white">
+              {t('talentDashboard.recentProjects.title')}
+            </h2>
             <p className="mt-1 text-sm text-gray-400">
-              {totalProjects} total projects, {publicProjects} public, {totalCertifications} certifications.
+              {t('talentDashboard.recentProjects.summary', {
+                total: totalProjects,
+                public: publicProjects,
+                certifications: totalCertifications,
+              })}
             </p>
           </div>
           <Link
-            href="/dashboard/talent/projects"
+            href={localize('/dashboard/talent/projects')}
             className="text-sm text-blue-400 hover:text-blue-300"
           >
-            View All
+            {t('talentDashboard.recentProjects.viewAll')}
           </Link>
         </div>
 
@@ -408,13 +423,13 @@ export default function TalentDashboardPage() {
               />
             </svg>
             <p className="mb-4 text-gray-400">
-              No projects yet. Add public work to strengthen professional internship applications.
+              {t('talentDashboard.recentProjects.empty')}
             </p>
             <Link
-              href="/dashboard/talent/projects/new"
+              href={localize('/dashboard/talent/projects/new')}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
             >
-              Add Your First Project
+              {t('talentDashboard.recentProjects.cta')}
             </Link>
           </div>
         ) : (
@@ -422,7 +437,7 @@ export default function TalentDashboardPage() {
             {recentProjects.map((project) => (
               <Link
                 key={project.id}
-                href={`/dashboard/talent/projects/${project.id}`}
+                href={localize(`/dashboard/talent/projects/${project.id}`)}
                 className="rounded-lg bg-gray-700/50 p-4 transition-colors hover:bg-gray-700"
               >
                 <h3 className="mb-2 font-medium text-white">{project.title}</h3>
@@ -431,9 +446,11 @@ export default function TalentDashboardPage() {
                 )}
                 <div className="flex items-center gap-3 text-xs text-gray-500">
                   {project.github_url && <span>GitHub</span>}
-                  {project.youtube_url && <span>Demo</span>}
+                  {project.youtube_url && <span>{t('talentDashboard.recentProjects.demo')}</span>}
                   <span className={project.public ? 'text-green-400' : 'text-gray-400'}>
-                    {project.public ? 'Public' : 'Private'}
+                    {project.public
+                      ? t('talentDashboard.recentProjects.public')
+                      : t('talentDashboard.recentProjects.private')}
                   </span>
                 </div>
               </Link>
@@ -444,17 +461,19 @@ export default function TalentDashboardPage() {
 
       <div className="rounded-xl bg-gray-800 p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">Your Skills</h2>
+          <h2 className="text-xl font-semibold text-white">
+            {t('talentDashboard.skills.title')}
+          </h2>
           <Link
-            href="/dashboard/talent/profile"
+            href={localize('/dashboard/talent/profile')}
             className="text-sm text-blue-400 hover:text-blue-300"
           >
-            Edit Skills
+            {t('talentDashboard.skills.edit')}
           </Link>
         </div>
         {skills.length === 0 ? (
           <p className="text-gray-400">
-            No skills added yet. Add skills to improve internship matching and recruiter confidence.
+            {t('talentDashboard.skills.empty')}
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">

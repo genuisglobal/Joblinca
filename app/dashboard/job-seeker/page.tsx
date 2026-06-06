@@ -8,6 +8,8 @@ import StatsCard from '../components/StatsCard';
 import ApplicationProgressCard from '@/components/applications/ApplicationProgressCard';
 import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterviewsPanel';
 import ReferralCard from '@/components/ReferralCard';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
   applyInterviewUpdateToApplications,
   attachInterviewPrepReadinessToApplications,
@@ -31,11 +33,16 @@ import {
 export default function JobSeekerDashboardPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useTranslation();
+  const localize = (href: string) => addLocalePrefix(href, locale);
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState<CandidateApplicationRecord[]>([]);
 
   useEffect(() => {
     let mounted = true;
+    const loginHref = `${addLocalePrefix('/auth/login', locale)}?redirect=${encodeURIComponent(
+      addLocalePrefix('/dashboard/job-seeker', locale)
+    )}`;
 
     async function loadDashboardData() {
       try {
@@ -47,7 +54,7 @@ export default function JobSeekerDashboardPage() {
         if (!mounted) return;
 
         if (authError || !user) {
-          router.replace('/auth/login');
+          router.replace(loginHref);
           return;
         }
 
@@ -165,7 +172,7 @@ export default function JobSeekerDashboardPage() {
       } catch (err) {
         console.error('Dashboard load error:', err);
         if (mounted) {
-          router.replace('/auth/login');
+          router.replace(loginHref);
         }
       }
     }
@@ -175,14 +182,14 @@ export default function JobSeekerDashboardPage() {
     return () => {
       mounted = false;
     };
-  }, [supabase, router]);
+  }, [supabase, router, locale]);
 
   if (loading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
-          <p className="text-gray-400">Loading dashboard...</p>
+          <p className="text-gray-400">{t('jobSeekerDashboard.loading')}</p>
         </div>
       </div>
     );
@@ -206,18 +213,18 @@ export default function JobSeekerDashboardPage() {
     applications.find((application) => !application.isDraft) ||
     null;
   const interviewPrepHref = suggestedPrepApplication
-    ? `/dashboard/job-seeker/interview-prep?application=${suggestedPrepApplication.id}${
+    ? localize(`/dashboard/job-seeker/interview-prep?application=${suggestedPrepApplication.id}${
         suggestedPrepApplication.nextInterview
           ? '&suggest=scheduled_interview'
           : '&suggest=application'
-      }`
-    : '/dashboard/job-seeker/interview-prep';
+      }`)
+    : localize('/dashboard/job-seeker/interview-prep');
 
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
-          title="Active Applications"
+          title={t('jobSeekerDashboard.stats.activeApplications')}
           value={activeApplications.length}
           color="blue"
           icon={
@@ -232,7 +239,7 @@ export default function JobSeekerDashboardPage() {
           }
         />
         <StatsCard
-          title="In Review"
+          title={t('jobSeekerDashboard.stats.inReview')}
           value={inReviewCount}
           color="yellow"
           icon={
@@ -247,7 +254,7 @@ export default function JobSeekerDashboardPage() {
           }
         />
         <StatsCard
-          title="Interviews"
+          title={t('jobSeekerDashboard.stats.interviews')}
           value={interviewsCount}
           color="purple"
           icon={
@@ -262,7 +269,7 @@ export default function JobSeekerDashboardPage() {
           }
         />
         <StatsCard
-          title="Offers / Drafts"
+          title={t('jobSeekerDashboard.stats.offersDrafts')}
           value={offersCount + draftCount}
           color="green"
           icon={
@@ -280,7 +287,7 @@ export default function JobSeekerDashboardPage() {
 
       <div className="flex flex-wrap gap-4">
         <Link
-          href="/dashboard/job-seeker/browse"
+          href={localize('/dashboard/job-seeker/browse')}
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
         >
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -291,36 +298,38 @@ export default function JobSeekerDashboardPage() {
               d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
             />
           </svg>
-          Browse Jobs
+          {t('jobSeekerDashboard.actions.browseJobs')}
         </Link>
         <Link
-          href="/dashboard/job-seeker/applications"
+          href={localize('/dashboard/job-seeker/applications')}
           className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
         >
-          View All Applications
+          {t('jobSeekerDashboard.actions.viewAllApplications')}
         </Link>
         <Link
           href={interviewPrepHref}
           className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-white transition-colors hover:bg-teal-500"
         >
-          Interview Prep
+          {t('jobSeekerDashboard.actions.interviewPrep')}
         </Link>
         <Link
-          href="/dashboard/job-seeker/profile"
+          href={localize('/dashboard/job-seeker/profile')}
           className="inline-flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white transition-colors hover:bg-gray-600"
         >
-          Edit Profile
+          {t('jobSeekerDashboard.actions.editProfile')}
         </Link>
       </div>
 
       <div className="rounded-xl bg-gray-800 p-6">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">Recent Applications</h2>
+          <h2 className="text-xl font-semibold text-white">
+            {t('jobSeekerDashboard.recentApplications.title')}
+          </h2>
           <Link
-            href="/dashboard/job-seeker/applications"
+            href={localize('/dashboard/job-seeker/applications')}
             className="text-sm text-blue-400 hover:text-blue-300"
           >
-            View All
+            {t('jobSeekerDashboard.recentApplications.viewAll')}
           </Link>
         </div>
 
@@ -339,12 +348,14 @@ export default function JobSeekerDashboardPage() {
                 d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
               />
             </svg>
-            <p className="mb-4 text-gray-400">No applications yet.</p>
+            <p className="mb-4 text-gray-400">
+              {t('jobSeekerDashboard.recentApplications.empty')}
+            </p>
             <Link
-              href="/dashboard/job-seeker/browse"
+              href={localize('/dashboard/job-seeker/browse')}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
             >
-              Start Exploring Jobs
+              {t('jobSeekerDashboard.recentApplications.cta')}
             </Link>
           </div>
         ) : (
@@ -362,8 +373,8 @@ export default function JobSeekerDashboardPage() {
 
       <UpcomingInterviewsPanel
         applications={applications}
-        description="Stay on top of confirmed interviews, meeting links, and recruiter instructions."
-        emptyMessage="No interview has been scheduled for your applications yet."
+        description={t('jobSeekerDashboard.upcoming.description')}
+        emptyMessage={t('jobSeekerDashboard.upcoming.empty')}
         onInterviewUpdated={(interview) =>
           setApplications((current) =>
             applyInterviewUpdateToApplications(current, interview)
@@ -380,26 +391,29 @@ export default function JobSeekerDashboardPage() {
               </svg>
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-white">Skill Up</h3>
+              <h3 className="text-lg font-semibold text-white">
+                {t('jobSeekerDashboard.skillUp.title')}
+              </h3>
               <p className="text-sm text-gray-300">
-                Learn new skills with micro-courses to improve your match quality.
+                {t('jobSeekerDashboard.skillUp.description')}
               </p>
             </div>
           </div>
           <Link
-            href="/dashboard/skillup"
+            href={localize('/dashboard/skillup')}
             className="whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm text-white transition-colors hover:bg-blue-700"
           >
-            Start Learning
+            {t('jobSeekerDashboard.skillUp.cta')}
           </Link>
         </div>
       </div>
 
-      {/* Referral Card */}
       <ReferralCard />
 
       <div className="rounded-xl bg-gray-800 p-6">
-        <h2 className="mb-4 text-xl font-semibold text-white">Tips for Success</h2>
+        <h2 className="mb-4 text-xl font-semibold text-white">
+          {t('jobSeekerDashboard.tips.title')}
+        </h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="rounded-lg bg-gray-700/50 p-4">
             <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600/20">
@@ -412,9 +426,11 @@ export default function JobSeekerDashboardPage() {
                 />
               </svg>
             </div>
-            <h3 className="mb-1 font-medium text-white">Keep Resume Updated</h3>
+            <h3 className="mb-1 font-medium text-white">
+              {t('jobSeekerDashboard.tips.resume.title')}
+            </h3>
             <p className="text-sm text-gray-400">
-              Your current stage and recruiter feedback are only as strong as the information you submit.
+              {t('jobSeekerDashboard.tips.resume.description')}
             </p>
           </div>
           <div className="rounded-lg bg-gray-700/50 p-4">
@@ -428,9 +444,11 @@ export default function JobSeekerDashboardPage() {
                 />
               </svg>
             </div>
-            <h3 className="mb-1 font-medium text-white">Personalize Applications</h3>
+            <h3 className="mb-1 font-medium text-white">
+              {t('jobSeekerDashboard.tips.personalize.title')}
+            </h3>
             <p className="text-sm text-gray-400">
-              Targeted cover letters and complete answers help you move faster through screening and review stages.
+              {t('jobSeekerDashboard.tips.personalize.description')}
             </p>
           </div>
           <div className="rounded-lg bg-gray-700/50 p-4">
@@ -444,9 +462,11 @@ export default function JobSeekerDashboardPage() {
                 />
               </svg>
             </div>
-            <h3 className="mb-1 font-medium text-white">Stay Active</h3>
+            <h3 className="mb-1 font-medium text-white">
+              {t('jobSeekerDashboard.tips.active.title')}
+            </h3>
             <p className="text-sm text-gray-400">
-              Monitor stage changes and continue any saved draft before the job closes.
+              {t('jobSeekerDashboard.tips.active.description')}
             </p>
           </div>
         </div>

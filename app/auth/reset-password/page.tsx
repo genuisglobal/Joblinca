@@ -5,17 +5,19 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import { Lock, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
   const supabase = createClient();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const localizedHref = (href: string) => addLocalePrefix(href, locale);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -35,7 +37,7 @@ export default function ResetPasswordPage() {
         setError(error.message);
       } else {
         setSuccess(true);
-        setTimeout(() => router.push('/auth/login'), 3000);
+        setTimeout(() => router.push(localizedHref('/auth/login')), 3000);
       }
     } catch {
       setError(t("auth.resetPassword.unexpectedError"));
@@ -71,7 +73,7 @@ export default function ResetPasswordPage() {
                 {t("auth.resetPassword.redirecting")}
               </p>
               <Link
-                href="/auth/login"
+                href={localizedHref('/auth/login')}
                 className="text-primary-400 hover:text-primary-300 text-sm font-medium transition-colors"
               >
                 {t("auth.resetPassword.goToLogin")}

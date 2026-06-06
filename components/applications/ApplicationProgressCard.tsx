@@ -5,24 +5,25 @@ import InterviewSlotBookingPanel from '@/components/applications/InterviewSlotBo
 import InterviewCalendarActions from '@/components/interview-scheduling/InterviewCalendarActions';
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
 import StatusBadge from '@/app/dashboard/components/StatusBadge';
-import {
-  formatDecisionLabel,
-  getDecisionTone,
-} from '@/lib/hiring-pipeline/presentation';
-import {
-  formatInterviewDateTimeLabel,
-  getInterviewModeLabel,
-  getInterviewResponseStatusLabel,
-  getInterviewStatusLabel,
-} from '@/lib/interview-scheduling/utils';
-import {
-  getApplicationDisplayStatus,
-  getApplicationOpportunityLabel,
-  getApplicationProgressSummary,
-  type CandidateInterviewRecord,
-  type CandidateInterviewSlotRecord,
-  type CandidateApplicationRecord,
+import { getDecisionTone } from '@/lib/hiring-pipeline/presentation';
+import type {
+  CandidateInterviewRecord,
+  CandidateInterviewSlotRecord,
+  CandidateApplicationRecord,
 } from '@/lib/applications/dashboard';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
+import {
+  buildApplicationProgressSummary,
+  formatLocalizedDate,
+  formatLocalizedDateTime,
+  translateDecisionStatus,
+  translateInterviewMode,
+  translateInterviewResponseStatus,
+  translateInterviewStatus,
+  translateOpportunityLabel,
+  translateReadinessTrend,
+} from '@/lib/i18n/application-presentation';
 
 interface ApplicationProgressCardProps {
   application: CandidateApplicationRecord;
@@ -31,14 +32,6 @@ interface ApplicationProgressCardProps {
     slot: CandidateInterviewSlotRecord;
     interview: CandidateInterviewRecord;
   }) => void;
-}
-
-function formatDate(date: string | null | undefined) {
-  if (!date) {
-    return 'Not available';
-  }
-
-  return new Date(date).toLocaleDateString();
 }
 
 function getReadinessTone(score: number | null) {
@@ -57,39 +50,45 @@ function getReadinessTone(score: number | null) {
   return 'border-red-500/20 bg-red-500/10 text-red-100';
 }
 
-function getTrendLabel(value: 'improving' | 'steady' | 'needs_work' | null) {
-  if (value === 'improving') {
-    return 'Improving';
-  }
-
-  if (value === 'needs_work') {
-    return 'Needs work';
-  }
-
-  if (value === 'steady') {
-    return 'Steady';
-  }
-
-  return null;
-}
-
 export default function ApplicationProgressCard({
   application,
   compact = false,
   onInterviewBooked,
 }: ApplicationProgressCardProps) {
-  const opportunityLabel = getApplicationOpportunityLabel(application);
-  const displayStatus = getApplicationDisplayStatus(application);
+  const { t, locale } = useTranslation();
+  const localize = (href: string) => addLocalePrefix(href, locale);
+  const opportunityLabel = translateOpportunityLabel(
+    t,
+    application.job?.jobType || null,
+    application.job?.internshipTrack || null
+  );
+  const displayStatus =
+    application.isDraft
+      ? 'draft'
+      : application.decisionStatus === 'hired' ||
+          application.decisionStatus === 'rejected' ||
+          application.decisionStatus === 'withdrawn'
+        ? application.decisionStatus
+        : application.status;
   const decisionTone = getDecisionTone(application.decisionStatus || 'active');
   const primaryHref =
     application.isDraft && application.job?.id
-      ? `/jobs/${application.job.id}/apply`
+      ? localize(`/jobs/${application.job.id}/apply`)
       : application.job?.id
-        ? `/jobs/${application.job.id}`
+        ? localize(`/jobs/${application.job.id}`)
         : '#';
-  const interviewPrepHref = `/dashboard/job-seeker/interview-prep?application=${application.id}${
-    application.nextInterview ? '&suggest=scheduled_interview' : '&suggest=application'
-  }`;
+  const interviewPrepHref = localize(
+    `/dashboard/job-seeker/interview-prep?application=${application.id}${
+      application.nextInterview ? '&suggest=scheduled_interview' : '&suggest=application'
+    }`
+  );
+  const progressSummary = buildApplicationProgressSummary(t, locale, application);
+  const appliedDate =
+    formatLocalizedDate(application.createdAt, locale) ||
+    t('applicationCard.dateUnavailable');
+  const stageUpdatedDate =
+    formatLocalizedDate(application.stageEnteredAt, locale) ||
+    t('applicationCard.dateUnavailable');
 
   return (
     <div
@@ -113,31 +112,31 @@ export default function ApplicationProgressCard({
               <span
                 className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${decisionTone.bg} ${decisionTone.text} ${decisionTone.border}`}
               >
-                {formatDecisionLabel(application.decisionStatus)}
+                {translateDecisionStatus(t, application.decisionStatus)}
               </span>
             )}
             <StatusBadge status={displayStatus} />
           </div>
 
           <h3 className={`${compact ? 'text-base' : 'text-lg'} font-semibold text-white`}>
-            {application.job?.title || 'Opportunity'}
+            {application.job?.title || t('applicationCard.opportunityFallback')}
           </h3>
-          <p className="text-gray-400">{application.job?.companyName || 'Organization'}</p>
+          <p className="text-gray-400">
+            {application.job?.companyName || t('applicationCard.organizationFallback')}
+          </p>
 
           <div className="mt-3 flex flex-wrap gap-4 text-sm text-gray-400">
             {application.job?.location && <span>{application.job.location}</span>}
             {application.job?.workType && (
               <span className="capitalize">{application.job.workType}</span>
             )}
-            <span>Applied {formatDate(application.createdAt)}</span>
+            <span>{t('applicationCard.appliedOn', { date: appliedDate })}</span>
             {!application.isDraft && application.stageEnteredAt && (
-              <span>Stage updated {formatDate(application.stageEnteredAt)}</span>
+              <span>{t('applicationCard.stageUpdated', { date: stageUpdatedDate })}</span>
             )}
           </div>
 
-          <p className="mt-4 text-sm text-gray-300">
-            {getApplicationProgressSummary(application)}
-          </p>
+          <p className="mt-4 text-sm text-gray-300">{progressSummary}</p>
 
           {!application.isDraft && (
             <div
@@ -148,28 +147,37 @@ export default function ApplicationProgressCard({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] opacity-80">
-                    Interview Readiness
+                    {t('applicationCard.readiness.title')}
                   </p>
                   {application.interviewPrepReadiness ? (
                     <p className={`mt-2 ${compact ? 'text-xs' : 'text-sm'}`}>
-                      Latest score {application.interviewPrepReadiness.latestScore}/100 across{' '}
-                      {application.interviewPrepReadiness.attemptCount} scored answer
-                      {application.interviewPrepReadiness.attemptCount === 1 ? '' : 's'}.
+                      {t('applicationCard.readiness.latestScore', {
+                        score:
+                          application.interviewPrepReadiness.latestScore ??
+                          t('applicationCard.dateUnavailable'),
+                        count: application.interviewPrepReadiness.attemptCount,
+                        label:
+                          application.interviewPrepReadiness.attemptCount === 1
+                            ? t('applicationCard.readiness.answerSingular')
+                            : t('applicationCard.readiness.answerPlural'),
+                      })}
                     </p>
                   ) : (
                     <p className={`mt-2 ${compact ? 'text-xs' : 'text-sm'}`}>
-                      No scored mock answers yet. Generate a prep session to start tracking readiness.
+                      {t('applicationCard.readiness.noScores')}
                     </p>
                   )}
                 </div>
                 {application.interviewPrepReadiness && (
                   <div className="text-right">
                     <p className={`${compact ? 'text-base' : 'text-lg'} font-semibold`}>
-                      {application.interviewPrepReadiness.latestScore}/100
+                      {application.interviewPrepReadiness.latestScore !== null
+                        ? `${application.interviewPrepReadiness.latestScore}/100`
+                        : t('applicationCard.dateUnavailable')}
                     </p>
-                    {getTrendLabel(application.interviewPrepReadiness.trend) && (
+                    {translateReadinessTrend(t, application.interviewPrepReadiness.trend) && (
                       <p className="text-xs opacity-80">
-                        {getTrendLabel(application.interviewPrepReadiness.trend)}
+                        {translateReadinessTrend(t, application.interviewPrepReadiness.trend)}
                       </p>
                     )}
                   </div>
@@ -178,7 +186,9 @@ export default function ApplicationProgressCard({
 
               {application.interviewPrepReadiness?.weakestAreaLabel && (
                 <p className={`mt-3 ${compact ? 'text-[11px]' : 'text-xs'} opacity-80`}>
-                  Weakest area: {application.interviewPrepReadiness.weakestAreaLabel}
+                  {t('applicationCard.readiness.weakestArea', {
+                    label: application.interviewPrepReadiness.weakestAreaLabel,
+                  })}
                   {application.interviewPrepReadiness.weakestAreaAverage !== null
                     ? ` (${application.interviewPrepReadiness.weakestAreaAverage}/5)`
                     : ''}
@@ -192,29 +202,31 @@ export default function ApplicationProgressCard({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200/80">
-                    Upcoming Interview
+                    {t('applicationCard.upcomingInterview')}
                   </p>
                   <p className="mt-2 text-sm font-medium text-white">
-                    {formatInterviewDateTimeLabel(
+                    {formatLocalizedDateTime(
                       application.nextInterview.scheduledAt,
+                      locale,
                       application.nextInterview.timezone
                     )}
                   </p>
                   <p className="mt-1 text-sm text-blue-100/80">
-                    {getInterviewModeLabel(application.nextInterview.mode)}
+                    {translateInterviewMode(t, application.nextInterview.mode)}
                     {application.nextInterview.location
                       ? ` - ${application.nextInterview.location}`
                       : ''}
                   </p>
                 </div>
                 <span className="rounded-full border border-blue-400/30 px-3 py-1 text-xs font-medium text-blue-100">
-                  {getInterviewStatusLabel(application.nextInterview.status)}
+                  {translateInterviewStatus(t, application.nextInterview.status)}
                 </span>
               </div>
 
               <p className="mt-3 text-xs uppercase tracking-[0.2em] text-blue-100/70">
-                Attendance:{' '}
-                {getInterviewResponseStatusLabel(
+                {t('applicationCard.attendance')}:{' '}
+                {translateInterviewResponseStatus(
+                  t,
                   application.nextInterview.candidateResponseStatus
                 )}
               </p>
@@ -224,7 +236,7 @@ export default function ApplicationProgressCard({
                   href={interviewPrepHref}
                   className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-teal-500"
                 >
-                  Prepare Interview
+                  {t('applicationCard.prepareInterview')}
                 </Link>
                 {application.nextInterview.meetingUrl && (
                   <a
@@ -233,7 +245,7 @@ export default function ApplicationProgressCard({
                     rel="noopener noreferrer"
                     className="inline-flex items-center rounded-lg border border-blue-400/20 px-3.5 py-2 text-sm text-blue-200 transition-colors hover:border-blue-300/40 hover:text-blue-100"
                   >
-                    Open meeting link
+                    {t('applicationCard.openMeetingLink')}
                   </a>
                 )}
               </div>
@@ -249,7 +261,7 @@ export default function ApplicationProgressCard({
                 scheduledAt={application.nextInterview.scheduledAt}
                 jobTitle={application.job?.title}
                 companyName={application.job?.companyName}
-                modeLabel={getInterviewModeLabel(application.nextInterview.mode)}
+                modeLabel={translateInterviewMode(t, application.nextInterview.mode)}
                 location={application.nextInterview.location}
                 meetingUrl={application.nextInterview.meetingUrl}
                 notes={application.nextInterview.notes}
@@ -274,7 +286,7 @@ export default function ApplicationProgressCard({
           {!compact && application.coverLetter && (
             <details className="mt-4">
               <summary className="cursor-pointer text-sm text-blue-400 hover:text-blue-300">
-                View Cover Letter
+                {t('applicationCard.viewCoverLetter')}
               </summary>
               <p className="mt-2 whitespace-pre-wrap rounded-lg bg-gray-900 p-4 text-sm text-gray-300">
                 {application.coverLetter}
@@ -289,14 +301,16 @@ export default function ApplicationProgressCard({
               href={interviewPrepHref}
               className="rounded-lg bg-teal-600 px-4 py-2 text-center text-sm text-white transition-colors hover:bg-teal-500"
             >
-              Interview Prep
+              {t('applicationCard.interviewPrep')}
             </Link>
           )}
           <Link
             href={primaryHref}
             className="rounded-lg bg-gray-700 px-4 py-2 text-center text-sm text-white transition-colors hover:bg-gray-600"
           >
-            {application.isDraft ? 'Continue Draft' : 'View Opportunity'}
+            {application.isDraft
+              ? t('applicationCard.continueDraft')
+              : t('applicationCard.viewOpportunity')}
           </Link>
         </div>
       </div>

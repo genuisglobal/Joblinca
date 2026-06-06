@@ -1,8 +1,9 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Building, Mail, Image } from 'lucide-react';
+import { Building, Mail } from 'lucide-react';
 import AvatarUpload from '@/components/ui/AvatarUpload';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface CompanyInfoStepProps {
   companyName: string;
@@ -28,6 +29,7 @@ export default function CompanyInfoStep({
   onLogoFileSelect,
   errors,
 }: CompanyInfoStepProps) {
+  const { t } = useTranslation();
   const logoPreviewUrl = logoFile ? URL.createObjectURL(logoFile) : null;
 
   return (
@@ -42,10 +44,10 @@ export default function CompanyInfoStep({
           <Building className="w-8 h-8 text-yellow-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          Tell us about your company
+          {t('onboarding.company.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          This information will be shown on your job postings
+          {t('onboarding.company.subtitle')}
         </p>
       </motion.div>
 
@@ -59,7 +61,7 @@ export default function CompanyInfoStep({
           className="flex flex-col items-center"
         >
           <label className="block text-sm font-medium text-gray-300 mb-3">
-            Company Logo <span className="text-gray-500">(optional)</span>
+            {t('onboarding.company.logo')} <span className="text-gray-500">({t('onboarding.optional')})</span>
           </label>
           <AvatarUpload
             value={companyLogoUrl}
@@ -79,7 +81,7 @@ export default function CompanyInfoStep({
             htmlFor="companyName"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            Company Name
+            {t('onboarding.company.name')}
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -90,7 +92,7 @@ export default function CompanyInfoStep({
               type="text"
               value={companyName}
               onChange={(e) => onCompanyNameChange(e.target.value)}
-              placeholder="e.g., TechCorp Cameroon"
+              placeholder={t('onboarding.company.namePlaceholder')}
               className={`
                 w-full pl-10 pr-4 py-3 bg-gray-800 text-gray-100
                 border rounded-lg
@@ -115,7 +117,7 @@ export default function CompanyInfoStep({
             htmlFor="contactEmail"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            Contact Email
+            {t('onboarding.company.contactEmail')}
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
@@ -126,7 +128,7 @@ export default function CompanyInfoStep({
               type="email"
               value={contactEmail}
               onChange={(e) => onContactEmailChange(e.target.value)}
-              placeholder="hr@company.com"
+              placeholder={t('onboarding.company.contactEmailPlaceholder')}
               className={`
                 w-full pl-10 pr-4 py-3 bg-gray-800 text-gray-100
                 border rounded-lg
@@ -140,7 +142,7 @@ export default function CompanyInfoStep({
             <p className="mt-1 text-sm text-red-400">{errors.contactEmail}</p>
           )}
           <p className="mt-1 text-xs text-gray-500">
-            This email will receive notifications about applications
+            {t('onboarding.company.contactEmailHint')}
           </p>
         </motion.div>
       </div>

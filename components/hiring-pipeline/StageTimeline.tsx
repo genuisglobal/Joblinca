@@ -1,17 +1,21 @@
 'use client';
 
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
+import { formatLocalizedDateTime } from '@/lib/i18n/application-presentation';
 import type { ApplicationStageEventView } from '@/lib/hiring-pipeline/types';
+import { useTranslation as useLanguage } from '@/lib/i18n/context';
 
 interface StageTimelineProps {
   events: ApplicationStageEventView[];
 }
 
 export default function StageTimeline({ events }: StageTimelineProps) {
+  const { t, locale } = useLanguage();
+
   if (events.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
-        No stage movement recorded yet.
+        {t('recruiterStageTimeline.empty')}
       </div>
     );
   }
@@ -32,7 +36,7 @@ export default function StageTimeline({ events }: StageTimelineProps) {
                     label={event.fromStage.label}
                     stageType={event.fromStage.stageType}
                   />
-                  <span className="text-gray-500">to</span>
+                  <span className="text-gray-500">{t('common.to')}</span>
                 </>
               )}
               {event.toStage && (
@@ -40,7 +44,7 @@ export default function StageTimeline({ events }: StageTimelineProps) {
               )}
             </div>
             <p className="mt-2 text-xs text-gray-500">
-              {new Date(event.createdAt).toLocaleString()}
+              {formatLocalizedDateTime(event.createdAt, locale)}
             </p>
             {event.transitionReason && (
               <p className="mt-3 text-sm text-gray-300">{event.transitionReason}</p>

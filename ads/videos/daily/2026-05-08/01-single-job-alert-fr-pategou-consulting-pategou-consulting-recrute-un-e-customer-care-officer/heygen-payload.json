@@ -1,0 +1,108 @@
+{
+  "provider": "heygen",
+  "mode": "dry_run",
+  "batchId": "2026-05-08-single_job_alert-fr-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer",
+  "title": "Pategou Consulting recrute Pategou Consulting recrute un(e) Customer Care Officer a Cameroon",
+  "language": "fr",
+  "output": {
+    "aspectRatio": "9:16",
+    "resolution": "1080x1920",
+    "durationTarget": 35
+  },
+  "brand": {
+    "name": "Joblinca",
+    "website": "https://joblinca.com",
+    "cta": "View details and apply through Joblinca.com"
+  },
+  "style": {
+    "tone": "professional, energetic, Cameroon-focused, simple, trustworthy",
+    "presenterStyle": "short-form vertical explainer",
+    "countryFocus": "Cameroon"
+  },
+  "jobs": [
+    {
+      "id": "41ad505e-7ef9-494b-b4c2-f42beca9887f",
+      "title": "Pategou Consulting recrute un(e) Customer Care Officer",
+      "company": "Pategou Consulting",
+      "city": "Cameroon",
+      "category": "Marketing & Digital",
+      "experienceLevel": "Mid Level",
+      "applicationUrl": "https://www.jobincamer.com/job/pategou-consulting-recrute-une-customer-care-officer",
+      "sourceType": "scraped_external",
+      "trustedByJoblinca": false
+    }
+  ],
+  "script": "Alerte emploi: Pategou Consulting recrute Pategou Consulting recrute un(e) Customer Care Officer a Cameroon aujourd'hui. Pategou Consulting recrute Pategou Consulting recrute un(e) Customer Care Officer a Cameroon. Nous avons retenu uniquement les offres du jour avec des details d'application exploitables. Consultez les details et postulez via Joblinca.com. Creez votre compte gratuitement aujourd'hui.",
+  "captions": {
+    "default": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant.",
+    "tiktok": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. View details and apply through Joblinca.com",
+    "facebook": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Consultez les details sur Joblinca.com.",
+    "instagram": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Lien en bio ou Joblinca.com.",
+    "linkedin": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Selection du jour pour les candidats au Cameroun.",
+    "whatsapp": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Joblinca.com"
+  },
+  "hashtags": [
+    "#Joblinca",
+    "#JobsInCameroon",
+    "#CameroonJobs",
+    "#HiringNow",
+    "#RecrutementCameroun",
+    "#EmploiCameroun",
+    "#MarketingJobs"
+  ],
+  "scenePlan": [
+    {
+      "id": "hook",
+      "label": "Hook",
+      "durationSeconds": 5,
+      "voiceover": "Alerte emploi: Pategou Consulting recrute Pategou Consulting recrute un(e) Customer Care Officer a Cameroon aujourd'hui.",
+      "onScreenText": [
+        "Pategou Consulting recrute Pategou Consulting recrute un(e) Customer Care Officer a Cameroon",
+        "Nouvelles offres aujourd'hui"
+      ],
+      "visualNotes": [
+        "Use bold Joblinca brand opener.",
+        "Show vertical title card with Cameroon-focused styling."
+      ]
+    },
+    {
+      "id": "jobs-1",
+      "label": "Job Highlights 1",
+      "durationSeconds": 20,
+      "voiceover": "Pategou Consulting recrute Pategou Consulting recrute un(e) Customer Care Officer a Cameroon.",
+      "onScreenText": [
+        "Pategou Consulting recrute un(e) Customer Care Officer | Pategou Consulting | Cameroon"
+      ],
+      "visualNotes": [
+        "Use one card per job with company, role, city, and trust badge when available.",
+        "Keep motion simple and legible for short-form mobile viewing."
+      ]
+    },
+    {
+      "id": "trust",
+      "label": "Trust Line",
+      "durationSeconds": 5,
+      "voiceover": "Nous avons retenu uniquement les offres du jour avec des details d'application exploitables.",
+      "onScreenText": [
+        "Publishable daily jobs",
+        "Clear application details"
+      ],
+      "visualNotes": [
+        "Show trust badges and Joblinca review framing without overstating verification."
+      ]
+    },
+    {
+      "id": "cta",
+      "label": "CTA",
+      "durationSeconds": 5,
+      "voiceover": "Consultez les details et postulez via Joblinca.com. Creez votre compte gratuitement aujourd'hui.",
+      "onScreenText": [
+        "View details and apply through Joblinca.com",
+        "Joblinca.com"
+      ],
+      "visualNotes": [
+        "Close with strong website CTA and clean branded footer."
+      ]
+    }
+  ]
+}

@@ -3,11 +3,16 @@
 import { useEffect, useState } from 'react';
 import {
   WEEKDAY_KEYS,
-  formatBlackoutDateSummary,
-  formatWeeklyAvailabilitySummary,
   type InterviewSlotTemplate,
   type JobInterviewSelfScheduleSettings,
 } from '@/lib/interview-scheduling/self-schedule';
+import { useTranslation } from '@/lib/i18n/context';
+import {
+  formatBlackoutDateSummaryLocalized,
+  formatWeeklyAvailabilitySummaryLocalized,
+  translateInterviewModeOption,
+} from '@/lib/i18n/recruiter-presentation';
+import type { Locale } from '@/lib/i18n/locale';
 
 interface InterviewSelfScheduleEditorProps {
   settings: JobInterviewSelfScheduleSettings;
@@ -37,6 +42,7 @@ export default function InterviewSelfScheduleEditor({
   saving = false,
   onSave,
 }: InterviewSelfScheduleEditorProps) {
+  const { t, locale } = useTranslation();
   const [draft, setDraft] = useState<JobInterviewSelfScheduleSettings>(settings);
   const [blackoutDateInput, setBlackoutDateInput] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
@@ -52,14 +58,14 @@ export default function InterviewSelfScheduleEditor({
     setMessage(null);
     try {
       await onSave(draft);
-      setMessage({ type: 'success', text: 'Self-schedule settings saved.' });
+      setMessage({ type: 'success', text: t('selfSchedule.saved') });
     } catch (error) {
       setMessage({
         type: 'error',
         text:
           error instanceof Error
             ? error.message
-            : 'Failed to save self-schedule settings',
+            : t('selfSchedule.saveFailed'),
       });
     }
   }
@@ -68,17 +74,17 @@ export default function InterviewSelfScheduleEditor({
     <div className="rounded-xl bg-gray-800 p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-white">Self-Schedule Defaults</h2>
+          <h2 className="text-lg font-semibold text-white">{t('selfSchedule.title')}</h2>
           <p className="mt-1 text-sm text-gray-400">
-            Define weekly availability and reusable slot templates for this job.
+            {t('selfSchedule.subtitle')}
           </p>
         </div>
         <div className="space-y-2">
           <div className="rounded-xl border border-gray-700 bg-gray-900/35 px-4 py-3 text-sm text-gray-300">
-            {formatWeeklyAvailabilitySummary(draft)}
+            {formatWeeklyAvailabilitySummaryLocalized(t, draft)}
           </div>
           <div className="rounded-xl border border-gray-700 bg-gray-900/35 px-4 py-3 text-sm text-gray-300">
-            {formatBlackoutDateSummary(draft)}
+            {formatBlackoutDateSummaryLocalized(t, locale as Locale, draft)}
           </div>
         </div>
       </div>
@@ -98,7 +104,7 @@ export default function InterviewSelfScheduleEditor({
       <div className="mt-5 grid gap-4 md:grid-cols-3">
         <div>
           <label className="mb-2 block text-sm font-medium text-gray-400">
-            Scheduling timezone
+            {t('selfSchedule.timezone')}
           </label>
           <input
             type="text"
@@ -106,13 +112,13 @@ export default function InterviewSelfScheduleEditor({
             onChange={(event) =>
               setDraft((current) => ({ ...current, timezone: event.target.value }))
             }
-            placeholder="Africa/Douala"
+            placeholder={t('selfSchedule.timezonePlaceholder')}
             className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
           />
         </div>
         <div>
           <label className="mb-2 block text-sm font-medium text-gray-400">
-            Slot interval minutes
+            {t('selfSchedule.slotInterval')}
           </label>
           <input
             type="number"
@@ -131,7 +137,7 @@ export default function InterviewSelfScheduleEditor({
         </div>
         <div>
           <label className="mb-2 block text-sm font-medium text-gray-400">
-            Minimum notice hours
+            {t('selfSchedule.minimumNotice')}
           </label>
           <input
             type="number"
@@ -151,7 +157,7 @@ export default function InterviewSelfScheduleEditor({
 
       <div className="mt-6">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium text-gray-300">Blackout dates</h3>
+          <h3 className="text-sm font-medium text-gray-300">{t('selfSchedule.blackoutDates')}</h3>
           <div className="flex items-center gap-2">
             <input
               type="date"
@@ -173,14 +179,14 @@ export default function InterviewSelfScheduleEditor({
               }}
               className="rounded-lg bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-600"
             >
-              Add date
+              {t('selfSchedule.addDate')}
             </button>
           </div>
         </div>
 
         {draft.blackoutDates.length === 0 ? (
           <div className="mt-3 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
-            No blackout dates configured.
+            {t('selfSchedule.noBlackoutDates')}
           </div>
         ) : (
           <div className="mt-3 flex flex-wrap gap-2">
@@ -200,7 +206,7 @@ export default function InterviewSelfScheduleEditor({
                   }
                   className="text-red-200 hover:text-white"
                 >
-                  Remove
+                  {t('selfSchedule.remove')}
                 </button>
               </span>
             ))}
@@ -209,7 +215,7 @@ export default function InterviewSelfScheduleEditor({
       </div>
 
       <div className="mt-6">
-        <h3 className="text-sm font-medium text-gray-300">Weekly availability</h3>
+        <h3 className="text-sm font-medium text-gray-300">{t('selfSchedule.weeklyAvailability')}</h3>
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {WEEKDAY_KEYS.map((day) => {
             const window = draft.weeklyAvailability[day];
@@ -236,13 +242,15 @@ export default function InterviewSelfScheduleEditor({
                     }
                     className="h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
                   />
-                  <span className="font-medium capitalize text-white">{day}</span>
+                  <span className="font-medium capitalize text-white">
+                    {t(`weekday.${day}`)}
+                  </span>
                 </label>
 
                 <div className="mt-3 grid grid-cols-2 gap-3">
                   <div>
                     <label className="mb-1 block text-xs uppercase tracking-[0.2em] text-gray-500">
-                      Start
+                      {t('selfSchedule.start')}
                     </label>
                     <input
                       type="time"
@@ -265,7 +273,7 @@ export default function InterviewSelfScheduleEditor({
                   </div>
                   <div>
                     <label className="mb-1 block text-xs uppercase tracking-[0.2em] text-gray-500">
-                      End
+                      {t('selfSchedule.end')}
                     </label>
                     <input
                       type="time"
@@ -295,7 +303,7 @@ export default function InterviewSelfScheduleEditor({
 
       <div className="mt-6">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-medium text-gray-300">Reusable slot templates</h3>
+          <h3 className="text-sm font-medium text-gray-300">{t('selfSchedule.slotTemplates')}</h3>
           <button
             type="button"
             onClick={() =>
@@ -306,13 +314,13 @@ export default function InterviewSelfScheduleEditor({
             }
             className="rounded-lg bg-gray-700 px-3 py-2 text-sm text-white hover:bg-gray-600"
           >
-            Add template
+            {t('selfSchedule.addTemplate')}
           </button>
         </div>
 
         {draft.slotTemplates.length === 0 ? (
           <div className="mt-3 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
-            No slot templates yet. Add one for repeated video, phone, or onsite interview setups.
+            {t('selfSchedule.noTemplates')}
           </div>
         ) : (
           <div className="mt-3 space-y-3">
@@ -324,7 +332,7 @@ export default function InterviewSelfScheduleEditor({
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-400">
-                      Template name
+                      {t('selfSchedule.templateName')}
                     </label>
                     <input
                       type="text"
@@ -344,7 +352,7 @@ export default function InterviewSelfScheduleEditor({
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-400">
-                      Interview mode
+                      {t('selfSchedule.interviewMode')}
                     </label>
                     <select
                       value={template.mode}
@@ -363,15 +371,15 @@ export default function InterviewSelfScheduleEditor({
                       }
                       className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
                     >
-                      <option value="video">Video</option>
-                      <option value="phone">Phone</option>
-                      <option value="onsite">On-site</option>
-                      <option value="other">Other</option>
+                      <option value="video">{translateInterviewModeOption(t, 'video')}</option>
+                      <option value="phone">{translateInterviewModeOption(t, 'phone')}</option>
+                      <option value="onsite">{translateInterviewModeOption(t, 'onsite')}</option>
+                      <option value="other">{translateInterviewModeOption(t, 'other')}</option>
                     </select>
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-400">
-                      Default location
+                      {t('selfSchedule.defaultLocation')}
                     </label>
                     <input
                       type="text"
@@ -391,7 +399,7 @@ export default function InterviewSelfScheduleEditor({
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-400">
-                      Default meeting URL
+                      {t('selfSchedule.defaultMeetingUrl')}
                     </label>
                     <input
                       type="url"
@@ -413,7 +421,7 @@ export default function InterviewSelfScheduleEditor({
 
                 <div className="mt-4">
                   <label className="mb-2 block text-sm font-medium text-gray-400">
-                    Default candidate instructions
+                    {t('selfSchedule.defaultInstructions')}
                   </label>
                   <textarea
                     value={template.notes || ''}
@@ -445,7 +453,7 @@ export default function InterviewSelfScheduleEditor({
                     }
                     className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700"
                   >
-                    Remove template
+                    {t('selfSchedule.removeTemplate')}
                   </button>
                 </div>
               </div>
@@ -461,7 +469,7 @@ export default function InterviewSelfScheduleEditor({
           disabled={saving}
           className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
         >
-          {saving ? 'Saving...' : 'Save self-schedule settings'}
+          {saving ? t('selfSchedule.saving') : t('selfSchedule.save')}
         </button>
       </div>
     </div>

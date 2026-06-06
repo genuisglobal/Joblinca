@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, ChangeEvent, useEffect } from 'react';
+import { useState, ChangeEvent, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { CustomQuestion } from '@/lib/questions';
@@ -24,6 +25,25 @@ type ApplyMethod = 'joblinca' | 'external_url' | 'email' | 'phone' | 'whatsapp' 
 type RecruiterOption = {
   id: string;
   label: string;
+  companyName: string | null;
+  companyLogoUrl: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+};
+
+type RecruiterProfileDefaults = {
+  companyName: string | null;
+  companyLogoUrl: string | null;
+  contactEmail: string | null;
+  contactPhone: string | null;
+};
+
+type RecruiterDefaultSnapshot = {
+  companyName: string;
+  companyLogoUrl: string;
+  applyEmail: string;
+  applyPhone: string;
+  applyWhatsapp: string;
 };
 
 function formatRecruiterLabel(profile: {
@@ -40,6 +60,28 @@ function formatRecruiterLabel(profile: {
   return companyName ? `${name} (${companyName})` : name;
 }
 
+function buildRecruiterDefaultSnapshot(
+  defaults: RecruiterProfileDefaults | null
+): RecruiterDefaultSnapshot | null {
+  if (!defaults) {
+    return null;
+  }
+
+  const contactPhone = defaults.contactPhone?.trim() || '';
+
+  return {
+    companyName: defaults.companyName?.trim() || '',
+    companyLogoUrl: defaults.companyLogoUrl?.trim() || '',
+    applyEmail: defaults.contactEmail?.trim() || '',
+    applyPhone: contactPhone,
+    applyWhatsapp: contactPhone,
+  };
+}
+
+function shouldSyncUneditedField(currentValue: string, previousValue: string) {
+  return !currentValue.trim() || currentValue === previousValue;
+}
+
 export default function NewJobPage() {
   const router = useRouter();
   const supabase = createClient();
@@ -47,6 +89,10 @@ export default function NewJobPage() {
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [salary, setSalary] = useState('');
+  const [salaryMin, setSalaryMin] = useState('');
+  const [salaryMax, setSalaryMax] = useState('');
+  const [salaryCurrency, setSalaryCurrency] = useState('XAF');
+  const [salaryPeriod, setSalaryPeriod] = useState<'HOUR' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR'>('MONTH');
   const [error, setError] = useState<string | null>(null);
 
   // Additional fields for enhanced job posting
@@ -85,6 +131,76 @@ export default function NewJobPage() {
   const [recruiterOptions, setRecruiterOptions] = useState<RecruiterOption[]>([]);
   const [selectedRecruiterId, setSelectedRecruiterId] = useState('');
   const [loadingRecruiters, setLoadingRecruiters] = useState(false);
+  const [recruiterProfileDefaults, setRecruiterProfileDefaults] = useState<RecruiterProfileDefaults | null>(null);
+  const [fieldEdited, setFieldEdited] = useState({
+    companyName: false,
+    companyLogoUrl: false,
+    applyEmail: false,
+    applyPhone: false,
+    applyWhatsapp: false,
+  });
+  const lastAppliedDefaultsRef = useRef<RecruiterDefaultSnapshot | null>(null);
+
+  function markFieldEdited(
+    field: 'companyName' | 'companyLogoUrl' | 'applyEmail' | 'applyPhone' | 'applyWhatsapp'
+  ) {
+    setFieldEdited((current) =>
+      current[field] ? current : { ...current, [field]: true }
+    );
+  }
+
+  function buildDefaultDeadline(daysFromNow: number) {
+    const next = new Date();
+    next.setDate(next.getDate() + daysFromNow);
+    return next.toISOString().split('T')[0];
+  }
+
+  function applyPostingStarter(
+    starter:
+      | 'standard_job'
+      | 'remote_job'
+      | 'education_internship'
+      | 'professional_internship'
+  ) {
+    setError(null);
+
+    switch (starter) {
+      case 'standard_job':
+        handleJobTypeChange('job');
+        setWorkType('onsite');
+        setVisibility('public');
+        setApplyMethod('joblinca');
+        setSalaryPeriod('MONTH');
+        setClosesAt(buildDefaultDeadline(30));
+        break;
+      case 'remote_job':
+        handleJobTypeChange('job');
+        setWorkType('remote');
+        setVisibility('public');
+        setApplyMethod('joblinca');
+        setSalaryPeriod('MONTH');
+        setClosesAt(buildDefaultDeadline(30));
+        break;
+      case 'education_internship':
+        handleJobTypeChange('internship');
+        handleInternshipTrackChange('education');
+        setWorkType('onsite');
+        setVisibility('public');
+        setApplyMethod('joblinca');
+        setSalaryPeriod('MONTH');
+        setClosesAt(buildDefaultDeadline(21));
+        break;
+      case 'professional_internship':
+        handleJobTypeChange('internship');
+        handleInternshipTrackChange('professional');
+        setWorkType('onsite');
+        setVisibility('public');
+        setApplyMethod('joblinca');
+        setSalaryPeriod('MONTH');
+        setClosesAt(buildDefaultDeadline(21));
+        break;
+    }
+  }
 
   useEffect(() => {
     async function checkRole() {
@@ -118,6 +234,25 @@ export default function NewJobPage() {
           setPostingMode(isActiveAdmin ? 'admin' : 'recruiter');
           setAllowed(true);
 
+          if (profile.role === 'recruiter') {
+            const { data: recruiterProfile, error: recruiterProfileError } = await supabase
+              .from('recruiter_profiles')
+              .select('company_name, company_logo_url, contact_email, contact_phone')
+              .eq('user_id', user.id)
+              .maybeSingle();
+
+            if (recruiterProfileError) {
+              console.error('Recruiter profile fetch error:', recruiterProfileError);
+            } else if (recruiterProfile) {
+              setRecruiterProfileDefaults({
+                companyName: recruiterProfile.company_name || null,
+                companyLogoUrl: recruiterProfile.company_logo_url || null,
+                contactEmail: recruiterProfile.contact_email || null,
+                contactPhone: recruiterProfile.contact_phone || null,
+              });
+            }
+          }
+
           if (isActiveAdmin) {
             setLoadingRecruiters(true);
 
@@ -130,21 +265,42 @@ export default function NewJobPage() {
                   .order('created_at', { ascending: false }),
                 supabase
                   .from('recruiter_profiles')
-                  .select('user_id, company_name'),
+                  .select('user_id, company_name, company_logo_url, contact_email, contact_phone'),
               ]);
 
             if (recruitersError || recruiterProfilesError) {
               console.error('Recruiter list fetch error:', recruitersError || recruiterProfilesError);
               setError('Unable to load recruiters for delegation. You can still post as Joblinca.');
             } else {
-              const companyByUserId = new Map<string, string | null>();
+              const recruiterProfileByUserId = new Map<
+                string,
+                {
+                  companyName: string | null;
+                  companyLogoUrl: string | null;
+                  contactEmail: string | null;
+                  contactPhone: string | null;
+                }
+              >();
               (recruiterProfiles || []).forEach((row: any) => {
-                companyByUserId.set(row.user_id, row.company_name || null);
+                recruiterProfileByUserId.set(row.user_id, {
+                  companyName: row.company_name || null,
+                  companyLogoUrl: row.company_logo_url || null,
+                  contactEmail: row.contact_email || null,
+                  contactPhone: row.contact_phone || null,
+                });
               });
 
               const options = (recruiters || []).map((recruiter: any) => ({
                 id: recruiter.id,
-                label: formatRecruiterLabel(recruiter, companyByUserId.get(recruiter.id)),
+                label: formatRecruiterLabel(
+                  recruiter,
+                  recruiterProfileByUserId.get(recruiter.id)?.companyName || null
+                ),
+                companyName: recruiterProfileByUserId.get(recruiter.id)?.companyName || null,
+                companyLogoUrl:
+                  recruiterProfileByUserId.get(recruiter.id)?.companyLogoUrl || null,
+                contactEmail: recruiterProfileByUserId.get(recruiter.id)?.contactEmail || null,
+                contactPhone: recruiterProfileByUserId.get(recruiter.id)?.contactPhone || null,
               }));
 
               setRecruiterOptions(options);
@@ -170,6 +326,89 @@ export default function NewJobPage() {
     checkRole();
   }, [supabase, router]);
 
+  const selectedRecruiterProfile =
+    postingMode === 'admin' && postingTarget === 'recruiter'
+      ? recruiterOptions.find((option) => option.id === selectedRecruiterId) || null
+      : null;
+
+  const selectedRecruiterMissingFields =
+    selectedRecruiterProfile
+      ? [
+          !selectedRecruiterProfile.companyName ? 'company name' : null,
+          !selectedRecruiterProfile.contactEmail ? 'contact email' : null,
+          !selectedRecruiterProfile.contactPhone ? 'contact phone or WhatsApp' : null,
+        ].filter(Boolean)
+      : [];
+
+  useEffect(() => {
+    const activeProfileDefaults: RecruiterProfileDefaults | null = selectedRecruiterProfile
+      ? {
+          companyName: selectedRecruiterProfile.companyName,
+          companyLogoUrl: selectedRecruiterProfile.companyLogoUrl,
+          contactEmail: selectedRecruiterProfile.contactEmail,
+          contactPhone: selectedRecruiterProfile.contactPhone,
+        }
+      : recruiterProfileDefaults;
+    const activeDefaults = buildRecruiterDefaultSnapshot(activeProfileDefaults);
+    const previousDefaults = lastAppliedDefaultsRef.current;
+
+    if (!activeDefaults) {
+      lastAppliedDefaultsRef.current = null;
+      return;
+    }
+
+    if (
+      !fieldEdited.companyName &&
+      shouldSyncUneditedField(companyName, previousDefaults?.companyName || '') &&
+      companyName !== activeDefaults.companyName
+    ) {
+      setCompanyName(activeDefaults.companyName);
+    }
+
+    if (
+      !fieldEdited.companyLogoUrl &&
+      shouldSyncUneditedField(companyLogoUrl, previousDefaults?.companyLogoUrl || '') &&
+      companyLogoUrl !== activeDefaults.companyLogoUrl
+    ) {
+      setCompanyLogoUrl(activeDefaults.companyLogoUrl);
+    }
+
+    if (
+      !fieldEdited.applyEmail &&
+      shouldSyncUneditedField(applyEmail, previousDefaults?.applyEmail || '') &&
+      applyEmail !== activeDefaults.applyEmail
+    ) {
+      setApplyEmail(activeDefaults.applyEmail);
+    }
+
+    if (
+      !fieldEdited.applyPhone &&
+      shouldSyncUneditedField(applyPhone, previousDefaults?.applyPhone || '') &&
+      applyPhone !== activeDefaults.applyPhone
+    ) {
+      setApplyPhone(activeDefaults.applyPhone);
+    }
+
+    if (
+      !fieldEdited.applyWhatsapp &&
+      shouldSyncUneditedField(applyWhatsapp, previousDefaults?.applyWhatsapp || '') &&
+      applyWhatsapp !== activeDefaults.applyWhatsapp
+    ) {
+      setApplyWhatsapp(activeDefaults.applyWhatsapp);
+    }
+
+    lastAppliedDefaultsRef.current = activeDefaults;
+  }, [
+    selectedRecruiterProfile,
+    recruiterProfileDefaults,
+    fieldEdited,
+    companyName,
+    companyLogoUrl,
+    applyEmail,
+    applyPhone,
+    applyWhatsapp,
+  ]);
+
   const internshipPreset = getInternshipTrackPostingPreset(internshipTrack as InternshipTrack | '');
   const opportunityLabel = getOpportunityPostingLabel(jobType, internshipTrack as InternshipTrack | '');
   const titlePlaceholder =
@@ -178,6 +417,39 @@ export default function NewJobPage() {
   const descriptionPrompt =
     internshipPreset?.descriptionPrompt ||
     'Describe the responsibilities, team context, and success expectations for this opportunity.';
+  const postingTrustSignals = [
+    {
+      key: 'companyName',
+      label: 'Company name added',
+      done: Boolean(companyName.trim()),
+    },
+    {
+      key: 'companyLogo',
+      label: 'Company logo uploaded',
+      done: Boolean(companyLogoUrl),
+    },
+    {
+      key: 'salaryRange',
+      label: 'Salary range disclosed',
+      done: Boolean(salaryMin || salaryMax),
+    },
+    {
+      key: 'deadline',
+      label: 'Application deadline set',
+      done: Boolean(closesAt),
+    },
+    {
+      key: 'nativeApply',
+      label: 'Joblinca apply enabled',
+      done: applyMethod === 'joblinca',
+    },
+    {
+      key: 'description',
+      label: 'Clear description written',
+      done: description.trim().length >= 160,
+    },
+  ];
+  const completedTrustSignals = postingTrustSignals.filter((signal) => signal.done).length;
 
   function handleJobTypeChange(nextJobType: string) {
     setJobType(nextJobType);
@@ -317,6 +589,16 @@ export default function NewJobPage() {
       setError('Please provide a WhatsApp number for applications');
       return;
     }
+    if (
+      applyMethod === 'multiple' &&
+      !externalApplyUrl.trim() &&
+      !applyEmail.trim() &&
+      !applyPhone.trim() &&
+      !applyWhatsapp.trim()
+    ) {
+      setError('Add at least one application method when using multiple methods.');
+      return;
+    }
 
     if (
       postingMode === 'admin' &&
@@ -332,6 +614,15 @@ export default function NewJobPage() {
       return;
     }
 
+    if (
+      salaryMin.trim() &&
+      salaryMax.trim() &&
+      Number(salaryMin) > Number(salaryMax)
+    ) {
+      setError('Salary max must be greater than or equal to salary min.');
+      return;
+    }
+
     try {
       const res = await fetch('/api/jobs', {
         method: 'POST',
@@ -343,6 +634,10 @@ export default function NewJobPage() {
           description,
           location,
           salary,
+          salaryMin: salaryMin || undefined,
+          salaryMax: salaryMax || undefined,
+          salaryCurrency,
+          salaryPeriod,
           companyName: companyName || undefined,
           companyLogoUrl: companyLogoUrl || undefined,
           workType,
@@ -551,12 +846,114 @@ export default function NewJobPage() {
               <p className="text-xs text-gray-400 mt-1">
                 The selected recruiter can manage the job and applications.
               </p>
+              {selectedRecruiterProfile && (
+                <div className="mt-3 rounded-lg border border-gray-700 bg-gray-800/70 p-3 text-sm text-gray-200">
+                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-gray-400">Company</p>
+                      <p className="mt-1 text-white">
+                        {selectedRecruiterProfile.companyName || 'Not set on recruiter profile'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-gray-400">Primary contact</p>
+                      <p className="mt-1 text-white">
+                        {selectedRecruiterProfile.contactEmail || selectedRecruiterProfile.contactPhone || 'Not set on recruiter profile'}
+                      </p>
+                    </div>
+                  </div>
+                  {selectedRecruiterMissingFields.length > 0 && (
+                    <p className="mt-3 text-xs text-amber-300">
+                      Missing on this recruiter profile: {selectedRecruiterMissingFields.join(', ')}. Fill the fields below so the post still looks complete to candidates.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
       {/* Use lighter card and input backgrounds for better readability */}
       <form onSubmit={handleSubmit} className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
+        <div className="rounded-xl border border-blue-700/50 bg-blue-900/20 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-white">Quick setup</h2>
+              <p className="mt-1 text-sm text-blue-200">
+                Start from a recommended template to fill the most important defaults in one click.
+              </p>
+            </div>
+            <p className="text-xs uppercase tracking-[0.18em] text-blue-200/70">
+              Recommended path
+            </p>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            {[
+              {
+                key: 'standard_job',
+                title: 'Standard Job',
+                description: 'Onsite or hybrid hiring with Joblinca apply and a 30-day deadline.',
+              },
+              {
+                key: 'remote_job',
+                title: 'Remote Job',
+                description: 'Remote-ready posting with Joblinca apply and monthly salary defaults.',
+              },
+              {
+                key: 'education_internship',
+                title: 'Educational Internship',
+                description: 'Academic placement with the structured education track and native apply.',
+              },
+              {
+                key: 'professional_internship',
+                title: 'Professional Internship',
+                description: 'Portfolio-driven internship with structured screening and native apply.',
+              },
+            ].map((starter) => (
+              <button
+                key={starter.key}
+                type="button"
+                onClick={() => applyPostingStarter(starter.key as Parameters<typeof applyPostingStarter>[0])}
+                className="rounded-lg border border-gray-600 bg-gray-800/70 p-4 text-left transition-colors hover:border-blue-400 hover:bg-gray-800"
+              >
+                <p className="font-medium text-white">{starter.title}</p>
+                <p className="mt-1 text-sm text-gray-300">{starter.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-emerald-700/40 bg-emerald-900/20 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-white">Trust and conversion checklist</h2>
+              <p className="mt-1 text-sm text-emerald-100/80">
+                Posts with clearer employer identity, compensation, and native apply usually convert better.
+              </p>
+            </div>
+            <span className="rounded-full bg-black/20 px-3 py-1 text-xs font-medium text-white">
+              {completedTrustSignals}/{postingTrustSignals.length} complete
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
+            {postingTrustSignals.map((signal) => (
+              <div
+                key={signal.key}
+                className={`rounded-lg border px-3 py-2 text-sm ${
+                  signal.done
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-100'
+                    : 'border-gray-600 bg-gray-800/60 text-gray-300'
+                }`}
+              >
+                <span className="mr-2 inline-block w-4 text-center">
+                  {signal.done ? '✓' : '•'}
+                </span>
+                {signal.label}
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-gray-300">Upload Job Description (PDF/DOCX/TXT)</label>
           <input
@@ -583,10 +980,16 @@ export default function NewJobPage() {
           <input
             type="text"
             value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
+            onChange={(e) => {
+              markFieldEdited('companyName');
+              setCompanyName(e.target.value);
+            }}
             className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
             placeholder="e.g. Acme Corp"
           />
+          <p className="text-xs text-gray-500 mt-2">
+            Use the exact employer name candidates should recognize in search results and alerts.
+          </p>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-300">Company Logo (optional)</label>
@@ -603,9 +1006,11 @@ export default function NewJobPage() {
           {uploadingLogo && <p className="text-sm text-blue-400 mt-2">Uploading logo...</p>}
           {companyLogoUrl && (
             <div className="mt-3 flex items-center gap-4 rounded-lg border border-gray-600 bg-gray-800/60 p-3">
-              <img
+              <Image
                 src={companyLogoUrl}
                 alt="Company logo preview"
+                width={56}
+                height={56}
                 className="h-14 w-14 rounded-lg object-cover"
               />
               <div className="min-w-0 flex-1">
@@ -614,7 +1019,10 @@ export default function NewJobPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setCompanyLogoUrl('')}
+                onClick={() => {
+                  markFieldEdited('companyLogoUrl');
+                  setCompanyLogoUrl('');
+                }}
                 className="px-3 py-1.5 text-sm text-gray-300 hover:text-white transition-colors"
               >
                 Remove
@@ -633,15 +1041,52 @@ export default function NewJobPage() {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300">Salary (XAF)</label>
-          <input
-            type="number"
-            value={salary}
-            onChange={(e) => setSalary(e.target.value)}
-            className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
-            min="0"
-            placeholder="Optional"
-          />
+          <label className="block text-sm font-medium text-gray-300">
+            Salary range
+            <span className="text-gray-500 font-normal"> — boosts visibility on Google for Jobs</span>
+          </label>
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            <input
+              type="number"
+              value={salaryMin}
+              onChange={(e) => setSalaryMin(e.target.value)}
+              className="px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+              min="0"
+              placeholder="Min"
+            />
+            <input
+              type="number"
+              value={salaryMax}
+              onChange={(e) => setSalaryMax(e.target.value)}
+              className="px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
+              min="0"
+              placeholder="Max"
+            />
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <select
+              value={salaryCurrency}
+              onChange={(e) => setSalaryCurrency(e.target.value)}
+              className="px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
+            >
+              <option value="XAF">XAF (FCFA)</option>
+              <option value="USD">USD</option>
+              <option value="EUR">EUR</option>
+              <option value="GBP">GBP</option>
+              <option value="NGN">NGN</option>
+            </select>
+            <select
+              value={salaryPeriod}
+              onChange={(e) => setSalaryPeriod(e.target.value as typeof salaryPeriod)}
+              className="px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
+            >
+              <option value="HOUR">per hour</option>
+              <option value="DAY">per day</option>
+              <option value="WEEK">per week</option>
+              <option value="MONTH">per month</option>
+              <option value="YEAR">per year</option>
+            </select>
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-300">Work Type</label>
@@ -760,6 +1205,11 @@ export default function NewJobPage() {
               {applyMethod === 'whatsapp' && 'Candidates will contact you via WhatsApp to apply'}
               {applyMethod === 'multiple' && 'Offer multiple ways for candidates to apply'}
             </p>
+            {applyMethod === 'joblinca' && (
+              <p className="text-xs text-emerald-300 mt-2">
+                Recommended for faster review, structured ATS handling, and stronger matching on Joblinca.
+              </p>
+            )}
           </div>
 
           {/* Conditional Fields Based on Apply Method */}
@@ -787,7 +1237,10 @@ export default function NewJobPage() {
               <input
                 type="email"
                 value={applyEmail}
-                onChange={(e) => setApplyEmail(e.target.value)}
+                onChange={(e) => {
+                  markFieldEdited('applyEmail');
+                  setApplyEmail(e.target.value);
+                }}
                 className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
                 placeholder="careers@yourcompany.com"
                 required={applyMethod === 'email'}
@@ -803,7 +1256,10 @@ export default function NewJobPage() {
               <input
                 type="tel"
                 value={applyPhone}
-                onChange={(e) => setApplyPhone(e.target.value)}
+                onChange={(e) => {
+                  markFieldEdited('applyPhone');
+                  setApplyPhone(e.target.value);
+                }}
                 className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
                 placeholder="+237 6XX XXX XXX"
                 required={applyMethod === 'phone'}
@@ -819,7 +1275,10 @@ export default function NewJobPage() {
               <input
                 type="tel"
                 value={applyWhatsapp}
-                onChange={(e) => setApplyWhatsapp(e.target.value)}
+                onChange={(e) => {
+                  markFieldEdited('applyWhatsapp');
+                  setApplyWhatsapp(e.target.value);
+                }}
                 className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500 placeholder-gray-500"
                 placeholder="+237 6XX XXX XXX (with country code)"
                 required={applyMethod === 'whatsapp'}

@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { User } from 'lucide-react';
 import PhoneInput from '@/components/ui/PhoneInput';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface BasicInfoStepProps {
   firstName: string;
@@ -36,6 +37,8 @@ export default function BasicInfoStep({
   onPhoneChange,
   errors,
 }: BasicInfoStepProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -48,10 +51,10 @@ export default function BasicInfoStep({
           <User className="w-8 h-8 text-blue-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          What&apos;s your name?
+          {t('onboarding.basicInfo.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          This helps employers and recruiters identify you
+          {t('onboarding.basicInfo.subtitle')}
         </p>
       </motion.div>
 
@@ -68,14 +71,14 @@ export default function BasicInfoStep({
             htmlFor="firstName"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            First Name <span className="text-red-400">*</span>
+            {t('onboarding.basicInfo.firstName')} <span className="text-red-400">*</span>
           </label>
           <input
             id="firstName"
             type="text"
             value={firstName}
             onChange={(e) => onFirstNameChange(e.target.value)}
-            placeholder="Enter your first name"
+            placeholder={t('onboarding.basicInfo.firstNamePlaceholder')}
             className={`
               w-full px-4 py-3 bg-gray-800 text-gray-100
               border rounded-lg
@@ -100,14 +103,14 @@ export default function BasicInfoStep({
             htmlFor="lastName"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            Last Name <span className="text-red-400">*</span>
+            {t('onboarding.basicInfo.lastName')} <span className="text-red-400">*</span>
           </label>
           <input
             id="lastName"
             type="text"
             value={lastName}
             onChange={(e) => onLastNameChange(e.target.value)}
-            placeholder="Enter your last name"
+            placeholder={t('onboarding.basicInfo.lastNamePlaceholder')}
             className={`
               w-full px-4 py-3 bg-gray-800 text-gray-100
               border rounded-lg
@@ -132,7 +135,7 @@ export default function BasicInfoStep({
             htmlFor="phone"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            Phone Number <span className="text-red-400">*</span>
+            {t('onboarding.basicInfo.phone')} <span className="text-red-400">*</span>
           </label>
           <PhoneInput
             value={phone}

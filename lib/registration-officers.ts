@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { addLocalePrefix, DEFAULT_LOCALE, type Locale } from './i18n/locale';
 
 export type RegistrationAttributionSource =
   | 'prefilled_link'
@@ -61,9 +62,13 @@ export function normalizeOfficerCode(input: unknown): string | null {
   return normalized.length >= 4 ? normalized : null;
 }
 
-export function buildOfficerSignupUrl(baseUrl: string, officerCode: string): string {
+export function buildOfficerSignupUrl(
+  baseUrl: string,
+  officerCode: string,
+  locale: Locale = DEFAULT_LOCALE
+): string {
   const normalizedBaseUrl = baseUrl.replace(/\/$/, '');
-  return `${normalizedBaseUrl}/auth/register?officer=${encodeURIComponent(officerCode)}`;
+  return `${normalizedBaseUrl}${addLocalePrefix('/auth/register', locale)}?officer=${encodeURIComponent(officerCode)}`;
 }
 
 function buildRandomOfficerCode(length = 6): string {

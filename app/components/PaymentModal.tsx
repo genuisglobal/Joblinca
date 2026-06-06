@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
   calculateChargeBreakdown,
   getProcessingFeePercentClient,
@@ -34,6 +36,20 @@ const POLL_INTERVAL_MS = 5000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 const FALLBACK_REDIRECT_MS = 60 * 1000;
 
+function translatePromoReason(
+  reason: string | undefined,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (reason) {
+    case 'Validation failed':
+    case 'Failed to validate promo code':
+    case 'Plan not found':
+      return t('payment.validationFailed');
+    default:
+      return t('payment.invalidPromoCode');
+  }
+}
+
 export default function PaymentModal({
   plan,
   jobId,
@@ -41,6 +57,7 @@ export default function PaymentModal({
   onClose,
   onSuccess,
 }: PaymentModalProps) {
+  const { locale, t } = useTranslation();
   const [phone, setPhone] = useState('');
   const [promoCode, setPromoCode] = useState('');
   const [promoResult, setPromoResult] = useState<{
@@ -77,6 +94,10 @@ export default function PaymentModal({
     promoResult?.valid && typeof promoResult.total_amount === 'number'
       ? promoResult.total_amount
       : computedCharge.totalAmount;
+  const amountFormatter = new Intl.NumberFormat(locale === 'fr' ? 'fr-FR' : 'en-US', {
+    maximumFractionDigits: 0,
+  });
+  const formatAmount = (value: number) => amountFormatter.format(value);
   const feePercentLabel = Number.isInteger(activeFeePercent)
     ? String(activeFeePercent)
     : activeFeePercent.toFixed(2);
@@ -93,14 +114,19 @@ export default function PaymentModal({
   }, []);
 
   const goToTrackingPage = useCallback((txId: string) => {
-    window.location.assign(`/payment/return?tx=${encodeURIComponent(txId)}`);
-  }, []);
+    window.location.assign(
+      addLocalePrefix(`/payment/return?tx=${encodeURIComponent(txId)}`, locale)
+    );
+  }, [locale]);
 
   const goToSubscriptionActivePage = useCallback((txId: string) => {
     window.location.assign(
-      `/payment/subscription-active?tx=${encodeURIComponent(txId)}`
+      addLocalePrefix(
+        `/payment/subscription-active?tx=${encodeURIComponent(txId)}`,
+        locale
+      )
     );
-  }, []);
+  }, [locale]);
 
   useEffect(() => {
     return () => {
@@ -178,9 +204,7 @@ export default function PaymentModal({
           stopPollingRef.current = true;
           clearTimers();
           setStatus('failed');
-          setError(
-            'Payment timed out. You can edit your number and retry, or continue tracking this payment.'
-          );
+          setError(t('payment.paymentTimedOut'));
           return;
         }
 
@@ -201,9 +225,7 @@ export default function PaymentModal({
             stopPollingRef.current = true;
             clearTimers();
             setStatus('failed');
-            setError(
-              'Payment was not confirmed. Edit your number if needed and retry.'
-            );
+            setError(t('payment.paymentNotConfirmed'));
             return;
           }
         } catch {
@@ -215,12 +237,12 @@ export default function PaymentModal({
 
       await poll();
     },
-    [clearTimers, goToSubscriptionActivePage, goToTrackingPage, onSuccess]
+    [clearTimers, goToSubscriptionActivePage, goToTrackingPage, onSuccess, t]
   );
 
   async function handlePayment(gatewayOverride?: string) {
     if (!phone.trim()) {
-      setError('Please enter your phone number');
+      setError(t('payment.enterPhoneNumber'));
       return;
     }
 
@@ -257,7 +279,7 @@ export default function PaymentModal({
 
       if (!res.ok) {
         setStatus('failed');
-        setError(data.error || 'Payment failed');
+        setError(data.error || t('payment.paymentFailed'));
         return;
       }
 
@@ -271,7 +293,7 @@ export default function PaymentModal({
       await pollStatus(data.transaction_id);
     } catch {
       setStatus('failed');
-      setError('Something went wrong. Please try again.');
+      setError(t('payment.somethingWentWrong'));
     }
   }
 
@@ -279,11 +301,12 @@ export default function PaymentModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">Complete Payment</h2>
+          <h2 className="text-lg font-semibold text-white">{t('payment.completePayment')}</h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-white transition-colors"
             disabled={status === 'processing' || status === 'polling'}
+            aria-label={t('common.close')}
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -293,35 +316,35 @@ export default function PaymentModal({
 
         <div className="p-5 space-y-5">
           <div className="bg-gray-900 rounded-lg p-4">
-            <p className="text-sm text-gray-400">Plan</p>
+            <p className="text-sm text-gray-400">{t('payment.plan')}</p>
             <p className="text-white font-medium">{plan.name}</p>
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-2xl font-bold text-white">
-                {totalAmount.toLocaleString()} CFA
+                {formatAmount(totalAmount)} CFA
               </span>
             </div>
             <div className="mt-3 space-y-1 text-sm">
               <div className="flex items-center justify-between text-gray-400">
-                <span>Base price</span>
-                <span>{plan.amount_xaf.toLocaleString()} CFA</span>
+                <span>{t('payment.basePrice')}</span>
+                <span>{formatAmount(plan.amount_xaf)} CFA</span>
               </div>
               {promoResult?.valid && promoResult.discount_amount > 0 && (
                 <div className="flex items-center justify-between text-green-400">
-                  <span>Discount</span>
-                  <span>-{promoResult.discount_amount.toLocaleString()} CFA</span>
+                  <span>{t('payment.discount')}</span>
+                  <span>-{formatAmount(promoResult.discount_amount)} CFA</span>
                 </div>
               )}
               <div className="flex items-center justify-between text-gray-300">
-                <span>Subtotal</span>
-                <span>{subtotalAmount.toLocaleString()} CFA</span>
+                <span>{t('payment.subtotal')}</span>
+                <span>{formatAmount(subtotalAmount)} CFA</span>
               </div>
               <div className="flex items-center justify-between text-gray-300">
-                <span>Processing fee ({feePercentLabel}%)</span>
-                <span>+{processingFeeAmount.toLocaleString()} CFA</span>
+                <span>{t('payment.processingFee', { percent: feePercentLabel })}</span>
+                <span>+{formatAmount(processingFeeAmount)} CFA</span>
               </div>
               <div className="flex items-center justify-between border-t border-gray-700 pt-2 text-white font-semibold">
-                <span>Total to pay</span>
-                <span>{totalAmount.toLocaleString()} CFA</span>
+                <span>{t('payment.totalToPay')}</span>
+                <span>{formatAmount(totalAmount)} CFA</span>
               </div>
             </div>
           </div>
@@ -333,9 +356,9 @@ export default function PaymentModal({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-white mb-1">Payment Confirmed</h3>
+              <h3 className="text-lg font-semibold text-white mb-1">{t('payment.paymentConfirmed')}</h3>
               <p className="text-gray-400 text-sm">
-                Redirecting you to your active subscription page...
+                {t('payment.redirectingToSubscription')}
               </p>
             </div>
           ) : status === 'polling' ? (
@@ -345,16 +368,18 @@ export default function PaymentModal({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-white mb-1">Waiting for Payment</h3>
+              <h3 className="text-lg font-semibold text-white mb-1">{t('payment.waitingForPayment')}</h3>
               <p className="text-gray-400 text-sm">
-                Check your phone for the {carrier || 'Mobile Money'} prompt and approve the payment.
+                {t('payment.checkPhonePrompt', {
+                  carrier: carrier || t('payment.mobileMoney'),
+                })}
               </p>
               <p className="text-xs text-gray-500 mt-2">
-                If confirmation takes longer than 1 minute, we will continue this flow on a dedicated tracking page.
+                {t('payment.longerThanMinute')}
               </p>
               {transactionId && (
                 <p className="text-xs text-gray-600 mt-2">
-                  Ref: {transactionId.substring(0, 8)}
+                  {t('payment.reference')}: {transactionId.substring(0, 8)}
                 </p>
               )}
             </div>
@@ -362,7 +387,7 @@ export default function PaymentModal({
             <>
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">
-                  Phone Number
+                  {t('payment.phoneNumber')}
                 </label>
                 <div className="flex items-center gap-2">
                   <span className="text-gray-400 text-sm bg-gray-900 px-3 py-2.5 rounded-lg border border-gray-700">
@@ -380,14 +405,14 @@ export default function PaymentModal({
                 </div>
                 {carrier && (
                   <p className="text-xs text-gray-500 mt-1">
-                    Detected: {carrier}. You can still choose a different network below.
+                    {t('payment.detectedCarrier', { carrier })}
                   </p>
                 )}
               </div>
 
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">
-                  Promo Code (optional)
+                  {t('payment.promoCodeOptional')}
                 </label>
                 <div className="flex gap-2">
                   <input
@@ -397,7 +422,7 @@ export default function PaymentModal({
                       setPromoCode(e.target.value.toUpperCase());
                       setPromoResult(null);
                     }}
-                    placeholder="ENTER CODE"
+                    placeholder={t('payment.enterCode')}
                     className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2.5 text-white placeholder-gray-600 focus:border-blue-500 focus:outline-none uppercase"
                     disabled={status === 'processing'}
                   />
@@ -406,7 +431,7 @@ export default function PaymentModal({
                     disabled={!promoCode.trim() || promoLoading || status === 'processing'}
                     className="px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                   >
-                    {promoLoading ? 'Checking...' : 'Apply'}
+                    {promoLoading ? t('payment.checking') : t('payment.apply')}
                   </button>
                 </div>
                 {promoResult && (
@@ -416,8 +441,10 @@ export default function PaymentModal({
                     }`}
                   >
                     {promoResult.valid
-                      ? `Discount applied: -${promoResult.discount_amount.toLocaleString()} CFA`
-                      : promoResult.reason || 'Invalid promo code'}
+                      ? t('payment.discountApplied', {
+                          amount: formatAmount(promoResult.discount_amount),
+                        })
+                      : translatePromoReason(promoResult.reason, t)}
                   </p>
                 )}
               </div>
@@ -431,7 +458,7 @@ export default function PaymentModal({
                       onClick={() => goToTrackingPage(transactionId)}
                       className="text-xs text-blue-300 hover:text-blue-200 underline"
                     >
-                      Continue tracking this payment
+                      {t('payment.continueTracking')}
                     </button>
                   )}
                 </div>
@@ -449,7 +476,7 @@ export default function PaymentModal({
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      Processing...
+                      {t('payment.processing')}
                     </>
                   ) : (
                     <>
@@ -460,7 +487,7 @@ export default function PaymentModal({
                           className="h-4 w-4 object-contain"
                         />
                       </span>
-                      Pay {totalAmount.toLocaleString()} CFA with MTN
+                      {t('payment.payWithMTN', { amount: formatAmount(totalAmount) })}
                     </>
                   )}
                 </button>
@@ -475,7 +502,7 @@ export default function PaymentModal({
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      Processing...
+                      {t('payment.processing')}
                     </>
                   ) : (
                     <>
@@ -486,14 +513,14 @@ export default function PaymentModal({
                           className="h-4 w-4 object-contain"
                         />
                       </span>
-                      Pay {totalAmount.toLocaleString()} CFA with Orange
+                      {t('payment.payWithOrange', { amount: formatAmount(totalAmount) })}
                     </>
                   )}
                 </button>
               </div>
 
               <p className="text-xs text-gray-500 text-center">
-                Secure payment via Payunit (MTN MoMo / Orange Money)
+                {t('payment.secureVia')}
               </p>
             </>
           )}

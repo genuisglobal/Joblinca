@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { StepConfig } from '@/lib/onboarding/types';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface ProgressIndicatorProps {
   steps: StepConfig[];
@@ -13,6 +14,10 @@ export default function ProgressIndicator({
   steps,
   currentStep,
 }: ProgressIndicatorProps) {
+  const { t } = useTranslation();
+
+  const getStepTitle = (stepId: string) => t(`onboarding.steps.${stepId}`);
+
   // Calculate progress percentage (exclude welcome and completion)
   const progressSteps = steps.filter(
     (s) => s.id !== 'welcome' && s.id !== 'completion'
@@ -72,7 +77,7 @@ export default function ProgressIndicator({
                     ${isCurrent ? 'text-blue-400' : 'text-gray-500'}
                   `}
                 >
-                  {step.title}
+                  {getStepTitle(step.id)}
                 </span>
               </div>
             );
@@ -82,10 +87,13 @@ export default function ProgressIndicator({
       {/* Mobile step counter */}
       <div className="md:hidden flex justify-between items-center mt-3">
         <span className="text-sm text-gray-400">
-          Step {Math.min(currentStep, steps.length - 1)} of {steps.length - 2}
+          {t('onboarding.progress.stepOfTotal', {
+            step: Math.min(currentStep, steps.length - 1),
+            total: steps.length - 2,
+          })}
         </span>
         <span className="text-sm text-blue-400 font-medium">
-          {steps[currentStep]?.title || ''}
+          {steps[currentStep] ? getStepTitle(steps[currentStep].id) : ''}
         </span>
       </div>
     </div>

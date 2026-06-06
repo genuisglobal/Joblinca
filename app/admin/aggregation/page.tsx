@@ -9,6 +9,7 @@ import {
 import RunScrapersButton from './RunScrapersButton';
 import DedupPanel from './DedupPanel';
 import AutoPipelineButton from './AutoPipelineButton';
+import PublishThresholdsPanel from './PublishThresholdsPanel';
 
 type SourceSummary = {
   name: string;
@@ -225,6 +226,7 @@ export default async function AdminAggregationPage() {
       </div>
 
       <div className="mb-8 space-y-4">
+        <PublishThresholdsPanel />
         <AutoPipelineButton />
         <RunScrapersButton />
         <DedupPanel />

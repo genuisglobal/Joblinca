@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import {
+  DEFAULT_LOCALE,
+  LOCALE_REQUEST_HEADER,
+  addLocalePrefix,
+  getPathLocale,
+  normalizeLocale,
+} from '@/lib/i18n/locale';
 
 /**
  * OAuth callback handler.
@@ -12,13 +19,20 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
  * profile row via the existing `/api/profile/create` endpoint.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const requestUrl = new URL(request.url);
+  const { searchParams, origin } = requestUrl;
+  const locale =
+    normalizeLocale(request.headers.get(LOCALE_REQUEST_HEADER)) ||
+    getPathLocale(requestUrl.pathname) ||
+    DEFAULT_LOCALE;
   const code = searchParams.get('code');
   const role = searchParams.get('role') || 'job_seeker';
-  const redirectTo = searchParams.get('redirect') || '/dashboard';
+  const redirectTo = addLocalePrefix(searchParams.get('redirect') || '/dashboard', locale);
 
   if (!code) {
-    return NextResponse.redirect(new URL('/auth/login?error=missing_code', origin));
+    return NextResponse.redirect(
+      new URL(`${addLocalePrefix('/auth/login', locale)}?error=missing_code`, origin)
+    );
   }
 
   const supabase = createServerSupabaseClient();
@@ -26,7 +40,9 @@ export async function GET(request: NextRequest) {
 
   if (error || !data.session) {
     console.error('[auth/callback] Code exchange failed:', error?.message);
-    return NextResponse.redirect(new URL('/auth/login?error=oauth_failed', origin));
+    return NextResponse.redirect(
+      new URL(`${addLocalePrefix('/auth/login', locale)}?error=oauth_failed`, origin)
+    );
   }
 
   const user = data.session.user;

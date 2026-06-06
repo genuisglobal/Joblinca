@@ -3,6 +3,7 @@
 import { Check, Home, MapPin, Globe, Plane } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { LOCATION_INTERESTS } from '@/lib/onboarding/constants';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface MultiSelectLocationsProps {
   value: string[];
@@ -17,11 +18,26 @@ const iconMap: Record<string, React.ReactNode> = {
   Plane: <Plane className="w-4 h-4" />,
 };
 
+const FRENCH_LOCATION_INTEREST_LABELS: Record<string, string> = {
+  remote: 'Teletravail',
+  douala: 'Douala',
+  yaounde: 'Yaounde',
+  bamenda: 'Bamenda',
+  bafoussam: 'Bafoussam',
+  buea: 'Buea',
+  limbe: 'Limbe',
+  kribi: 'Kribi',
+  anywhere_cameroon: 'Partout au Cameroun',
+  international: "International / Etranger",
+};
+
 export default function MultiSelectLocations({
   value,
   onChange,
   disabled = false,
 }: MultiSelectLocationsProps) {
+  const { t, locale } = useTranslation();
+
   const toggleLocation = (locationValue: string) => {
     if (disabled) return;
 
@@ -38,6 +54,10 @@ export default function MultiSelectLocations({
         {LOCATION_INTERESTS.map((location) => {
           const isSelected = value.includes(location.value);
           const Icon = iconMap[location.icon] || <MapPin className="w-4 h-4" />;
+          const label =
+            locale === 'fr'
+              ? (FRENCH_LOCATION_INTEREST_LABELS[location.value] || location.label)
+              : location.label;
 
           return (
             <motion.button
@@ -64,7 +84,7 @@ export default function MultiSelectLocations({
                 {Icon}
               </span>
               <span className="text-sm font-medium truncate flex-1 text-left">
-                {location.label}
+                {label}
               </span>
               {isSelected && (
                 <motion.span
@@ -81,7 +101,13 @@ export default function MultiSelectLocations({
       </div>
       {value.length > 0 && (
         <p className="mt-2 text-sm text-gray-500">
-          {value.length} location{value.length !== 1 ? 's' : ''} selected
+          {t('onboarding.locationInterest.selectedCount', {
+            count: value.length,
+            label:
+              value.length === 1
+                ? t('onboarding.locationInterest.selectedSingular')
+                : t('onboarding.locationInterest.selectedPlural'),
+          })}
         </p>
       )}
     </div>

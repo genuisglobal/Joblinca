@@ -4,15 +4,17 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import { Mail, ArrowLeft, AlertCircle, CheckCircle } from 'lucide-react';
 
 export default function ForgotPasswordPage() {
   const supabase = createClient();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const localizedHref = (href: string) => addLocalePrefix(href, locale);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,7 +23,7 @@ export default function ForgotPasswordPage() {
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`,
+        redirectTo: `${window.location.origin}${localizedHref('/auth/reset-password')}`,
       });
 
       if (error) {
@@ -63,7 +65,7 @@ export default function ForgotPasswordPage() {
                 {t("auth.forgotPassword.emailSent", { email })}
               </p>
               <Link
-                href="/auth/login"
+                href={localizedHref('/auth/login')}
                 className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 text-sm font-medium transition-colors"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -113,7 +115,7 @@ export default function ForgotPasswordPage() {
 
               <div className="mt-6 text-center">
                 <Link
-                  href="/auth/login"
+                  href={localizedHref('/auth/login')}
                   className="inline-flex items-center gap-2 text-neutral-400 hover:text-white text-sm transition-colors"
                 >
                   <ArrowLeft className="w-4 h-4" />

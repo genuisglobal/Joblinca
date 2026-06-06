@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "i18n:check": "tsx scripts/check-i18n-keys.ts",
     "videos:daily": "tsx scripts/videos/generate-daily-job-videos.ts",
     "uat:phase1:newman": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1",
     "uat:phase1:critical": "powershell -ExecutionPolicy Bypass -File scripts/run-phase1-uat-newman.ps1 -CriticalPath",

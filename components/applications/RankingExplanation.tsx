@@ -5,6 +5,11 @@ import {
   type ApplicationEligibilityStatus,
 } from '@/lib/applications/ranking';
 import ExplanationPills from '@/components/applications/ExplanationPills';
+import { useTranslation } from '@/lib/i18n/context';
+import {
+  translateRankingSignalLabel,
+  translateRankingSummaryLabel,
+} from '@/lib/i18n/recruiter-presentation';
 
 type RankingBreakdown = Record<string, number> | null | undefined;
 
@@ -29,6 +34,7 @@ export default function RankingExplanation({
   currentStageType,
   compact = false,
 }: RankingExplanationProps) {
+  const { t } = useTranslation();
   const explanation = summarizeRankingExplanation({
     rankingScore,
     rankingBreakdown,
@@ -43,11 +49,16 @@ export default function RankingExplanation({
     return null;
   }
 
+  const localizedSignals = explanation.signals.map((signal) => ({
+    ...signal,
+    label: translateRankingSignalLabel(t, signal.label),
+  }));
+
   return (
     <ExplanationPills
-      label={explanation.label}
+      label={translateRankingSummaryLabel(t, explanation.label)}
       tone={explanation.tone}
-      signals={explanation.signals}
+      signals={localizedSignals}
       compact={compact}
     />
   );

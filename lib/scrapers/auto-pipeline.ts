@@ -17,10 +17,7 @@ import { ingestAllResults, type IngestionResult } from './ingestion';
 import { findDuplicateJob, findAllDuplicateGroups, hideDuplicateJobs } from '@/lib/jobs/dedup';
 import { detectContentLanguage, normalizeLocale } from '@/lib/i18n/locale';
 import { AUTOMATED_SCRAPER_SOURCE_SLUGS } from './catalog';
-
-// Auto-publish thresholds
-const AUTO_PUBLISH_TRUST_MIN = 60;
-const AUTO_PUBLISH_SCAM_MAX = 30;
+import { loadPublishThresholds } from '@/lib/aggregation/publish-thresholds';
 
 function getSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -189,13 +186,16 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
     errors: 0,
   };
 
+  // Load admin-configurable thresholds (falls back to 60/30 defaults)
+  const { trustMin, scamMax } = await loadPublishThresholds(supabase);
+
   // Find jobs eligible for auto-publish
   const { data: candidates } = await supabase
     .from('discovered_jobs')
     .select('*')
     .is('native_job_id', null)
-    .gte('trust_score', AUTO_PUBLISH_TRUST_MIN)
-    .lt('scam_score', AUTO_PUBLISH_SCAM_MAX)
+    .gte('trust_score', trustMin)
+    .lt('scam_score', scamMax)
     .not('ingestion_status', 'in', '("published","hidden")')
     .order('trust_score', { ascending: false })
     .limit(100);

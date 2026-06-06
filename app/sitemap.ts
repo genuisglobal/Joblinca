@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { CATEGORY_SLUGS } from '@/lib/seo/job-categories';
 
 const CITIES = [
   'douala',
@@ -39,6 +40,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.8,
   }));
 
+  // Programmatic city × category landing pages (long-tail SEO)
+  const categoryCityPages: MetadataRoute.Sitemap = CITIES.flatMap((city) =>
+    CATEGORY_SLUGS.map((category) => ({
+      url: `${baseUrl}/jobs-in/${city}/${category}`,
+      lastModified: new Date(),
+      changeFrequency: 'daily' as const,
+      priority: 0.75,
+    }))
+  );
+
   // Active job pages (last 500)
   const { data: jobs } = await supabase
     .from('jobs')
@@ -71,5 +82,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }));
 
-  return [...staticPages, ...cityPages, ...jobPages, ...companyPages];
+  return [...staticPages, ...cityPages, ...categoryCityPages, ...jobPages, ...companyPages];
 }
