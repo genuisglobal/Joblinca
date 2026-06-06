@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
   applicationDashboardHrefForRole,
   canRoleApplyToOpportunity,
@@ -48,6 +50,38 @@ type ApplyOptionsProps = {
   isClosed: boolean;
 };
 
+function translateOpportunityLabel(
+  label: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (label) {
+    case 'Educational Internship':
+      return t('common.opportunity.internshipEducation');
+    case 'Professional Internship':
+      return t('common.opportunity.internshipProfessional');
+    case 'Internship':
+      return t('common.opportunity.internship');
+    case 'Gig':
+      return t('common.opportunity.gig');
+    default:
+      return t('common.opportunity.job');
+  }
+}
+
+function translateEligibleRoleSummary(
+  summary: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (summary) {
+    case 'Talent profiles':
+      return t('common.talentProfiles');
+    case 'Job seeker profiles':
+      return t('common.jobSeekerProfiles');
+    default:
+      return t('common.jobSeekerAndTalentProfiles');
+  }
+}
+
 export default function ApplyOptions({
   job,
   isAuthenticated,
@@ -58,6 +92,7 @@ export default function ApplyOptions({
 }: ApplyOptionsProps) {
   const router = useRouter();
   const supabase = createClient();
+  const { locale, t } = useTranslation();
   const [isSaved, setIsSaved] = useState(initialIsSaved);
   const [isSaving, setIsSaving] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -83,9 +118,19 @@ export default function ApplyOptions({
     job.internship_track,
     job.visibility
   );
-  const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track).toLowerCase();
-  const applicationsHref = applicationDashboardHrefForRole(userRole);
-  const companyName = job.company_name || 'the company';
+  const opportunityLabel = translateOpportunityLabel(
+    getOpportunityTypeLabel(job.job_type, job.internship_track),
+    t
+  ).toLowerCase();
+  const localizedEligibleRoleSummary = translateEligibleRoleSummary(eligibleRoleSummary, t);
+  const applicationsHref = addLocalePrefix(applicationDashboardHrefForRole(userRole), locale);
+  const applyPath = addLocalePrefix(`/jobs/${job.id}/apply`, locale);
+  const jobPath = addLocalePrefix(`/jobs/${job.id}`, locale);
+  const loginApplyHref = addLocalePrefix(
+    `/auth/login?redirect=${encodeURIComponent(applyPath)}`,
+    locale
+  );
+  const companyName = job.company_name || (locale === 'fr' ? "l'entreprise" : 'the company');
   const isExternalJob = job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered';
 
   const trackExternalClick = async (method: string) => {
@@ -101,7 +146,7 @@ export default function ApplyOptions({
 
   const handleSaveJob = async () => {
     if (!isAuthenticated) {
-      router.push(`/auth/login?redirect=/jobs/${job.id}`);
+      router.push(addLocalePrefix(`/auth/login?redirect=${encodeURIComponent(jobPath)}`, locale));
       return;
     }
 
@@ -131,7 +176,10 @@ export default function ApplyOptions({
   const handleEmailApply = async () => {
     if (job.apply_email) {
       await trackExternalClick('email');
-      window.location.href = `mailto:${job.apply_email}?subject=Application for ${encodeURIComponent(job.title)} at ${encodeURIComponent(companyName)}`;
+      const subject = locale === 'fr'
+        ? `Candidature pour ${job.title} chez ${companyName}`
+        : `Application for ${job.title} at ${companyName}`;
+      window.location.href = `mailto:${job.apply_email}?subject=${encodeURIComponent(subject)}`;
     }
   };
 
@@ -146,7 +194,9 @@ export default function ApplyOptions({
     if (job.apply_whatsapp) {
       await trackExternalClick('whatsapp');
       const message = encodeURIComponent(
-        `Hi, I'm interested in the ${job.title} position at ${companyName}. I found this job on JobLinca.`
+        locale === 'fr'
+          ? `Bonjour, je suis interesse par le poste ${job.title} chez ${companyName}. J'ai trouve cette offre sur Joblinca.`
+          : `Hi, I'm interested in the ${job.title} position at ${companyName}. I found this job on Joblinca.`
       );
       window.open(
         `https://wa.me/${job.apply_whatsapp.replace(/[^0-9]/g, '')}?text=${message}`,
@@ -177,18 +227,20 @@ export default function ApplyOptions({
 
   const getStatusLabel = (status: string) => {
     const labels: Record<string, { text: string; color: string }> = {
-      submitted: { text: 'Application Submitted', color: 'text-blue-400' },
-      shortlisted: { text: 'Shortlisted', color: 'text-yellow-400' },
-      interviewed: { text: 'Interview Scheduled', color: 'text-purple-400' },
-      hired: { text: 'Hired', color: 'text-green-400' },
-      rejected: { text: 'Not Selected', color: 'text-red-400' },
+      submitted: { text: t('jobApply.statusSubmitted'), color: 'text-blue-400' },
+      shortlisted: { text: t('jobApply.statusShortlisted'), color: 'text-yellow-400' },
+      interviewed: { text: t('jobApply.statusInterviewed'), color: 'text-purple-400' },
+      hired: { text: t('jobApply.statusHired'), color: 'text-green-400' },
+      rejected: { text: t('jobApply.statusRejected'), color: 'text-red-400' },
     };
     return labels[status] || { text: status, color: 'text-gray-400' };
   };
 
   return (
     <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-      <h3 className="text-lg font-semibold text-white mb-4">Apply for this {opportunityLabel}</h3>
+      <h3 className="text-lg font-semibold text-white mb-4">
+        {t('jobApply.applyFor', { opportunity: opportunityLabel })}
+      </h3>
 
       {/* Already Applied Status */}
       {hasApplied && (
@@ -201,16 +253,16 @@ export default function ApplyOptions({
                 clipRule="evenodd"
               />
             </svg>
-            <span className="text-green-400 font-medium">Applied</span>
+            <span className="text-green-400 font-medium">{t('jobApply.applied')}</span>
           </div>
           <p className={`text-sm ${getStatusLabel(existingApplication!.status).color}`}>
-            Status: {getStatusLabel(existingApplication!.status).text}
+            {t('jobApply.status', { status: getStatusLabel(existingApplication!.status).text })}
           </p>
           <Link
             href={applicationsHref}
             className="text-blue-400 hover:text-blue-300 text-sm mt-2 inline-block"
           >
-            View your applications
+            {t('jobApply.viewApplications')}
           </Link>
         </div>
       )}
@@ -219,13 +271,13 @@ export default function ApplyOptions({
       {hasDraft && (
         <div className="mb-4 p-4 bg-yellow-900/30 border border-yellow-700 rounded-lg">
           <p className="text-yellow-400 text-sm">
-            You have a draft application for this job.
+            {t('jobApply.draftExists')}
           </p>
           <Link
-            href={`/jobs/${job.id}/apply`}
+            href={applyPath}
             className="text-yellow-300 hover:text-yellow-200 text-sm font-medium mt-1 inline-block"
           >
-            Continue application
+            {t('jobApply.continueApplication')}
           </Link>
         </div>
       )}
@@ -233,7 +285,7 @@ export default function ApplyOptions({
       {/* Closed Notice */}
       {isClosed && (
         <div className="mb-4 p-4 bg-red-900/30 border border-red-700 rounded-lg">
-          <p className="text-red-400 text-sm">This job is no longer accepting applications.</p>
+          <p className="text-red-400 text-sm">{t('jobApply.closedNotice')}</p>
         </div>
       )}
 
@@ -242,7 +294,7 @@ export default function ApplyOptions({
         <div className="space-y-3">
           {isAuthenticated && !canApply && (
             <div className="p-3 bg-gray-700/50 rounded-lg text-center text-gray-300 text-sm">
-              This opportunity is currently open to {eligibleRoleSummary.toLowerCase()}.
+              {t('jobApply.openTo', { roles: localizedEligibleRoleSummary.toLowerCase() })}
             </div>
           )}
           {/* JobLinca Apply */}
@@ -251,7 +303,7 @@ export default function ApplyOptions({
               {isAuthenticated ? (
                 canApply ? (
                   <Link
-                    href={`/jobs/${job.id}/apply`}
+                    href={applyPath}
                     className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -262,19 +314,19 @@ export default function ApplyOptions({
                         d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                       />
                     </svg>
-                    {hasDraft ? 'Continue Application' : 'Apply with JobLinca'}
+                    {hasDraft ? t('jobApply.continueApplication') : t('jobApply.applyWithJoblinca')}
                   </Link>
                 ) : (
                   <div className="p-3 bg-gray-700/50 rounded-lg text-center text-gray-400 text-sm">
-                    Switch to an eligible profile to apply here
+                    {t('jobApply.switchEligibleProfile')}
                   </div>
                 )
               ) : (
                 <Link
-                  href={`/auth/login?redirect=/jobs/${job.id}/apply`}
+                  href={loginApplyHref}
                   className="w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
                 >
-                  Sign in to Apply
+                  {t('jobApply.signInToApply')}
                 </Link>
               )}
             </>
@@ -295,8 +347,10 @@ export default function ApplyOptions({
                 />
               </svg>
               {isExternalJob
-                ? `Apply on Original Source${job.source_name ? ` (${job.source_name})` : ''}`
-                : 'Apply on Company Website'}
+                ? t('jobApply.applyOriginalSource', {
+                    source: job.source_name ? ` (${job.source_name})` : '',
+                  })
+                : t('jobApply.applyCompanyWebsite')}
             </button>
           )}
 
@@ -304,12 +358,12 @@ export default function ApplyOptions({
           {showEmail && (!isAuthenticated || canApply) && (
             <div className="bg-gray-700/50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Email your application</span>
+                <span className="text-gray-400 text-sm">{t('jobApply.emailApplication')}</span>
                 <button
                   onClick={() => copyToClipboard(job.apply_email!, 'email')}
                   className="text-blue-400 hover:text-blue-300 text-sm"
                 >
-                  {copiedField === 'email' ? 'Copied!' : 'Copy'}
+                  {copiedField === 'email' ? t('common.copied') : t('common.copy')}
                 </button>
               </div>
               <button
@@ -333,12 +387,12 @@ export default function ApplyOptions({
           {showPhone && (!isAuthenticated || canApply) && (
             <div className="bg-gray-700/50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-gray-400 text-sm">Call to apply</span>
+                <span className="text-gray-400 text-sm">{t('jobApply.callToApply')}</span>
                 <button
                   onClick={() => copyToClipboard(job.apply_phone!, 'phone')}
                   className="text-blue-400 hover:text-blue-300 text-sm"
                 >
-                  {copiedField === 'phone' ? 'Copied!' : 'Copy'}
+                  {copiedField === 'phone' ? t('common.copied') : t('common.copy')}
                 </button>
               </div>
               <button
@@ -367,7 +421,7 @@ export default function ApplyOptions({
               <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
               </svg>
-              Apply via WhatsApp
+              {t('jobApply.applyViaWhatsApp')}
             </button>
           )}
         </div>
@@ -415,13 +469,13 @@ export default function ApplyOptions({
               />
             </svg>
           )}
-          {isSaved ? 'Saved' : 'Save Job'}
+          {isSaved ? t('common.saved') : t('jobApply.saveJob')}
         </button>
       </div>
 
       {/* Share Section */}
       <div className="mt-4 pt-4 border-t border-gray-700">
-        <p className="text-gray-400 text-sm mb-3">Share this job</p>
+        <p className="text-gray-400 text-sm mb-3">{t('jobApply.shareJob')}</p>
         <div className="flex gap-2">
           <button
             onClick={() => {
@@ -431,7 +485,7 @@ export default function ApplyOptions({
               setTimeout(() => setCopiedField(null), 2000);
             }}
             className="flex-1 px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg transition-colors text-sm flex items-center justify-center gap-1.5"
-          >
+            >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
@@ -440,7 +494,7 @@ export default function ApplyOptions({
                 d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
               />
             </svg>
-            {copiedField === 'share' ? 'Copied!' : 'Copy Link'}
+            {copiedField === 'share' ? t('common.copied') : t('jobApply.copyLink')}
           </button>
           <a
             href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}
@@ -493,14 +547,16 @@ export default function ApplyOptions({
         <div className="mt-4 pt-4 border-t border-gray-700">
           <button
             onClick={() => {
-              const msg = `Hi, I'm interested in the "${job.title}" position.`;
+              const msg = locale === 'fr'
+                ? `Bonjour, je suis interesse par le poste "${job.title}".`
+                : `Hi, I'm interested in the "${job.title}" position.`;
               fetch('/api/messages', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ receiverId: job.recruiter_id, message: msg, jobId: job.id }),
               }).then((r) => {
                 if (r.ok) {
-                  router.push('/dashboard/job-seeker/messages');
+                  router.push(addLocalePrefix('/dashboard/job-seeker/messages', locale));
                 }
               });
             }}
@@ -509,7 +565,7 @@ export default function ApplyOptions({
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
             </svg>
-            Message Recruiter
+            {t('jobApply.messageRecruiter')}
           </button>
         </div>
       )}
@@ -524,7 +580,7 @@ export default function ApplyOptions({
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
             </svg>
-            Report this job
+            {t('jobApply.reportJob')}
           </button>
         </div>
       )}
@@ -533,9 +589,9 @@ export default function ApplyOptions({
       {showReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-900 p-6">
-            <h3 className="text-lg font-semibold text-white mb-1">Report Job Posting</h3>
+            <h3 className="text-lg font-semibold text-white mb-1">{t('jobApply.reportTitle')}</h3>
             <p className="text-sm text-neutral-400 mb-4">
-              Help us keep Joblinca safe. Select a reason for reporting this job.
+              {t('jobApply.reportSubtitle')}
             </p>
 
             {reportStatus === 'sent' ? (
@@ -545,13 +601,13 @@ export default function ApplyOptions({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <p className="text-white font-medium">Report submitted</p>
-                <p className="text-sm text-neutral-400 mt-1">Our team will review this posting.</p>
+                <p className="text-white font-medium">{t('jobApply.reportSubmitted')}</p>
+                <p className="text-sm text-neutral-400 mt-1">{t('jobApply.reportReview')}</p>
                 <button
                   onClick={() => { setShowReport(false); setReportStatus('idle'); setReportReason(''); setReportDescription(''); }}
                   className="mt-4 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors text-sm"
                 >
-                  Close
+                  {t('common.close')}
                 </button>
               </div>
             ) : (
@@ -561,26 +617,26 @@ export default function ApplyOptions({
                   onChange={(e) => setReportReason(e.target.value)}
                   className="w-full mb-3 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2.5 text-sm text-neutral-200"
                 >
-                  <option value="">Select a reason</option>
-                  <option value="scam">Scam or fraud</option>
-                  <option value="misleading">Misleading information</option>
-                  <option value="duplicate">Duplicate posting</option>
-                  <option value="offensive">Offensive content</option>
-                  <option value="wrong_info">Incorrect information</option>
-                  <option value="other">Other</option>
+                  <option value="">{t('jobApply.selectReason')}</option>
+                  <option value="scam">{t('jobApply.reasonScam')}</option>
+                  <option value="misleading">{t('jobApply.reasonMisleading')}</option>
+                  <option value="duplicate">{t('jobApply.reasonDuplicate')}</option>
+                  <option value="offensive">{t('jobApply.reasonOffensive')}</option>
+                  <option value="wrong_info">{t('jobApply.reasonIncorrect')}</option>
+                  <option value="other">{t('jobApply.reasonOther')}</option>
                 </select>
 
                 <textarea
                   value={reportDescription}
                   onChange={(e) => setReportDescription(e.target.value)}
-                  placeholder="Add details (optional)"
+                  placeholder={t('jobApply.addDetails')}
                   rows={3}
                   maxLength={1000}
                   className="w-full mb-4 rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-500 resize-none"
                 />
 
                 {reportStatus === 'error' && (
-                  <p className="text-sm text-red-400 mb-3">Failed to submit. You may have already reported this job.</p>
+                  <p className="text-sm text-red-400 mb-3">{t('jobApply.reportFailed')}</p>
                 )}
 
                 <div className="flex gap-3">
@@ -588,7 +644,7 @@ export default function ApplyOptions({
                     onClick={() => { setShowReport(false); setReportStatus('idle'); }}
                     className="flex-1 px-4 py-2 bg-neutral-800 text-neutral-300 rounded-lg hover:bg-neutral-700 transition-colors text-sm"
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </button>
                   <button
                     disabled={!reportReason || reportStatus === 'sending'}
@@ -611,7 +667,7 @@ export default function ApplyOptions({
                     }}
                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 disabled:bg-red-600/50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
                   >
-                    {reportStatus === 'sending' ? 'Submitting...' : 'Submit Report'}
+                    {reportStatus === 'sending' ? t('jobApply.submitting') : t('jobApply.submitReport')}
                   </button>
                 </div>
               </>

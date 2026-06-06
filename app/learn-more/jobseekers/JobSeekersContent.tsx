@@ -3,9 +3,10 @@
 import Link from 'next/link';
 import { Sparkles, Smartphone, BadgeCheck } from 'lucide-react';
 import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 
 export default function JobSeekersContent() {
-  const { t } = useTranslation();
+  const { locale, t } = useTranslation();
 
   return (
     <main className="bg-gray-900 text-gray-100">
@@ -21,13 +22,13 @@ export default function JobSeekersContent() {
         </p>
         <div className="mt-8 flex justify-center gap-4 flex-wrap">
           <Link
-            href="/auth/register?role=candidate"
+            href={addLocalePrefix('/auth/register?role=candidate', locale)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md transition-colors"
           >
             {t('learnSeekers.hero.cta1')}
           </Link>
           <Link
-            href="/jobs"
+            href={addLocalePrefix('/jobs', locale)}
             className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors"
           >
             {t('learnSeekers.hero.cta2')}
@@ -92,13 +93,13 @@ export default function JobSeekersContent() {
           <p className="mb-8 text-sm text-gray-300">{t('learnSeekers.cta.subtitle')}</p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link
-              href="/auth/register?role=candidate"
+              href={addLocalePrefix('/auth/register?role=candidate', locale)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md transition-colors"
             >
               {t('learnSeekers.hero.cta1')}
             </Link>
             <Link
-              href="/jobs"
+              href={addLocalePrefix('/jobs', locale)}
               className="bg-yellow-500 hover:bg-yellow-600 text-gray-900 px-6 py-3 rounded-md transition-colors"
             >
               {t('learnSeekers.hero.cta2')}

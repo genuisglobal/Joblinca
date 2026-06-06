@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix, type Locale } from '@/lib/i18n/locale';
 import {
   Globe,
   MapPin,
@@ -38,7 +39,7 @@ interface ExternalJob {
 }
 
 const CATEGORY_TABS = [
-  { key: 'All', value: 'All' },
+  { key: 'jobs.allJobs', value: 'All' },
   { key: 'remote.cat.engineering', value: 'Engineering' },
   { key: 'remote.cat.marketing', value: 'Marketing' },
   { key: 'remote.cat.design', value: 'Design' },
@@ -64,16 +65,23 @@ const SOURCE_VALUES = [
   { value: 'arbeitnow', label: 'Arbeitnow' },
 ];
 
-function formatDate(dateString: string) {
+function formatDate(
+  dateString: string,
+  locale: Locale,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays <= 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (diffDays === 0) return t('common.today');
+  if (diffDays === 1) return t('common.yesterday');
+  if (diffDays <= 7) return `${diffDays}d`;
+  return date.toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 function sourceLabel(source: string) {
@@ -81,7 +89,7 @@ function sourceLabel(source: string) {
 }
 
 export default function RemoteJobsPage() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [jobs, setJobs] = useState<ExternalJob[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -90,6 +98,10 @@ export default function RemoteJobsPage() {
   const [sourceFilter, setSourceFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [visibleCount, setVisibleCount] = useState(30);
+  const localizedHref = useCallback(
+    (href: string) => addLocalePrefix(href, locale),
+    [locale]
+  );
 
   const fetchJobs = useCallback(async () => {
     setLoading(true);
@@ -253,7 +265,7 @@ export default function RemoteJobsPage() {
                     : 'bg-neutral-800/60 text-neutral-400 hover:text-white hover:bg-neutral-800'
                 }`}
               >
-                {cat.key === 'All' ? t("jobs.allJobs") : t(cat.key)}
+                {t(cat.key)}
               </button>
             ))}
           </div>
@@ -288,7 +300,7 @@ export default function RemoteJobsPage() {
               </button>
             ) : (
               <Link
-                href="/jobs"
+                href={localizedHref("/jobs")}
                 className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all"
               >
                 {t("remote.browseLocal")}
@@ -362,7 +374,7 @@ export default function RemoteJobsPage() {
                         )}
                         <div className="flex items-center gap-1">
                           <Clock className="w-3.5 h-3.5" />
-                          <span>{formatDate(job.fetched_at)}</span>
+                          <span>{formatDate(job.fetched_at, locale, t)}</span>
                         </div>
                       </div>
                     </div>
@@ -433,7 +445,7 @@ export default function RemoteJobsPage() {
               {t("remote.alertsDesc")}
             </p>
             <Link
-              href="/auth/register?role=candidate"
+              href={localizedHref("/auth/register?role=candidate")}
               className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-3.5 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-primary-600/25"
             >
               <Bell className="w-5 h-5" />
@@ -455,7 +467,7 @@ export default function RemoteJobsPage() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              href="/jobs"
+              href={localizedHref("/jobs")}
               className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3 rounded-lg font-semibold transition-all"
             >
               {t("remote.browseLocal")}

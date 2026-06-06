@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { Upload, File, X, Check, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface FileUploadProps {
   value: File | null;
@@ -26,11 +27,12 @@ export default function FileUpload({
   uploadUrl,
   accept = '.pdf,.doc,.docx',
   maxSizeMB = 5,
-  label = 'Upload a file',
-  hint = 'PDF, DOC, or DOCX up to 5MB',
+  label,
+  hint,
   disabled = false,
   error: externalError,
 }: FileUploadProps) {
+  const { t } = useTranslation();
   const [uploadState, setUploadState] = useState<UploadState>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -41,14 +43,14 @@ export default function FileUpload({
 
   const validateFile = (file: File): string | null => {
     if (file.size > maxSizeBytes) {
-      return `File size must be less than ${maxSizeMB}MB`;
+      return t('onboarding.fileUpload.fileTooLarge', { size: maxSizeMB });
     }
 
     const allowedTypes = accept.split(',').map((t) => t.trim().toLowerCase());
     const fileExtension = `.${file.name.split('.').pop()?.toLowerCase()}`;
 
     if (!allowedTypes.some((type) => fileExtension === type || file.type.includes(type.replace('.', '')))) {
-      return 'Invalid file type';
+      return t('onboarding.fileUpload.invalidFileType');
     }
 
     return null;
@@ -102,7 +104,7 @@ export default function FileUpload({
         onUploadComplete(data.url || data.publicUrl);
       } catch (err) {
         setUploadState('error');
-        setError('Failed to upload file. Please try again.');
+        setError(t('onboarding.fileUpload.uploadFailed'));
       }
     }
   };
@@ -141,6 +143,8 @@ export default function FileUpload({
   };
 
   const displayError = externalError || error;
+  const resolvedLabel = label || t('onboarding.resume.uploadLabel');
+  const resolvedHint = hint || t('onboarding.resume.uploadHint');
 
   return (
     <div className="w-full">
@@ -182,11 +186,11 @@ export default function FileUpload({
               <Upload className="w-6 h-6" />
             </div>
             <div className="text-center">
-              <p className="text-gray-200 font-medium">{label}</p>
+              <p className="text-gray-200 font-medium">{resolvedLabel}</p>
               <p className="text-sm text-gray-500 mt-1">
-                Drag and drop or click to browse
+                {t('onboarding.fileUpload.dragDropOrBrowse')}
               </p>
-              <p className="text-xs text-gray-600 mt-1">{hint}</p>
+              <p className="text-xs text-gray-600 mt-1">{resolvedHint}</p>
             </div>
           </motion.div>
         ) : (

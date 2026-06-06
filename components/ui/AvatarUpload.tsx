@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { Camera, User, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface AvatarUploadProps {
   value: string | null;
@@ -33,6 +34,7 @@ export default function AvatarUpload({
   error,
   size = 'lg',
 }: AvatarUploadProps) {
+  const { t } = useTranslation();
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -113,7 +115,7 @@ export default function AvatarUpload({
             >
               <img
                 src={displayUrl}
-                alt="Profile"
+                alt={t('onboarding.avatar.profileAlt')}
                 className="w-full h-full object-cover"
               />
               {/* Hover overlay */}
@@ -162,10 +164,10 @@ export default function AvatarUpload({
 
       <div className="text-center">
         <p className="text-sm text-gray-400">
-          {displayUrl ? 'Click to change photo' : 'Upload a photo'}
+          {displayUrl ? t('onboarding.avatar.changePhoto') : t('onboarding.avatar.uploadPhoto')}
         </p>
         <p className="text-xs text-gray-600 mt-1">
-          JPG, PNG or WebP, max 2MB
+          {t('onboarding.avatar.hint')}
         </p>
       </div>
 

@@ -1,8 +1,11 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { MessageSquare, Send, ArrowLeft, User } from 'lucide-react';
+
+type OutreachSource = 'candidate_search' | 'candidate_detail';
 
 interface Conversation {
   partnerId: string;
@@ -27,6 +30,14 @@ interface Message {
   body: string;
   read_at: string | null;
   created_at: string;
+}
+
+function normalizeOutreachSource(value: string | null): OutreachSource | null {
+  if (value === 'candidate_search' || value === 'candidate_detail') {
+    return value;
+  }
+
+  return null;
 }
 
 function getPartnerName(partner: Conversation['partner']): string {
@@ -57,6 +68,8 @@ export default function RecruiterMessagesPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const selectedPartnerFromQuery = searchParams.get('partner');
   const draftFromQuery = searchParams.get('draft') || '';
+  const sourceFromQuery = normalizeOutreachSource(searchParams.get('source'));
+  const [pendingSource, setPendingSource] = useState<OutreachSource | null>(sourceFromQuery);
 
   useEffect(() => {
     if (selectedPartnerFromQuery) {
@@ -66,7 +79,19 @@ export default function RecruiterMessagesPage() {
     if (draftFromQuery) {
       setNewMessage((current) => current || draftFromQuery);
     }
-  }, [draftFromQuery, selectedPartnerFromQuery]);
+
+    setPendingSource(sourceFromQuery);
+  }, [draftFromQuery, selectedPartnerFromQuery, sourceFromQuery]);
+
+  useEffect(() => {
+    if (!pendingSource || !selectedPartnerFromQuery) {
+      return;
+    }
+
+    if (selectedPartner && selectedPartner !== selectedPartnerFromQuery) {
+      setPendingSource(null);
+    }
+  }, [pendingSource, selectedPartner, selectedPartnerFromQuery]);
 
   // Load conversations
   useEffect(() => {
@@ -101,15 +126,22 @@ export default function RecruiterMessagesPage() {
     setSending(true);
 
     try {
+      const outreachSource =
+        selectedPartner === selectedPartnerFromQuery ? pendingSource : null;
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ receiverId: selectedPartner, message: newMessage.trim() }),
+        body: JSON.stringify({
+          receiverId: selectedPartner,
+          message: newMessage.trim(),
+          source: outreachSource,
+        }),
       });
       if (res.ok) {
         const data = await res.json();
         setMessages((prev) => [...prev, data.message]);
         setNewMessage('');
+        setPendingSource(null);
         // Refresh conversation list
         fetch('/api/messages')
           .then((r) => r.json())
@@ -176,9 +208,11 @@ export default function RecruiterMessagesPage() {
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gray-600">
                   {conv.partner?.avatar_url ? (
-                    <img
+                    <Image
                       src={conv.partner.avatar_url}
                       alt=""
+                      width={40}
+                      height={40}
                       className="h-10 w-10 rounded-full object-cover"
                     />
                   ) : (
@@ -285,6 +319,12 @@ export default function RecruiterMessagesPage() {
               </div>
 
               {/* Input */}
+              {pendingSource && selectedPartner === selectedPartnerFromQuery && (
+                <div className="border-t border-gray-700/80 px-4 py-2 text-xs text-gray-400">
+                  The next message will be logged as recruiter outreach from{' '}
+                  {pendingSource === 'candidate_detail' ? 'candidate profile' : 'candidate search'}.
+                </div>
+              )}
               <form
                 onSubmit={handleSend}
                 className="flex items-center gap-2 border-t border-gray-700 p-4"

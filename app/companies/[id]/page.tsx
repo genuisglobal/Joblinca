@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
+import { addLocalePrefix, type Locale } from '@/lib/i18n/locale';
 import {
   ArrowRight,
   Briefcase,
@@ -10,10 +13,7 @@ import {
   Globe,
   MapPin,
 } from 'lucide-react';
-import {
-  getOpportunityTypeLabel,
-  describeEligibleRoles,
-} from '@/lib/opportunities';
+import { getOpportunityTypeLabel } from '@/lib/opportunities';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import CompanyReviews from './CompanyReviews';
 
@@ -21,20 +21,47 @@ interface CompanyPageProps {
   params: Promise<{ id: string }>;
 }
 
-function formatDate(dateString: string) {
+function translateOpportunityLabel(
+  label: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (label) {
+    case 'Educational Internship':
+      return t('common.opportunity.internshipEducation');
+    case 'Professional Internship':
+      return t('common.opportunity.internshipProfessional');
+    case 'Internship':
+      return t('common.opportunity.internship');
+    case 'Gig':
+      return t('common.opportunity.gig');
+    default:
+      return t('common.opportunity.job');
+  }
+}
+
+function formatDate(
+  dateString: string,
+  locale: Locale,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
   const date = new Date(dateString);
   const now = new Date();
   const diffDays = Math.ceil(
     Math.abs(now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
   );
-  if (diffDays === 1) return 'Today';
-  if (diffDays === 2) return 'Yesterday';
-  if (diffDays <= 7) return `${diffDays} days ago`;
-  if (diffDays <= 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (diffDays === 1) return t('common.today');
+  if (diffDays === 2) return t('common.yesterday');
+  if (diffDays <= 7) return t('common.daysAgo', { count: diffDays });
+  if (diffDays <= 30) return t('common.weeksAgo', { count: Math.ceil(diffDays / 7) });
+  return date.toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+  });
 }
 
 export async function generateMetadata({ params }: CompanyPageProps) {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
   const { id } = await params;
   const supabase = createServerSupabaseClient();
   const { data } = await supabase
@@ -43,14 +70,22 @@ export async function generateMetadata({ params }: CompanyPageProps) {
     .eq('id', id)
     .maybeSingle();
 
-  const name = data?.company_name || 'Company';
+  if (!data?.company_name) {
+    return {
+      title: t('company.notFound'),
+    };
+  }
+
+  const name = data.company_name;
   return {
-    title: `${name} - Jobs on Joblinca`,
-    description: `View open positions and company info for ${name} on Joblinca.`,
+    title: t('company.metadataTitle', { name }),
+    description: t('company.metadataDescription', { name }),
   };
 }
 
 export default async function CompanyProfilePage({ params }: CompanyPageProps) {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
   const { id } = await params;
   const supabase = createServerSupabaseClient();
 
@@ -88,9 +123,13 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
 
   const activeJobs = (jobs || []).filter((job) => isJobPubliclyListable(job));
   const memberSince = new Date(recruiter.created_at).toLocaleDateString(
-    'en-US',
+    locale === 'fr' ? 'fr-FR' : 'en-US',
     { month: 'long', year: 'numeric' }
   );
+  const activeJobsLabel =
+    activeJobs.length === 1
+      ? t('company.activeJobSingular', { count: activeJobs.length })
+      : t('company.activeJobPlural', { count: activeJobs.length });
 
   return (
     <main className="min-h-screen bg-neutral-950">
@@ -118,14 +157,14 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
                 {recruiter.verified && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400">
                     <CheckCircle className="h-3.5 w-3.5" />
-                    Verified
+                    {t('company.verified')}
                   </span>
                 )}
               </div>
 
               <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-neutral-400">
-                <span>Member since {memberSince}</span>
-                <span>{activeJobs.length} active {activeJobs.length === 1 ? 'job' : 'jobs'}</span>
+                <span>{t('company.memberSince', { date: memberSince })}</span>
+                <span>{activeJobsLabel}</span>
                 {recruiter.website && (
                   <a
                     href={recruiter.website}
@@ -134,7 +173,7 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
                     className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 transition-colors"
                   >
                     <Globe className="h-3.5 w-3.5" />
-                    Website
+                    {t('company.website')}
                   </a>
                 )}
               </div>
@@ -152,7 +191,7 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
       {/* Active Jobs */}
       <section className="mx-auto max-w-4xl px-6 py-10">
         <h2 className="mb-6 text-xl font-semibold text-white">
-          Open Positions ({activeJobs.length})
+          {t('company.openPositionsWithCount', { count: activeJobs.length })}
         </h2>
 
         {activeJobs.length === 0 ? (
@@ -161,27 +200,21 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
               <Briefcase className="h-8 w-8 text-neutral-600" />
             </div>
             <p className="text-neutral-400">
-              No open positions right now. Check back later.
+              {t('company.noOpenPositions')}
             </p>
           </div>
         ) : (
           <div className="space-y-3">
             {activeJobs.map((job) => {
-              const label = getOpportunityTypeLabel(
-                job.job_type,
-                job.internship_track
-              );
-              const roles = describeEligibleRoles(
-                job.eligible_roles,
-                job.job_type,
-                job.internship_track,
-                job.visibility
+              const label = translateOpportunityLabel(
+                getOpportunityTypeLabel(job.job_type, job.internship_track),
+                t
               );
 
               return (
                 <Link
                   key={job.id}
-                  href={`/jobs/${job.id}`}
+                  href={addLocalePrefix(`/jobs/${job.id}`, locale)}
                   className="group flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 p-5 transition-all hover:border-primary-600/40"
                 >
                   <div className="min-w-0">
@@ -201,12 +234,12 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
                       {job.work_type === 'remote' && (
                         <span className="flex items-center gap-1 text-green-400">
                           <Globe className="h-3.5 w-3.5" />
-                          Remote
+                          {t('common.remote')}
                         </span>
                       )}
                       <span className="flex items-center gap-1">
                         <Clock className="h-3.5 w-3.5" />
-                        {formatDate(job.created_at)}
+                        {formatDate(job.created_at, locale, t)}
                       </span>
                     </div>
                   </div>
@@ -219,17 +252,17 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
 
         {/* Reviews Section */}
         <div className="mt-12">
-          <h2 className="mb-6 text-xl font-semibold text-white">Reviews</h2>
+          <h2 className="mb-6 text-xl font-semibold text-white">{t('company.reviews')}</h2>
           <CompanyReviews companyId={recruiter.id} />
         </div>
 
         {/* Back link */}
         <div className="mt-10 text-center">
           <Link
-            href="/jobs"
+            href={addLocalePrefix('/jobs', locale)}
             className="text-sm text-neutral-400 hover:text-white transition-colors"
           >
-            Browse all jobs on Joblinca
+            {t('company.browseAllJobs')}
           </Link>
         </div>
       </section>

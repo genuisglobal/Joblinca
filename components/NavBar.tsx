@@ -3,9 +3,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ACTIVE_ADMIN_TYPES, type AdminType } from "@/lib/admin-types";
 import { useTranslation } from "@/lib/i18n";
+import { addLocalePrefix, stripLocalePrefix } from "@/lib/i18n/locale";
 import { Menu, X, Briefcase, Users, Building2, Globe, FileText, LayoutDashboard, LogOut, LogIn, UserPlus, Languages } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
 
@@ -15,10 +17,12 @@ export default function NavBar() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { t, locale, setLocale } = useTranslation();
 
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<Role>(null);
+  const [userAdminType, setUserAdminType] = useState<AdminType | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -33,6 +37,7 @@ export default function NavBar() {
       if (error || !user) {
         setIsAuthenticated(false);
         setUserRole(null);
+        setUserAdminType(null);
         return;
       }
 
@@ -40,14 +45,16 @@ export default function NavBar() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, admin_type")
         .eq("id", user.id)
         .maybeSingle();
 
       setUserRole((profile?.role as Role) ?? null);
+      setUserAdminType((profile?.admin_type as AdminType | null) ?? null);
     } catch {
       setIsAuthenticated(false);
       setUserRole(null);
+      setUserAdminType(null);
     } finally {
       if (!skipLoading) setLoading(false);
     }
@@ -82,6 +89,7 @@ export default function NavBar() {
         } else if (event === "SIGNED_OUT") {
           setIsAuthenticated(false);
           setUserRole(null);
+          setUserAdminType(null);
         }
       }
     });
@@ -92,15 +100,34 @@ export default function NavBar() {
   }, [supabase, fetchUserAndRole]);
 
   const isRecruiter = userRole === "recruiter";
+  const isActiveAdmin = Boolean(
+    userAdminType &&
+    ACTIVE_ADMIN_TYPES.includes(userAdminType)
+  );
+  const dashboardPath = userRole === "admin"
+    ? (isActiveAdmin ? "/admin" : "/jobs")
+    : "/dashboard";
+  const currentPath = stripLocalePrefix(pathname || "/");
+  const localizedHref = useCallback(
+    (href: string) => addLocalePrefix(href, locale),
+    [locale]
+  );
 
   const linkClass = (href: string) =>
-    `${pathname === href ? "text-yellow-400" : ""} hover:text-yellow-400 transition-colors`;
+    `${currentPath === href ? "text-yellow-400" : ""} hover:text-yellow-400 transition-colors`;
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
 
   const toggleLocale = () => {
-    void setLocale(locale === "en" ? "fr" : "en").then(() => {
-      router.refresh();
+    const nextLocale = locale === "en" ? "fr" : "en";
+    const query = searchParams.toString();
+
+    void setLocale(nextLocale).then(() => {
+      router.replace(
+        query
+          ? `${addLocalePrefix(currentPath, nextLocale)}?${query}`
+          : addLocalePrefix(currentPath, nextLocale)
+      );
     });
   };
 
@@ -120,7 +147,7 @@ export default function NavBar() {
       {/* Main Navigation Bar */}
       <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
         {/* Logo */}
-        <Link href="/" className="flex items-center">
+        <Link href={localizedHref("/")} className="flex items-center">
           <Image
             src="/assets/header-logo.png"
             alt="JobLinca"
@@ -134,40 +161,40 @@ export default function NavBar() {
         {/* Desktop Navigation */}
         <ul className="hidden lg:flex items-center space-x-6 text-sm font-medium">
           <li>
-            <Link href="/" className={linkClass("/")}>
+            <Link href={localizedHref("/")} className={linkClass("/")}>
               {t("nav.home")}
             </Link>
           </li>
           <li>
-            <Link href="/jobs" className={linkClass("/jobs")}>
+            <Link href={localizedHref("/jobs")} className={linkClass("/jobs")}>
               {t("nav.jobs")}
             </Link>
           </li>
           <li>
-            <Link href="/learn-more/jobseekers" className={linkClass("/learn-more/jobseekers")}>
+            <Link href={localizedHref("/learn-more/jobseekers")} className={linkClass("/learn-more/jobseekers")}>
               {t("nav.forJobSeekers")}
             </Link>
           </li>
           <li>
-            <Link href="/learn-more/recruiters" className={linkClass("/learn-more/recruiters")}>
+            <Link href={localizedHref("/learn-more/recruiters")} className={linkClass("/learn-more/recruiters")}>
               {t("nav.forRecruiters")}
             </Link>
           </li>
           <li>
-            <Link href="/remote-jobs" className={linkClass("/remote-jobs")}>
+            <Link href={localizedHref("/remote-jobs")} className={linkClass("/remote-jobs")}>
               {t("nav.globalJobs")}
             </Link>
           </li>
 
           <li>
-            <Link href="/pricing" className={linkClass("/pricing")}>
-              Pricing
+            <Link href={localizedHref("/pricing")} className={linkClass("/pricing")}>
+              {t("nav.pricing")}
             </Link>
           </li>
 
           {isRecruiter && (
             <li>
-              <Link href="/recruiter/post-job" className={linkClass("/recruiter/post-job")}>
+              <Link href={localizedHref("/recruiter/post-job")} className={linkClass("/recruiter/post-job")}>
                 {t("nav.postAJob")}
               </Link>
             </li>
@@ -175,7 +202,7 @@ export default function NavBar() {
 
           {!isRecruiter && (
             <li>
-              <Link href="/resume" className={linkClass("/resume")}>
+              <Link href={localizedHref("/resume")} className={linkClass("/resume")}>
                 {t("nav.cvBuilder")}
               </Link>
             </li>
@@ -189,7 +216,7 @@ export default function NavBar() {
             type="button"
             onClick={toggleLocale}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-gray-600 hover:bg-gray-800 transition-colors"
-            title={locale === "en" ? "Passer en Fran\u00e7ais" : "Switch to English"}
+            title={locale === "en" ? t("nav.switchToFrench") : t("nav.switchToEnglish")}
           >
             <Languages className="w-4 h-4" />
             {locale === "en" ? "FR" : "EN"}
@@ -199,13 +226,13 @@ export default function NavBar() {
             <>
               <NotificationBell />
               <Link
-                href="/dashboard"
+                href={localizedHref(dashboardPath)}
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
               >
                 {t("nav.dashboard")}
               </Link>
               <Link
-                href="/auth/logout"
+                href={localizedHref("/auth/logout")}
                 prefetch={false}
                 className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-600 hover:bg-gray-800 transition-colors"
               >
@@ -215,13 +242,13 @@ export default function NavBar() {
           ) : (
             <>
               <Link
-                href="/auth/login"
+                href={localizedHref("/auth/login")}
                 className="px-4 py-2 rounded-lg text-sm font-medium hover:text-yellow-400 transition-colors"
               >
                 {t("nav.login")}
               </Link>
               <Link
-                href="/auth/register"
+                href={localizedHref("/auth/register")}
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
               >
                 {t("nav.getStarted")}
@@ -258,7 +285,7 @@ export default function NavBar() {
       >
         {/* Mobile Menu Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-800">
-          <Link href="/" onClick={closeMobileMenu} className="flex items-center gap-2">
+          <Link href={localizedHref("/")} onClick={closeMobileMenu} className="flex items-center gap-2">
             <Image
               src="/joblinca-logo.png"
               alt="JobLinca"
@@ -288,10 +315,10 @@ export default function NavBar() {
               </p>
 
               <Link
-                href="/"
+                href={localizedHref("/")}
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  pathname === "/"
+                  currentPath === "/"
                     ? "bg-blue-600/20 text-blue-400"
                     : "text-gray-300 hover:text-white hover:bg-gray-800"
                 }`}
@@ -301,10 +328,10 @@ export default function NavBar() {
               </Link>
 
               <Link
-                href="/jobs"
+                href={localizedHref("/jobs")}
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  pathname === "/jobs"
+                  currentPath === "/jobs"
                     ? "bg-blue-600/20 text-blue-400"
                     : "text-gray-300 hover:text-white hover:bg-gray-800"
                 }`}
@@ -314,10 +341,10 @@ export default function NavBar() {
               </Link>
 
               <Link
-                href="/remote-jobs"
+                href={localizedHref("/remote-jobs")}
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  pathname === "/remote-jobs"
+                  currentPath === "/remote-jobs"
                     ? "bg-blue-600/20 text-blue-400"
                     : "text-gray-300 hover:text-white hover:bg-gray-800"
                 }`}
@@ -328,10 +355,10 @@ export default function NavBar() {
 
               {!isRecruiter && (
                 <Link
-                  href="/resume"
+                  href={localizedHref("/resume")}
                   onClick={closeMobileMenu}
                   className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    pathname === "/resume"
+                    currentPath === "/resume"
                       ? "bg-blue-600/20 text-blue-400"
                       : "text-gray-300 hover:text-white hover:bg-gray-800"
                   }`}
@@ -345,10 +372,10 @@ export default function NavBar() {
             {/* Pricing */}
             <div className="mt-4 space-y-1">
               <Link
-                href="/pricing"
+                href={localizedHref("/pricing")}
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  pathname === "/pricing"
+                  currentPath === "/pricing"
                     ? "bg-blue-600/20 text-blue-400"
                     : "text-gray-300 hover:text-white hover:bg-gray-800"
                 }`}
@@ -356,7 +383,7 @@ export default function NavBar() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                 </svg>
-                Pricing
+                {t("nav.pricing")}
               </Link>
             </div>
 
@@ -367,10 +394,10 @@ export default function NavBar() {
               </p>
 
               <Link
-                href="/learn-more/jobseekers"
+                href={localizedHref("/learn-more/jobseekers")}
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  pathname === "/learn-more/jobseekers"
+                  currentPath === "/learn-more/jobseekers"
                     ? "bg-blue-600/20 text-blue-400"
                     : "text-gray-300 hover:text-white hover:bg-gray-800"
                 }`}
@@ -380,10 +407,10 @@ export default function NavBar() {
               </Link>
 
               <Link
-                href="/learn-more/recruiters"
+                href={localizedHref("/learn-more/recruiters")}
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  pathname === "/learn-more/recruiters"
+                  currentPath === "/learn-more/recruiters"
                     ? "bg-blue-600/20 text-blue-400"
                     : "text-gray-300 hover:text-white hover:bg-gray-800"
                 }`}
@@ -394,10 +421,10 @@ export default function NavBar() {
 
               {isRecruiter && (
                 <Link
-                  href="/recruiter/post-job"
+                  href={localizedHref("/recruiter/post-job")}
                   onClick={closeMobileMenu}
                   className={`flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-colors ${
-                    pathname === "/recruiter/post-job"
+                    currentPath === "/recruiter/post-job"
                       ? "bg-blue-600/20 text-blue-400"
                       : "text-gray-300 hover:text-white hover:bg-gray-800"
                   }`}
@@ -426,7 +453,7 @@ export default function NavBar() {
             {isAuthenticated ? (
               <div className="space-y-2">
                 <Link
-                  href="/dashboard"
+                  href={localizedHref(dashboardPath)}
                   onClick={closeMobileMenu}
                   className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
                 >
@@ -434,7 +461,7 @@ export default function NavBar() {
                   {t("nav.dashboard")}
                 </Link>
                 <Link
-                  href="/auth/logout"
+                  href={localizedHref("/auth/logout")}
                   prefetch={false}
                   onClick={closeMobileMenu}
                   className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg text-sm font-medium border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
@@ -446,7 +473,7 @@ export default function NavBar() {
             ) : (
               <div className="space-y-2">
                 <Link
-                  href="/auth/register"
+                  href={localizedHref("/auth/register")}
                   onClick={closeMobileMenu}
                   className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
                 >
@@ -454,7 +481,7 @@ export default function NavBar() {
                   {t("nav.getStarted")}
                 </Link>
                 <Link
-                  href="/auth/login"
+                  href={localizedHref("/auth/login")}
                   onClick={closeMobileMenu}
                   className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-lg text-sm font-medium border border-gray-700 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
                 >

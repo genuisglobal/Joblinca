@@ -4,6 +4,8 @@ import ExplanationPills, {
   type ExplanationSignal,
   type ExplanationTone,
 } from '@/components/applications/ExplanationPills';
+import { useTranslation } from '@/lib/i18n/context';
+import { translateMatchScoreLabel } from '@/lib/i18n/recruiter-presentation';
 
 function splitReason(
   reason: string | null | undefined,
@@ -78,6 +80,7 @@ export default function MatchScoreExplanation({
   reasonSignals?: string[] | null;
   compact?: boolean;
 }) {
+  const { t } = useTranslation();
   const explanation = summarize(score, reason, reasonSignals);
 
   if (explanation.signals.length === 0) {
@@ -86,7 +89,7 @@ export default function MatchScoreExplanation({
 
   return (
     <ExplanationPills
-      label={explanation.label}
+      label={translateMatchScoreLabel(t, explanation.label)}
       tone={explanation.tone}
       signals={explanation.signals}
       compact={compact}

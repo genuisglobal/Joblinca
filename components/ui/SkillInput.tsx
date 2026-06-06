@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ALL_SKILLS, POPULAR_SKILLS } from '@/lib/onboarding/constants';
 import StarRating from './StarRating';
 import { Skill } from '@/lib/onboarding/types';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface SkillInputProps {
   value: Skill[];
@@ -20,6 +21,7 @@ export default function SkillInput({
   maxSkills = 15,
   disabled = false,
 }: SkillInputProps) {
+  const { t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -87,11 +89,11 @@ export default function SkillInput({
   };
 
   const categories = [
-    { key: 'technical', label: 'Technical' },
-    { key: 'design', label: 'Design' },
-    { key: 'business', label: 'Business' },
-    { key: 'soft', label: 'Soft Skills' },
-    { key: 'languages', label: 'Languages' },
+    { key: 'technical', label: t('onboarding.skillInput.category.technical') },
+    { key: 'design', label: t('onboarding.skillInput.category.design') },
+    { key: 'business', label: t('onboarding.skillInput.category.business') },
+    { key: 'soft', label: t('onboarding.skillInput.category.soft') },
+    { key: 'languages', label: t('onboarding.skillInput.category.languages') },
   ];
 
   return (
@@ -115,8 +117,8 @@ export default function SkillInput({
           disabled={disabled || value.length >= maxSkills}
           placeholder={
             value.length >= maxSkills
-              ? `Maximum ${maxSkills} skills reached`
-              : 'Search or type a skill...'
+              ? t('onboarding.skillInput.maxReached', { count: maxSkills })
+              : t('onboarding.skillInput.searchPlaceholder')
           }
           className={`
             w-full pl-10 pr-4 py-3 bg-gray-800 text-gray-100
@@ -182,7 +184,7 @@ export default function SkillInput({
                   "
                 >
                   <Plus className="w-4 h-4 text-blue-400" />
-                  <span>Add &quot;{searchQuery.trim()}&quot;</span>
+                  <span>{t('onboarding.skillInput.addCustom', { skill: searchQuery.trim() })}</span>
                 </button>
               ) : null}
             </motion.div>
@@ -220,7 +222,10 @@ export default function SkillInput({
       {value.length > 0 && (
         <div className="space-y-3">
           <p className="text-sm text-gray-400">
-            Your skills ({value.length}/{maxSkills})
+            {t('onboarding.skillInput.selectedSkills', {
+              count: value.length,
+              max: maxSkills,
+            })}
           </p>
           <AnimatePresence mode="popLayout">
             {value.map((skill) => (

@@ -1,13 +1,6 @@
-'use client';
-
-import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import Image from 'next/image';
-import { createClient } from '@/lib/supabase/client';
-import { useTranslation } from '@/lib/i18n';
-import SponsoredHomeFeed from '@/components/sponsors/SponsoredHomeFeed';
-import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import {
   Briefcase,
   MapPin,
@@ -27,13 +20,22 @@ import {
   Quote,
   MessageCircle,
   Bell,
-  DollarSign,
   Award,
   MessageSquare,
   BarChart3,
   Code2,
   Heart,
+  DollarSign,
 } from 'lucide-react';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { addLocalePrefix } from '@/lib/i18n/locale';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
+import SponsoredHomeFeed from '@/components/sponsors/SponsoredHomeFeed';
+import HomeHeroSearch from '@/components/home/HomeHeroSearch';
+
+export const revalidate = 300;
 
 interface Job {
   id: string;
@@ -48,10 +50,7 @@ interface Job {
   lifecycle_status?: string | null;
   published?: boolean;
   approval_status?: string | null;
-  isSample?: boolean;
 }
-
-// No sample/fake jobs — show an honest empty state when no real jobs exist
 
 const CITIES = [
   { name: 'Douala', slug: 'douala', emoji: '🏙️' },
@@ -63,69 +62,137 @@ const CITIES = [
   { name: 'Remote', slug: null, emoji: '🌐' },
 ];
 
-export default function HomePage() {
-  const router = useRouter();
-  const supabase = useMemo(() => createClient(), []);
-  const { t } = useTranslation();
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://joblinca.com';
 
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [totalJobCount, setTotalJobCount] = useState(0);
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [searchLocation, setSearchLocation] = useState('');
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+  const title = t('home.hero.title') + ' ' + t('home.hero.titleHighlight');
+  const description = t('home.hero.subtitle');
+  const localizedUrl = `${APP_URL}${addLocalePrefix('/', locale)}`;
+  const englishUrl = `${APP_URL}${addLocalePrefix('/', 'en')}`;
+  const frenchUrl = `${APP_URL}${addLocalePrefix('/', 'fr')}`;
 
-  useEffect(() => {
-    async function loadJobs() {
-      // Fetch total count (lightweight HEAD query)
-      const { count } = await supabase
+  return {
+    title: t('meta.defaultTitle'),
+    description,
+    alternates: {
+      canonical: localizedUrl,
+      languages: {
+        'en-CM': englishUrl,
+        'fr-CM': frenchUrl,
+        'x-default': englishUrl,
+      },
+    },
+    openGraph: {
+      type: 'website',
+      url: localizedUrl,
+      siteName: 'Joblinca',
+      title,
+      description,
+      locale: locale === 'fr' ? 'fr_CM' : 'en_CM',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title,
+      description,
+    },
+  };
+}
+
+async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
+  try {
+    const supabase = createServiceSupabaseClient();
+
+    const [{ count }, { data: fetchedJobs }] = await Promise.all([
+      supabase
         .from('jobs')
         .select('*', { count: 'exact', head: true })
         .eq('published', true)
         .eq('approval_status', 'approved')
-        .eq('lifecycle_status', 'live');
-
-      const totalJobs = count || 0;
-
-      // Fetch only the 6 most recent jobs — never fetch the full table
-      const { data: fetchedJobs } = await supabase
+        .eq('lifecycle_status', 'live'),
+      supabase
         .from('jobs')
-        .select('id, title, company_name, location, job_type, salary, created_at, work_type, closes_at, lifecycle_status, published, approval_status')
+        .select(
+          'id, title, company_name, location, job_type, salary, created_at, work_type, closes_at, lifecycle_status, published, approval_status'
+        )
         .eq('published', true)
         .eq('approval_status', 'approved')
         .order('created_at', { ascending: false })
-        .limit(6);
+        .limit(6),
+    ]);
 
-      setJobs((fetchedJobs || []).filter((job) => isJobPubliclyListable(job)));
-      setTotalJobCount(totalJobs);
-      setLoading(false);
-    }
-    loadJobs();
-  }, [supabase]);
+    const jobs = (fetchedJobs || []).filter((job) => isJobPubliclyListable(job));
+    return { jobs, totalJobCount: count || 0 };
+  } catch {
+    return { jobs: [], totalJobCount: 0 };
+  }
+}
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    const params = new URLSearchParams();
-    if (searchKeyword) params.set('q', searchKeyword);
-    if (searchLocation) params.set('location', searchLocation);
-    router.push(`/jobs?${params.toString()}`);
+function HomeJsonLd({ totalJobCount }: { totalJobCount: number }) {
+  const data = {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'Organization',
+        '@id': `${APP_URL}/#org`,
+        name: 'Joblinca',
+        url: APP_URL,
+        logo: `${APP_URL}/joblinca-logo.png`,
+        sameAs: [],
+        areaServed: { '@type': 'Country', name: 'Cameroon' },
+      },
+      {
+        '@type': 'WebSite',
+        '@id': `${APP_URL}/#website`,
+        url: APP_URL,
+        name: 'Joblinca',
+        publisher: { '@id': `${APP_URL}/#org` },
+        inLanguage: ['en-CM', 'fr-CM'],
+        potentialAction: {
+          '@type': 'SearchAction',
+          target: {
+            '@type': 'EntryPoint',
+            urlTemplate: `${APP_URL}/jobs?q={search_term_string}`,
+          },
+          'query-input': 'required name=search_term_string',
+        },
+        ...(totalJobCount > 0 && {
+          description: `${totalJobCount} live jobs across Cameroon`,
+        }),
+      },
+    ],
   };
+  return (
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+    />
+  );
+}
+
+export default async function HomePage() {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+  const { jobs, totalJobCount } = await loadHomeData();
+  const featuredRoleLabel =
+    totalJobCount === 1
+      ? t('home.featured.roleSingular')
+      : t('home.featured.rolePlural');
 
   return (
     <main className="bg-neutral-950 text-neutral-100">
+      <HomeJsonLd totalJobCount={totalJobCount} />
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <section className="relative min-h-[92vh] flex items-center overflow-hidden">
-        {/* Background glow blobs */}
         <div className="absolute inset-0 bg-gradient-to-br from-neutral-950 via-neutral-900/80 to-neutral-950" />
         <div className="absolute top-1/4 left-0 w-[600px] h-[600px] bg-primary-600/6 rounded-full blur-[120px]" />
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-accent-500/6 rounded-full blur-[120px]" />
 
         <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-20">
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
-
-            {/* LEFT — Copy + Search */}
             <div>
-              {/* Trust pill */}
               <div className="flex mb-6">
                 <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-neutral-800/70 border border-neutral-700/50 text-sm text-neutral-300">
                   <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
@@ -133,7 +200,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Headline */}
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight leading-tight mb-5">
                 {t('home.hero.title')}
                 <br />
@@ -146,71 +212,18 @@ export default function HomePage() {
                 {t('home.hero.subtitle')}
               </p>
 
-              {/* Search bar */}
-              <form onSubmit={handleSearch} className="mb-6">
-                <div className="flex flex-col sm:flex-row gap-3 p-3 bg-neutral-900/90 backdrop-blur-sm border border-neutral-800 rounded-2xl">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
-                    <input
-                      type="text"
-                      value={searchKeyword}
-                      onChange={(e) => setSearchKeyword(e.target.value)}
-                      placeholder={t('home.hero.searchPlaceholder')}
-                      className="w-full pl-12 pr-4 py-3.5 bg-neutral-800/60 border border-neutral-700/50 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-base"
-                    />
-                  </div>
-                  <div className="flex-1 relative">
-                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-neutral-500" />
-                    <input
-                      type="text"
-                      value={searchLocation}
-                      onChange={(e) => setSearchLocation(e.target.value)}
-                      placeholder={t('home.hero.locationPlaceholder')}
-                      className="w-full pl-12 pr-4 py-3.5 bg-neutral-800/60 border border-neutral-700/50 rounded-xl text-white placeholder-neutral-500 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 text-base"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full sm:w-auto px-8 py-3.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold rounded-xl transition-all hover:shadow-lg hover:shadow-primary-600/25 flex items-center justify-center gap-2"
-                  >
-                    <Search className="w-5 h-5" />
-                    {t('home.hero.searchButton')}
-                  </button>
-                </div>
+              <HomeHeroSearch />
 
-                {/* Popular searches */}
-                <div className="flex flex-wrap gap-2 mt-3 px-1">
-                  <span className="text-neutral-500 text-sm">{t('home.hero.popular')}</span>
-                  {['Developer', 'Marketing', 'Douala', 'Yaoundé', 'Remote'].map((term) => (
-                    <button
-                      key={term}
-                      type="button"
-                      onClick={() => {
-                        if (term === 'Remote' || term === 'Douala' || term === 'Yaoundé') {
-                          setSearchLocation(term);
-                        } else {
-                          setSearchKeyword(term);
-                        }
-                      }}
-                      className="px-3 py-1 text-sm text-neutral-400 hover:text-white bg-neutral-800/50 hover:bg-neutral-800 rounded-full transition-colors"
-                    >
-                      {term}
-                    </button>
-                  ))}
-                </div>
-              </form>
-
-              {/* CTA buttons */}
               <div className="flex flex-col sm:flex-row items-start gap-3 mb-8">
                 <Link
-                  href="/jobs"
+                  href={addLocalePrefix('/jobs', locale)}
                   className="inline-flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-7 py-3.5 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-primary-600/25"
                 >
                   <Briefcase className="w-5 h-5" />
                   {t('home.hero.browseAll')}
                 </Link>
                 <Link
-                  href="/recruiter/post-job"
+                  href={addLocalePrefix('/recruiter/post-job', locale)}
                   className="inline-flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-neutral-200 hover:text-white px-7 py-3.5 rounded-xl font-semibold transition-all"
                 >
                   <Building2 className="w-5 h-5" />
@@ -219,7 +232,6 @@ export default function HomePage() {
                 </Link>
               </div>
 
-              {/* Value props */}
               <div className="flex flex-wrap gap-5 text-sm text-neutral-400">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 text-green-500" />
@@ -236,40 +248,36 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* RIGHT — Community image */}
             <div className="relative hidden lg:block">
               <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-black/50 aspect-[4/3]">
                 <Image
                   src="/assets/hero-community.png"
-                  alt="Cameroon professionals using Joblinca"
+                  alt={t('home.hero.imageAlt')}
                   fill
                   className="object-cover object-center"
                   priority
                   sizes="(max-width: 1280px) 50vw, 640px"
                 />
-                {/* Bottom gradient to blend into page */}
                 <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/40 via-transparent to-transparent" />
               </div>
 
-              {/* Floating: live jobs badge */}
               <div className="absolute -bottom-4 -left-4 bg-neutral-900/95 backdrop-blur-sm border border-neutral-800 rounded-xl px-4 py-3 shadow-xl">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                  <span className="text-xs text-green-400 font-medium uppercase tracking-wide">Live</span>
+                  <span className="text-xs text-green-400 font-medium uppercase tracking-wide">{t('home.hero.live')}</span>
                 </div>
                 <p className="text-white font-bold text-lg leading-none">
                   {totalJobCount > 0 ? totalJobCount : '—'} {t('home.stats.jobs')}
                 </p>
               </div>
 
-              {/* Floating: WhatsApp alerts badge */}
               <div className="absolute -top-3 -right-3 bg-neutral-900/95 backdrop-blur-sm border border-green-500/30 rounded-xl px-4 py-3 shadow-xl flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-green-500/20 flex items-center justify-center">
                   <MessageCircle className="w-5 h-5 text-green-400" />
                 </div>
                 <div>
-                  <p className="text-xs text-green-400 font-semibold">WhatsApp Alerts</p>
-                  <p className="text-xs text-neutral-400">Get notified instantly</p>
+                  <p className="text-xs text-green-400 font-semibold">{t('home.hero.whatsappCardTitle')}</p>
+                  <p className="text-xs text-neutral-400">{t('home.hero.whatsappCardSubtitle')}</p>
                 </div>
               </div>
             </div>
@@ -317,22 +325,24 @@ export default function HomePage() {
             {CITIES.map((city) => (
               <Link
                 key={city.name}
-                href={city.slug ? `/jobs-in/${city.slug}` : '/jobs?remote=1'}
+                href={
+                  city.slug
+                    ? addLocalePrefix(`/jobs-in/${city.slug}`, locale)
+                    : addLocalePrefix('/jobs?remote=1', locale)
+                }
                 className="flex items-center gap-2 px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-primary-600/40 rounded-full text-sm text-neutral-300 hover:text-white transition-all"
               >
                 <span>{city.emoji}</span>
-                <span>{city.name}</span>
+                <span>{city.slug ? city.name : t('common.remote')}</span>
               </Link>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── WHY JOBLINCA — Feature Highlights ──────────────────────────── */}
-      {/* Sponsored opportunities and partners */}
       <SponsoredHomeFeed />
 
-      {/* Why Joblinca */}
+      {/* ── WHY JOBLINCA ─────────────────────────────────────────────────── */}
       <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-900">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
@@ -378,7 +388,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── PAYMENT PARTNERS ──────────────────────────────────────────────── */}
+      {/* ── PAYMENT PARTNERS ─────────────────────────────────────────────── */}
       <section className="py-8 sm:py-10 px-4 sm:px-6 bg-neutral-900/40 border-y border-neutral-800/40">
         <div className="max-w-5xl mx-auto">
           <p className="text-neutral-500 text-xs uppercase tracking-widest text-center mb-6">
@@ -446,7 +456,6 @@ export default function HomePage() {
             <div className="absolute top-0 right-0 w-72 h-72 bg-green-500/5 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 flex flex-col lg:flex-row items-center gap-10">
-              {/* Content */}
               <div className="flex-1 text-center lg:text-left">
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-600/20 text-green-400 text-sm font-medium mb-5">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
@@ -471,7 +480,7 @@ export default function HomePage() {
 
                 <div className="flex flex-col sm:flex-row items-center gap-4">
                   <Link
-                    href="/auth/register?role=candidate"
+                    href={addLocalePrefix('/auth/register?role=candidate', locale)}
                     className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-7 py-3.5 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-green-600/25"
                   >
                     <MessageCircle className="w-5 h-5" />
@@ -481,14 +490,12 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* Icon illustration */}
               <div className="flex-shrink-0 w-40 h-40 lg:w-52 lg:h-52 relative flex items-center justify-center">
                 <div className="w-36 h-36 lg:w-44 lg:h-44 rounded-full bg-green-500/8 border border-green-500/15 flex items-center justify-center">
                   <div className="w-24 h-24 lg:w-32 lg:h-32 rounded-full bg-green-500/12 border border-green-500/20 flex items-center justify-center">
                     <MessageCircle className="w-14 h-14 lg:w-16 lg:h-16 text-green-400" style={{ fill: 'rgba(74,222,128,0.12)' }} />
                   </div>
                 </div>
-                {/* Notification ping */}
                 <div className="absolute top-2 right-2 w-10 h-10 bg-neutral-800 border border-neutral-700 rounded-xl flex items-center justify-center shadow-lg">
                   <Bell className="w-5 h-5 text-green-400" />
                 </div>
@@ -501,7 +508,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── FEATURED JOBS ────────────────────────────────────────────────── */}
+      {/* ── FEATURED JOBS (server-rendered) ──────────────────────────────── */}
       <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-950">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
@@ -511,13 +518,13 @@ export default function HomePage() {
               </h2>
               <p className="text-neutral-400">
                 {totalJobCount <= 10
-                  ? t('home.featured.rolesFromVerified', { count: totalJobCount, label: totalJobCount === 1 ? 'role' : 'roles' })
+                  ? t('home.featured.rolesFromVerified', { count: totalJobCount, label: featuredRoleLabel })
                   : t('home.featured.freshPicks')}
               </p>
             </div>
             {totalJobCount > 10 && (
               <Link
-                href="/jobs"
+                href={addLocalePrefix('/jobs', locale)}
                 className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium transition-colors"
               >
                 {t('home.featured.viewAll', { count: totalJobCount })}
@@ -526,23 +533,12 @@ export default function HomePage() {
             )}
           </div>
 
-          {loading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="bg-neutral-800/30 rounded-xl p-6 animate-pulse">
-                  <div className="h-12 w-12 bg-neutral-700 rounded-lg mb-4" />
-                  <div className="h-6 bg-neutral-700 rounded w-3/4 mb-2" />
-                  <div className="h-4 bg-neutral-700 rounded w-1/2 mb-4" />
-                  <div className="h-4 bg-neutral-700 rounded w-2/3" />
-                </div>
-              ))}
-            </div>
-          ) : jobs.length > 0 ? (
+          {jobs.length > 0 ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {jobs.map((job) => (
                 <Link
                   key={job.id}
-                  href={`/jobs/${job.id}`}
+                  href={addLocalePrefix(`/jobs/${job.id}`, locale)}
                   className="group bg-neutral-900/50 border border-neutral-800 rounded-xl p-5 sm:p-6 hover:border-primary-600/50 hover:bg-neutral-800/50 transition-all"
                 >
                   <div className="flex items-start justify-between mb-4">
@@ -588,7 +584,7 @@ export default function HomePage() {
               <Briefcase className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
               <p className="text-neutral-400 mb-4">{t('home.featured.newJobsDaily')}</p>
               <Link
-                href="/auth/register?role=candidate"
+                href={addLocalePrefix('/auth/register?role=candidate', locale)}
                 className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium"
               >
                 {t('home.featured.signUpNotified')}
@@ -622,7 +618,7 @@ export default function HomePage() {
                   ))}
                 </ul>
                 <Link
-                  href="/resume"
+                  href={addLocalePrefix('/resume', locale)}
                   className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-4 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-primary-600/25"
                 >
                   <FileText className="w-5 h-5" />
@@ -677,7 +673,6 @@ export default function HomePage() {
       <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-900">
         <div className="max-w-6xl mx-auto">
           <div className="grid md:grid-cols-2 gap-6 sm:gap-8">
-            {/* Job Seekers */}
             <div className="bg-gradient-to-br from-primary-600/10 to-transparent border border-primary-600/20 rounded-2xl p-6 sm:p-8">
               <div className="w-14 h-14 rounded-xl bg-primary-600/20 flex items-center justify-center mb-6">
                 <TrendingUp className="w-7 h-7 text-primary-400" />
@@ -693,7 +688,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <Link
-                href="/auth/register?role=candidate"
+                href={addLocalePrefix('/auth/register?role=candidate', locale)}
                 className="inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-6 py-3.5 rounded-xl font-semibold transition-all"
               >
                 {t('home.seekers.cta')}
@@ -701,7 +696,6 @@ export default function HomePage() {
               </Link>
             </div>
 
-            {/* Recruiters */}
             <div className="bg-gradient-to-br from-accent-500/10 to-transparent border border-accent-500/20 rounded-2xl p-6 sm:p-8">
               <div className="w-14 h-14 rounded-xl bg-accent-500/20 flex items-center justify-center mb-6">
                 <Shield className="w-7 h-7 text-accent-400" />
@@ -717,7 +711,7 @@ export default function HomePage() {
                 ))}
               </ul>
               <Link
-                href="/recruiter/post-job"
+                href={addLocalePrefix('/recruiter/post-job', locale)}
                 className="inline-flex items-center gap-2 bg-accent-500 hover:bg-accent-600 text-neutral-900 px-6 py-3.5 rounded-xl font-semibold transition-all"
               >
                 {t('home.recruiters.cta')}
@@ -728,7 +722,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ── SALARY INSIGHTS TEASER ─────────────────────────────────────── */}
+      {/* ── SALARY INSIGHTS TEASER ───────────────────────────────────────── */}
       <section className="py-14 sm:py-16 px-4 sm:px-6 bg-neutral-950">
         <div className="max-w-4xl mx-auto">
           <div className="relative bg-gradient-to-br from-green-600/10 via-emerald-600/5 to-transparent border border-green-600/20 rounded-2xl p-6 sm:p-8 overflow-hidden">
@@ -742,7 +736,7 @@ export default function HomePage() {
                 <p className="text-neutral-400 text-sm">{t('home.salaryTeaser.desc')}</p>
               </div>
               <Link
-                href="/salary-insights"
+                href={addLocalePrefix('/salary-insights', locale)}
                 className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-green-600/25 whitespace-nowrap"
               >
                 {t('home.salaryTeaser.cta')}
@@ -769,14 +763,14 @@ export default function HomePage() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
-              href="/jobs"
+              href={addLocalePrefix('/jobs', locale)}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-primary-600 hover:bg-primary-700 text-white px-8 py-4 rounded-xl font-semibold transition-all hover:shadow-lg hover:shadow-primary-600/25 text-base"
             >
               <Search className="w-5 h-5" />
               {t('home.finalCta.findJobs')}
             </Link>
             <Link
-              href="/recruiter/post-job"
+              href={addLocalePrefix('/recruiter/post-job', locale)}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white px-8 py-4 rounded-xl font-semibold transition-all text-base"
             >
               <Building2 className="w-5 h-5" />
@@ -790,9 +784,8 @@ export default function HomePage() {
       <footer className="bg-neutral-900 border-t border-neutral-800">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
-            {/* Brand */}
             <div className="col-span-2">
-              <Link href="/" className="flex items-center gap-3 mb-4">
+              <Link href={addLocalePrefix('/', locale)} className="flex items-center gap-3 mb-4">
                 <Image
                   src="/joblinca-logo.png"
                   alt="JobLinca"
@@ -806,30 +799,28 @@ export default function HomePage() {
               </p>
               <div className="flex items-center gap-2 text-xs text-neutral-600">
                 <MapPin className="w-3 h-3" />
-                <span>Douala &amp; Yaoundé, Cameroon</span>
+                <span>{t('footer.location')}</span>
               </div>
             </div>
 
-            {/* Job Seekers */}
             <div>
               <h4 className="font-semibold mb-4 text-neutral-200">{t('footer.forJobSeekers')}</h4>
               <ul className="space-y-3 text-sm">
-                <li><Link href="/jobs" className="text-neutral-400 hover:text-white transition-colors">{t('footer.browseJobs')}</Link></li>
-                <li><Link href="/resume" className="text-neutral-400 hover:text-white transition-colors">{t('footer.cvBuilder')}</Link></li>
-                <li><Link href="/remote-jobs" className="text-neutral-400 hover:text-white transition-colors">{t('footer.remoteJobs')}</Link></li>
-                <li><Link href="/salary-insights" className="text-neutral-400 hover:text-white transition-colors">{t('footer.salaryInsights')}</Link></li>
-                <li><Link href="/companies" className="text-neutral-400 hover:text-white transition-colors">{t('footer.companies')}</Link></li>
-                <li><Link href="/auth/register?role=candidate" className="text-neutral-400 hover:text-white transition-colors">{t('footer.createAccount')}</Link></li>
+                <li><Link href={addLocalePrefix('/jobs', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.browseJobs')}</Link></li>
+                <li><Link href={addLocalePrefix('/resume', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.cvBuilder')}</Link></li>
+                <li><Link href={addLocalePrefix('/remote-jobs', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.remoteJobs')}</Link></li>
+                <li><Link href={addLocalePrefix('/salary-insights', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.salaryInsights')}</Link></li>
+                <li><Link href={addLocalePrefix('/companies', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.companies')}</Link></li>
+                <li><Link href={addLocalePrefix('/auth/register?role=candidate', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.createAccount')}</Link></li>
               </ul>
             </div>
 
-            {/* Employers */}
             <div>
               <h4 className="font-semibold mb-4 text-neutral-200">{t('footer.forEmployers')}</h4>
               <ul className="space-y-3 text-sm">
-                <li><Link href="/recruiter/post-job" className="text-neutral-400 hover:text-white transition-colors">{t('footer.postAJob')}</Link></li>
-                <li><Link href="/learn-more/recruiters" className="text-neutral-400 hover:text-white transition-colors">{t('footer.howItWorks')}</Link></li>
-                <li><Link href="/contact" className="text-neutral-400 hover:text-white transition-colors">{t('footer.contactSales')}</Link></li>
+                <li><Link href={addLocalePrefix('/recruiter/post-job', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.postAJob')}</Link></li>
+                <li><Link href={addLocalePrefix('/learn-more/recruiters', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.howItWorks')}</Link></li>
+                <li><Link href={addLocalePrefix('/contact', locale)} className="text-neutral-400 hover:text-white transition-colors">{t('footer.contactSales')}</Link></li>
               </ul>
             </div>
           </div>
@@ -839,8 +830,8 @@ export default function HomePage() {
               &copy; {new Date().getFullYear()} {t('footer.rights')}
             </p>
             <div className="flex items-center gap-4 sm:gap-6 text-sm text-neutral-500">
-              <Link href="/privacy" className="hover:text-white transition-colors">{t('footer.privacy')}</Link>
-              <Link href="/terms" className="hover:text-white transition-colors">{t('footer.terms')}</Link>
+              <Link href={addLocalePrefix('/privacy', locale)} className="hover:text-white transition-colors">{t('footer.privacy')}</Link>
+              <Link href={addLocalePrefix('/terms', locale)} className="hover:text-white transition-colors">{t('footer.terms')}</Link>
             </div>
           </div>
         </div>

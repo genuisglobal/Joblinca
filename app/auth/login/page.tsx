@@ -5,17 +5,19 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import { Mail, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = createClient();
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const localizedHref = (href: string) => addLocalePrefix(href, locale);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -56,7 +58,9 @@ function LoginForm() {
       await new Promise(resolve => setTimeout(resolve, 200));
 
       const redirectTo = searchParams.get('redirect');
-      const targetUrl = redirectTo || '/dashboard';
+      const targetUrl = redirectTo
+        ? addLocalePrefix(redirectTo, locale)
+        : localizedHref('/dashboard');
 
       window.location.href = targetUrl;
     } catch (err) {
@@ -120,7 +124,7 @@ function LoginForm() {
                   {t("auth.login.password")}
                 </label>
                 <Link
-                  href="/auth/forgot-password"
+                  href={localizedHref('/auth/forgot-password')}
                   className="text-sm text-primary-400 hover:text-primary-300 transition-colors"
                 >
                   {t("auth.login.forgotPassword")}
@@ -172,10 +176,11 @@ function LoginForm() {
             type="button"
             onClick={async () => {
               const redirectTo = searchParams.get('redirect') || '/dashboard';
+              const localizedRedirectTo = addLocalePrefix(redirectTo, locale);
               await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                  redirectTo: `${window.location.origin}/auth/callback?redirect=${encodeURIComponent(redirectTo)}`,
+                  redirectTo: `${window.location.origin}${localizedHref('/auth/callback')}?redirect=${encodeURIComponent(localizedRedirectTo)}`,
                 },
               });
             }}
@@ -196,7 +201,7 @@ function LoginForm() {
           <p className="text-center text-neutral-400">
             {t("auth.login.noAccount")}{' '}
             <Link
-              href="/auth/register?role=candidate"
+              href={localizedHref('/auth/register?role=candidate')}
               className="text-primary-400 hover:text-primary-300 font-medium transition-colors"
             >
               {t("auth.login.createOne")}
@@ -207,11 +212,11 @@ function LoginForm() {
         {/* Footer */}
         <p className="text-center text-sm text-neutral-500 mt-8">
           {t("auth.login.agreeTerms")}{' '}
-          <Link href="/terms" className="text-neutral-400 hover:text-white transition-colors">
+          <Link href={localizedHref('/terms')} className="text-neutral-400 hover:text-white transition-colors">
             {t("auth.login.terms")}
           </Link>{' '}
           {t("auth.login.and")}{' '}
-          <Link href="/privacy" className="text-neutral-400 hover:text-white transition-colors">
+          <Link href={localizedHref('/privacy')} className="text-neutral-400 hover:text-white transition-colors">
             {t("auth.login.privacy")}
           </Link>
         </p>

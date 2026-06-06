@@ -1,15 +1,19 @@
 'use client';
 
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { OnboardingStatus, Role, RecruiterType, getStepsForRole } from '@/lib/onboarding/types';
 import OnboardingWizard from './components/OnboardingWizard';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { t, locale } = useTranslation();
   const supabase = useMemo(() => createClient(), []);
   const redirectedRef = useRef(false);
+  const localizedHref = useCallback((href: string) => addLocalePrefix(href, locale), [locale]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +41,8 @@ export default function OnboardingPage() {
 
           if (retryError || !retryUser) {
             setLoading(false);
-            setError('Session not found. Please log in again.');
-            router.replace('/auth/login');
+            setError(t('onboarding.sessionNotFound'));
+            router.replace(localizedHref('/auth/login'));
             return;
           }
 
@@ -50,7 +54,7 @@ export default function OnboardingPage() {
       } catch (err) {
         if (!mounted) return;
         console.error('Onboarding load error:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load profile');
+        setError(err instanceof Error ? err.message : t('onboarding.failedLoadProfile'));
         setLoading(false);
       }
     }
@@ -68,7 +72,7 @@ export default function OnboardingPage() {
       if (!mounted) return;
 
       if (profileError || !profile) {
-        setError('Profile not found. Please contact support.');
+        setError(t('onboarding.profileNotFound'));
         setLoading(false);
         return;
       }
@@ -80,7 +84,7 @@ export default function OnboardingPage() {
       // Check if already completed or skipped
       if ((profile.onboarding_completed || profile.onboarding_skipped) && !redirectedRef.current) {
         redirectedRef.current = true;
-        router.replace('/dashboard');
+        router.replace(localizedHref('/dashboard'));
         return;
       }
 
@@ -165,7 +169,7 @@ export default function OnboardingPage() {
       if (!mounted) return;
       // Only redirect on explicit sign out, not on other events
       if (event === 'SIGNED_OUT') {
-        router.replace('/auth/login');
+        router.replace(localizedHref('/auth/login'));
       }
     });
 
@@ -173,7 +177,7 @@ export default function OnboardingPage() {
       mounted = false;
       sub.subscription.unsubscribe();
     };
-  }, [supabase, router]);
+  }, [localizedHref, router, supabase, t]);
 
   // Loading state
   if (loading) {
@@ -181,7 +185,7 @@ export default function OnboardingPage() {
       <main className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
-          <p className="text-gray-400">Loading your profile...</p>
+          <p className="text-gray-400">{t('onboarding.loadingProfile')}</p>
         </div>
       </main>
     );
@@ -208,14 +212,14 @@ export default function OnboardingPage() {
             </svg>
           </div>
           <h2 className="text-xl font-semibold text-gray-100 mb-2">
-            Something went wrong
+            {t('common.somethingWentWrong')}
           </h2>
           <p className="text-gray-400 mb-6">{error}</p>
           <button
             onClick={() => window.location.reload()}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
-            Try Again
+            {t('common.tryAgain')}
           </button>
         </div>
       </main>

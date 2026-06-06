@@ -1,11 +1,17 @@
 import type { Metadata } from 'next';
 import RecruitersContent from './RecruitersContent';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
 
-export const metadata: Metadata = {
-  title: 'Learn More for Recruiters | JobLinca',
-  description:
-    'Explore how JobLinca helps recruiters hire faster with AI screening, candidate ranking and flexible vetting services.',
-};
+export function generateMetadata(): Metadata {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+
+  return {
+    title: t('learnRecruiters.metadataTitle'),
+    description: t('learnRecruiters.metadataDescription'),
+  };
+}
 
 export default function RecruitersLearnMore() {
   return <RecruitersContent />;

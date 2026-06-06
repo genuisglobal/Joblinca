@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PaymentModal from '@/app/components/PaymentModal';
+import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 
 interface Plan {
   id: string;
@@ -35,6 +37,7 @@ function normalizeRoleFilter(raw: string | null): RoleFilter {
 export default function PricingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { locale, t } = useTranslation();
   const [plans, setPlans] = useState<Record<string, Plan[]>>({});
   const [loading, setLoading] = useState(true);
   const [duration, setDuration] = useState<DurationFilter>('monthly');
@@ -73,7 +76,7 @@ export default function PricingPage() {
 
   function handleSubscribe(plan: Plan) {
     if (plan.plan_type === 'per_job') {
-      router.push('/jobs/new');
+      router.push(addLocalePrefix('/jobs/new', locale));
       return;
     }
 
@@ -84,7 +87,7 @@ export default function PricingPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-gray-400">Loading plans...</div>
+        <div className="text-gray-400">{t('pricing.loadingPlans')}</div>
       </div>
     );
   }
@@ -108,7 +111,10 @@ export default function PricingPage() {
         ...plan,
         features: [
           ...features,
-          `Optional add-on: ${featuredAddOn.name} (+${featuredAddOn.amount_xaf.toLocaleString()} CFA)`,
+          t('pricing.optionalAddOn', {
+            name: featuredAddOn.name,
+            amount: featuredAddOn.amount_xaf.toLocaleString(locale === 'fr' ? 'fr-FR' : 'en-US'),
+          }),
         ],
       };
     });
@@ -123,14 +129,14 @@ export default function PricingPage() {
       {/* Header */}
       <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-xl font-bold text-white">
+          <Link href={addLocalePrefix('/', locale)} className="text-xl font-bold text-white">
             Joblinca
           </Link>
           <Link
-            href="/dashboard"
+            href={addLocalePrefix('/dashboard', locale)}
             className="text-sm text-blue-400 hover:text-blue-300"
           >
-            Go to Dashboard
+            {t('pricing.goToDashboard')}
           </Link>
         </div>
       </header>
@@ -138,11 +144,11 @@ export default function PricingPage() {
       <div className="max-w-7xl mx-auto px-4 py-12">
         {/* Title */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4">Simple, Transparent Pricing</h1>
+          <h1 className="text-4xl font-bold mb-4">{t('pricing.title')}</h1>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
             {roleFilter
-              ? 'Role-specific plans from your account. Pay securely with MTN MoMo or Orange Money.'
-              : 'Choose the plan that fits your needs. Pay securely with MTN MoMo or Orange Money.'}
+              ? t('pricing.subtitleRole')
+              : t('pricing.subtitleDefault')}
           </p>
         </div>
 
@@ -160,7 +166,11 @@ export default function PricingPage() {
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  {d === 'monthly' ? '1 Month' : d === 'quarterly' ? '3 Months' : '6 Months'}
+                  {d === 'monthly'
+                    ? t('pricing.duration.oneMonth')
+                    : d === 'quarterly'
+                      ? t('pricing.duration.threeMonths')
+                      : t('pricing.duration.sixMonths')}
                 </button>
               ))}
             </div>
@@ -170,9 +180,9 @@ export default function PricingPage() {
         {/* Job Seekers Section */}
         {showJobSeeker && (
           <section className="mb-16">
-            <h2 className="text-2xl font-bold mb-2">For Job Seekers</h2>
+            <h2 className="text-2xl font-bold mb-2">{t('pricing.forJobSeekers')}</h2>
             <p className="text-gray-400 mb-6">
-              Boost your job search with AI-powered tools and premium visibility.
+              {t('pricing.jobSeekerDescription')}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {jobSeekerPlans.map((plan) => (
@@ -183,7 +193,7 @@ export default function PricingPage() {
                 />
               ))}
               {jobSeekerPlans.length === 0 && (
-                <p className="text-gray-500 col-span-3">No plans available for this duration.</p>
+                <p className="text-gray-500 col-span-3">{t('pricing.noPlansDuration')}</p>
               )}
             </div>
           </section>
@@ -192,9 +202,9 @@ export default function PricingPage() {
         {/* Talents Section */}
         {showTalent && (
           <section className="mb-16">
-            <h2 className="text-2xl font-bold mb-2">For Talents</h2>
+            <h2 className="text-2xl font-bold mb-2">{t('pricing.forTalents')}</h2>
             <p className="text-gray-400 mb-6">
-              Accelerate your skills and showcase your portfolio.
+              {t('pricing.talentDescription')}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {talentPlans.map((plan) => (
@@ -205,7 +215,7 @@ export default function PricingPage() {
                 />
               ))}
               {talentPlans.length === 0 && (
-                <p className="text-gray-500 col-span-3">No plans available for this duration.</p>
+                <p className="text-gray-500 col-span-3">{t('pricing.noPlansDuration')}</p>
               )}
             </div>
           </section>
@@ -213,9 +223,9 @@ export default function PricingPage() {
 
         {showRecruiter && (
           <section className="mb-16">
-            <h2 className="text-2xl font-bold mb-2">For Recruiters</h2>
+            <h2 className="text-2xl font-bold mb-2">{t('pricing.forRecruiters')}</h2>
             <p className="text-gray-400 mb-6">
-              Pay per job posting with recruiter-specific plans. Select your tier when posting a job.
+              {t('pricing.recruiterDescription')}
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {recruiterBasePlans.map((plan) => (
@@ -223,11 +233,11 @@ export default function PricingPage() {
                   key={plan.id}
                   plan={plan}
                   onSubscribe={() => handleSubscribe(plan)}
-                  ctaLabel="Choose at Job Posting"
+                  ctaLabel={t('pricing.chooseAtPosting')}
                 />
               ))}
               {recruiterBasePlans.length === 0 && (
-                <p className="text-gray-500 col-span-2">No recruiter pay-per-job plans available.</p>
+                <p className="text-gray-500 col-span-2">{t('pricing.noRecruiterPlans')}</p>
               )}
             </div>
           </section>
@@ -259,6 +269,7 @@ function PlanCard({
   highlight?: boolean;
   ctaLabel?: string;
 }) {
+  const { locale, t } = useTranslation();
   const features = Array.isArray(plan.features) ? plan.features : [];
 
   return (
@@ -271,19 +282,19 @@ function PlanCard({
     >
       {highlight && (
         <span className="text-xs font-semibold text-blue-400 uppercase mb-2">
-          Most Popular
+          {t('pricing.mostPopular')}
         </span>
       )}
       <h3 className="text-lg font-semibold mb-1">{plan.name}</h3>
       <p className="text-gray-400 text-sm mb-4">{plan.description}</p>
       <div className="mb-4">
         <span className="text-3xl font-bold">
-          {plan.amount_xaf.toLocaleString()}
+          {plan.amount_xaf.toLocaleString(locale === 'fr' ? 'fr-FR' : 'en-US')}
         </span>
         <span className="text-gray-400 text-sm ml-1">CFA</span>
         {plan.duration_days && (
           <span className="text-gray-500 text-sm ml-1">
-            / {plan.duration_days} days
+            {t('pricing.daysSuffix', { count: plan.duration_days })}
           </span>
         )}
       </div>
@@ -315,7 +326,7 @@ function PlanCard({
             : 'bg-gray-700 hover:bg-gray-600 text-white'
         }`}
       >
-        {ctaLabel || (plan.plan_type === 'per_job' ? 'Choose at Job Posting' : 'Subscribe')}
+        {ctaLabel || (plan.plan_type === 'per_job' ? t('pricing.chooseAtPosting') : t('pricing.subscribe'))}
       </button>
     </div>
   );

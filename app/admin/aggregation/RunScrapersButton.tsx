@@ -11,15 +11,29 @@ type IngestionDetail = {
   suspicious: number;
 };
 
+type AggregateIngestionSummary = {
+  runs: number;
+  total_inserted: number;
+  total_duplicates: number;
+  details: IngestionDetail[];
+};
+
 type RunResult = {
+  success?: boolean;
   total_jobs?: number;
   duration_ms?: number;
-  ingestion?: {
-    runs: number;
-    total_inserted: number;
-    total_duplicates: number;
-    details: IngestionDetail[];
-  } | null;
+  errors?: string[];
+  details?: string;
+  sources?: Array<{
+    source: string;
+    jobs: number;
+    duration_ms?: number;
+    errors?: string[];
+    queued_posts?: number;
+    failed_posts?: number;
+    image_assisted_posts?: number;
+  }>;
+  ingestion?: AggregateIngestionSummary | IngestionDetail | null;
   source?: string;
   jobs?: number;
   queued_posts?: number;
@@ -31,10 +45,45 @@ type RunResult = {
   error?: string;
 };
 
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const text = await res.text();
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`Server returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`);
+  }
+}
+
 function isFacebookRunResult(
   result: RunResult | null
 ): result is RunResult & { source: 'facebook' } {
   return result?.source === 'facebook';
+}
+
+function isAggregateIngestionSummary(
+  value: RunResult['ingestion']
+): value is AggregateIngestionSummary {
+  return Boolean(value && 'runs' in value);
+}
+
+function toAggregateIngestionSummary(
+  value: RunResult['ingestion']
+): AggregateIngestionSummary | null {
+  if (!value) {
+    return null;
+  }
+
+  if (isAggregateIngestionSummary(value)) {
+    return value;
+  }
+
+  return {
+    runs: 1,
+    total_inserted: value.inserted,
+    total_duplicates: value.duplicates,
+    details: [value],
+  };
 }
 
 export default function RunScrapersButton() {
@@ -42,6 +91,7 @@ export default function RunScrapersButton() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState('all');
+  const [progress, setProgress] = useState('');
 
   const sources = [
     { value: 'all', label: 'All Scrapers' },
@@ -53,22 +103,75 @@ export default function RunScrapersButton() {
     setLoading(true);
     setResult(null);
     setError(null);
+    setProgress('');
 
     try {
+      if (source === 'all') {
+        const aggregateIngestion: AggregateIngestionSummary = {
+          runs: 0,
+          total_inserted: 0,
+          total_duplicates: 0,
+          details: [],
+        };
+        const aggregate: RunResult = {
+          success: true,
+          total_jobs: 0,
+          duration_ms: 0,
+          sources: [],
+          ingestion: aggregateIngestion,
+        };
+
+        for (const [index, selectedSource] of ADMIN_RUN_SCRAPER_SOURCE_OPTIONS.entries()) {
+          setProgress(`Running ${selectedSource.label} (${index + 1}/${ADMIN_RUN_SCRAPER_SOURCE_OPTIONS.length})...`);
+
+          const res = await fetch('/api/admin/aggregation/run-scrapers', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: selectedSource.value, maxPages: 1 }),
+          });
+          const data = await parseJsonResponse<RunResult>(res);
+
+          if (!res.ok) {
+            throw new Error(
+              [selectedSource.label, data.error || `HTTP ${res.status}`, data.details]
+                .filter(Boolean)
+                .join(': ')
+            );
+          }
+
+          aggregate.total_jobs = (aggregate.total_jobs || 0) + (data.jobs || 0);
+          aggregate.duration_ms = (aggregate.duration_ms || 0) + (data.duration_ms || 0);
+          aggregate.sources?.push({
+            source: data.source || selectedSource.value,
+            jobs: data.jobs || 0,
+            duration_ms: data.duration_ms,
+            errors: data.errors,
+            queued_posts: data.queued_posts,
+            failed_posts: data.failed_posts,
+            image_assisted_posts: data.image_assisted_posts,
+          });
+
+          if (data.ingestion) {
+            const normalizedIngestion = toAggregateIngestionSummary(data.ingestion);
+            if (normalizedIngestion) {
+              aggregateIngestion.runs += normalizedIngestion.runs;
+              aggregateIngestion.total_inserted += normalizedIngestion.total_inserted;
+              aggregateIngestion.total_duplicates += normalizedIngestion.total_duplicates;
+              aggregateIngestion.details.push(...normalizedIngestion.details);
+            }
+          }
+        }
+
+        setResult(aggregate);
+        return;
+      }
+
       const res = await fetch('/api/admin/aggregation/run-scrapers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source, maxPages: 1 }),
       });
-
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        setError(`Server returned non-JSON response (HTTP ${res.status}): ${text.slice(0, 200)}`);
-        return;
-      }
+      const data = await parseJsonResponse<RunResult>(res);
 
       if (!res.ok) {
         setError(
@@ -81,6 +184,7 @@ export default function RunScrapersButton() {
     } catch (err) {
       setError(String(err));
     } finally {
+      setProgress('');
       setLoading(false);
     }
   }
@@ -126,9 +230,11 @@ export default function RunScrapersButton() {
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
           </svg>
-          {selectedIsFacebook
+          {progress || (selectedIsFacebook
             ? 'Processing Facebook backlog; this may take a minute...'
-            : 'Scraping in progress; this may take a minute...'}
+            : source === 'all'
+              ? 'Running each scraper separately to avoid request timeouts...'
+              : 'Scraping in progress; this may take a minute...')}
         </div>
       )}
 
@@ -199,26 +305,26 @@ export default function RunScrapersButton() {
             </div>
           )}
 
-          {result.ingestion && (
+          {toAggregateIngestionSummary(result.ingestion) && (
             <div className="rounded-lg bg-gray-900/50 p-3 text-sm">
               <p className="text-white font-medium mb-2">Aggregation Ingestion</p>
               <div className="grid grid-cols-3 gap-3 text-gray-300">
                 <div>
                   <p className="text-gray-500 text-xs">Runs Created</p>
-                  <p className="font-semibold">{result.ingestion.runs}</p>
+                  <p className="font-semibold">{toAggregateIngestionSummary(result.ingestion)?.runs}</p>
                 </div>
                 <div>
                   <p className="text-gray-500 text-xs">Jobs Inserted</p>
-                  <p className="font-semibold">{result.ingestion.total_inserted}</p>
+                  <p className="font-semibold">{toAggregateIngestionSummary(result.ingestion)?.total_inserted}</p>
                 </div>
                 <div>
                   <p className="text-gray-500 text-xs">Matched Existing</p>
-                  <p className="font-semibold">{result.ingestion.total_duplicates}</p>
+                  <p className="font-semibold">{toAggregateIngestionSummary(result.ingestion)?.total_duplicates}</p>
                 </div>
               </div>
-              {result.ingestion.details && result.ingestion.details.length > 0 && (
+              {(toAggregateIngestionSummary(result.ingestion)?.details.length || 0) > 0 && (
                 <div className="mt-3 space-y-1">
-                  {result.ingestion.details.map((d) => (
+                  {toAggregateIngestionSummary(result.ingestion)?.details.map((d) => (
                     <div key={d.runId} className="flex items-center justify-between text-xs text-gray-400">
                       <span className="truncate max-w-[200px]">{d.runId}</span>
                       <span
@@ -236,6 +342,28 @@ export default function RunScrapersButton() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {source === 'all' && result.sources && result.sources.length > 0 && (
+            <div className="rounded-lg bg-gray-900/50 p-3 text-sm">
+              <p className="text-white font-medium mb-2">Source Breakdown</p>
+              <div className="space-y-2">
+                {result.sources.map((sourceResult) => (
+                  <div
+                    key={sourceResult.source}
+                    className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400"
+                  >
+                    <span className="font-medium text-gray-200">
+                      {sourceResult.source}
+                    </span>
+                    <span>
+                      {sourceResult.jobs} jobs
+                      {sourceResult.duration_ms ? ` in ${(sourceResult.duration_ms / 1000).toFixed(1)}s` : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

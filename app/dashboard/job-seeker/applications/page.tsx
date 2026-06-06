@@ -3,6 +3,9 @@ import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import ApplicationProgressCard from '@/components/applications/ApplicationProgressCard';
 import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterviewsPanel';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
   attachInterviewPrepReadinessToApplications,
   attachInterviewSlotsToApplications,
@@ -18,6 +21,9 @@ import {
 } from '@/lib/interview-prep/readiness';
 
 export default async function MyApplicationsPage() {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+  const localize = (href: string) => addLocalePrefix(href, locale);
   const supabase = createServerSupabaseClient();
 
   const {
@@ -25,7 +31,11 @@ export default async function MyApplicationsPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/auth/login');
+    redirect(
+      `${localize('/auth/login')}?redirect=${encodeURIComponent(
+        localize('/dashboard/job-seeker/applications')
+      )}`
+    );
   }
 
   const [applicationsResult, interviewsResult, slotsResult, attemptsResult] = await Promise.all([
@@ -137,20 +147,22 @@ export default async function MyApplicationsPage() {
     normalizedApplications.find((application) => !application.isDraft) ||
     null;
   const interviewPrepHref = suggestedPrepApplication
-    ? `/dashboard/job-seeker/interview-prep?application=${suggestedPrepApplication.id}${
+    ? localize(`/dashboard/job-seeker/interview-prep?application=${suggestedPrepApplication.id}${
         suggestedPrepApplication.nextInterview
           ? '&suggest=scheduled_interview'
           : '&suggest=application'
-      }`
-    : '/dashboard/job-seeker/interview-prep';
+      }`)
+    : localize('/dashboard/job-seeker/interview-prep');
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">My Applications</h1>
+          <h1 className="text-2xl font-bold text-white">
+            {t('jobSeekerApplications.title')}
+          </h1>
           <p className="mt-1 text-gray-400">
-            Track the current stage, outcome, and next step for every application.
+            {t('jobSeekerApplications.subtitle')}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -158,13 +170,13 @@ export default async function MyApplicationsPage() {
             href={interviewPrepHref}
             className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 text-white transition-colors hover:bg-teal-500"
           >
-            Interview Prep
+            {t('jobSeekerApplications.interviewPrep')}
           </Link>
           <Link
-            href="/dashboard/job-seeker/browse"
+            href={localize('/dashboard/job-seeker/browse')}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
           >
-            Browse More Jobs
+            {t('jobSeekerApplications.browseMoreJobs')}
           </Link>
         </div>
       </div>
@@ -184,22 +196,24 @@ export default async function MyApplicationsPage() {
               d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
             />
           </svg>
-          <h3 className="mb-2 text-xl font-semibold text-white">No applications yet</h3>
+          <h3 className="mb-2 text-xl font-semibold text-white">
+            {t('jobSeekerApplications.emptyTitle')}
+          </h3>
           <p className="mb-6 text-gray-400">
-            Start your job search and apply to positions that match your skills.
+            {t('jobSeekerApplications.emptyDescription')}
           </p>
           <Link
-            href="/dashboard/job-seeker/browse"
+            href={localize('/dashboard/job-seeker/browse')}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-white transition-colors hover:bg-blue-700"
           >
-            Browse Jobs
+            {t('jobSeekerApplications.browseJobs')}
           </Link>
         </div>
       ) : (
         <div className="space-y-6">
           <UpcomingInterviewsPanel
             applications={normalizedApplications}
-            emptyMessage="No upcoming interviews across your applications yet."
+            emptyMessage={t('jobSeekerApplications.upcoming.empty')}
           />
           <div className="space-y-4">
             {normalizedApplications.map((application) => (

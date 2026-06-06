@@ -9,6 +9,7 @@ export default function VerificationForm() {
   const [error, setError] = useState<string | null>(null);
   const [idDocument, setIdDocument] = useState<File | null>(null);
   const [selfie, setSelfie] = useState<File | null>(null);
+  const [businessRegistration, setBusinessRegistration] = useState<File | null>(null);
   const [employerReference, setEmployerReference] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -26,6 +27,9 @@ export default function VerificationForm() {
       const formData = new FormData();
       formData.append('idDocument', idDocument);
       formData.append('selfie', selfie);
+      if (businessRegistration) {
+        formData.append('businessRegistration', businessRegistration);
+      }
       if (employerReference) {
         formData.append('employerReference', employerReference);
       }
@@ -167,6 +171,62 @@ export default function VerificationForm() {
                 <p className="text-sm">Click to upload selfie</p>
                 <p className="text-xs text-gray-500 mt-1">
                   Take a photo holding your ID (max 5MB)
+                </p>
+              </div>
+            )}
+          </label>
+        </div>
+      </div>
+
+      {/* Business Registration Upload */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-2">
+          Business Registration (Optional)
+        </label>
+        <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center hover:border-gray-500 transition-colors">
+          <input
+            type="file"
+            accept="image/*,.pdf"
+            onChange={(e) => setBusinessRegistration(e.target.files?.[0] || null)}
+            className="hidden"
+            id="business-registration"
+          />
+          <label htmlFor="business-registration" className="cursor-pointer">
+            {businessRegistration ? (
+              <div className="text-green-400">
+                <svg
+                  className="w-8 h-8 mx-auto mb-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-sm">{businessRegistration.name}</p>
+              </div>
+            ) : (
+              <div className="text-gray-400">
+                <svg
+                  className="w-8 h-8 mx-auto mb-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+                <p className="text-sm">Click to upload business document</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Company registration, tax file, or related proof
                 </p>
               </div>
             )}

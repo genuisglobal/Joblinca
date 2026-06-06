@@ -1,6 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { rateLimit } from '@/lib/rate-limit';
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin-types';
+
+type OutreachSource = 'candidate_search' | 'candidate_detail';
+
+function normalizeOutreachSource(value: unknown): OutreachSource | null {
+  if (value === 'candidate_search' || value === 'candidate_detail') {
+    return value;
+  }
+
+  return null;
+}
+
+function normalizeCandidateRole(role: string | null | undefined) {
+  if (role === 'talent') {
+    return 'talent';
+  }
+
+  if (role === 'job_seeker' || role === 'candidate') {
+    return 'job_seeker';
+  }
+
+  return null;
+}
 
 /**
  * GET /api/messages — list conversations (grouped by other party)
@@ -131,11 +155,17 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
+  const requestedSource = (body as { source?: unknown } | null)?.source;
+  const source = normalizeOutreachSource(requestedSource);
   const { receiverId, message, jobId } = body as {
     receiverId?: string;
     message?: string;
     jobId?: string;
   };
+
+  if (requestedSource !== undefined && !source) {
+    return NextResponse.json({ error: 'Invalid outreach source' }, { status: 400 });
+  }
 
   if (!receiverId || !message?.trim()) {
     return NextResponse.json(
@@ -154,12 +184,31 @@ export async function POST(request: NextRequest) {
   // Verify receiver exists
   const { data: receiver } = await supabase
     .from('profiles')
-    .select('id')
+    .select('id, role')
     .eq('id', receiverId)
     .maybeSingle();
 
   if (!receiver) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+
+  let canTrackOutreach = false;
+
+  if (source) {
+    const { data: senderProfile } = await supabase
+      .from('profiles')
+      .select('role, admin_type')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    const isActiveAdmin = Boolean(
+      senderProfile?.admin_type &&
+        ACTIVE_ADMIN_TYPES.includes(senderProfile.admin_type as (typeof ACTIVE_ADMIN_TYPES)[number])
+    );
+    const isRecruiter = senderProfile?.role === 'recruiter';
+    const isCandidateReceiver = normalizeCandidateRole(receiver.role) !== null;
+
+    canTrackOutreach = (isRecruiter || isActiveAdmin) && isCandidateReceiver;
   }
 
   const { data: msg, error } = await supabase
@@ -175,6 +224,31 @@ export async function POST(request: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (source && canTrackOutreach) {
+    try {
+      const serviceSupabase = createServiceSupabaseClient();
+      const { error: outreachError } = await serviceSupabase
+        .from('recruiter_candidate_outreach_events')
+        .insert({
+          recruiter_id: user.id,
+          candidate_id: receiverId,
+          message_id: msg.id,
+          job_id: jobId || null,
+          channel: 'joblinca_message',
+          source,
+          metadata: {
+            route: 'messages',
+          },
+        });
+
+      if (outreachError) {
+        console.warn('Failed to record recruiter candidate outreach event:', outreachError.message);
+      }
+    } catch (trackingError) {
+      console.warn('Recruiter candidate outreach tracking unavailable:', trackingError);
+    }
   }
 
   return NextResponse.json({ message: msg }, { status: 201 });

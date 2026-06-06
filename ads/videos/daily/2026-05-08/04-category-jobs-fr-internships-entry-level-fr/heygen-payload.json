@@ -1,0 +1,168 @@
+{
+  "provider": "heygen",
+  "mode": "dry_run",
+  "batchId": "2026-05-08-category_jobs-fr-category-jobs-fr-internships-entry-level-fr",
+  "title": "Emplois Internships & Entry-Level au Cameroun aujourd'hui",
+  "language": "fr",
+  "output": {
+    "aspectRatio": "9:16",
+    "resolution": "1080x1920",
+    "durationTarget": 45
+  },
+  "brand": {
+    "name": "Joblinca",
+    "website": "https://joblinca.com",
+    "cta": "View details and apply through Joblinca.com"
+  },
+  "style": {
+    "tone": "professional, energetic, Cameroon-focused, simple, trustworthy",
+    "presenterStyle": "short-form vertical explainer",
+    "countryFocus": "Cameroon"
+  },
+  "jobs": [
+    {
+      "id": "0d632632-8858-4438-839e-1a00e1be2cde",
+      "title": "Gama Transit recrute un(e) Magasinier",
+      "company": "Gama Transit Group",
+      "city": "Cameroon",
+      "category": "Internships & Entry-Level",
+      "experienceLevel": "Entry Level",
+      "applicationUrl": "https://www.jobincamer.com/job/gama-transit-recrute-une-magasinier",
+      "sourceType": "scraped_external",
+      "trustedByJoblinca": false
+    },
+    {
+      "id": "943e5b41-ad87-48f8-845b-3ea1e8a604fd",
+      "title": "AREKO Group recherche un(e) Responsable Commercial Vente Pneu",
+      "company": "AREKO GROUP",
+      "city": "Cameroon",
+      "category": "Internships & Entry-Level",
+      "experienceLevel": "Senior Level",
+      "applicationUrl": "https://www.jobincamer.com/job/areko-group-recherche-une-responsable-commercial-vente-pneu",
+      "sourceType": "scraped_external",
+      "trustedByJoblinca": false
+    },
+    {
+      "id": "59d079c3-8f1b-44f7-aad9-bfc3ecf7eda8",
+      "title": "Gama Transit recrute un(e) Déclarant en Douane",
+      "company": "Gama Transit Group",
+      "city": "Cameroon",
+      "category": "Internships & Entry-Level",
+      "experienceLevel": "Entry Level",
+      "applicationUrl": "https://www.jobincamer.com/job/gama-transit-recrute-une-declarant-en-douane",
+      "sourceType": "scraped_external",
+      "trustedByJoblinca": false
+    },
+    {
+      "id": "72c0dccf-7ce7-4e84-ab81-f29fb5c8972c",
+      "title": "Gama Transit recrute un(e) Agent de Shipping",
+      "company": "Gama Transit Group",
+      "city": "Cameroon",
+      "category": "Internships & Entry-Level",
+      "experienceLevel": "Entry Level",
+      "applicationUrl": "https://www.jobincamer.com/job/gama-transit-recrute-une-agent-de-shipping",
+      "sourceType": "scraped_external",
+      "trustedByJoblinca": false
+    },
+    {
+      "id": "11a7321c-5535-4556-84e8-6a81e102d251",
+      "title": "Gama Transit recrute un(e) Aconier",
+      "company": "Gama Transit Group",
+      "city": "Cameroon",
+      "category": "Internships & Entry-Level",
+      "experienceLevel": "Senior Level",
+      "applicationUrl": "https://www.jobincamer.com/job/gama-transit-recrute-une-aconier",
+      "sourceType": "scraped_external",
+      "trustedByJoblinca": false
+    }
+  ],
+  "script": "Les offres Internships & Entry-Level recrutent au Cameroun aujourd'hui sur Joblinca. Gama Transit Group recrute Gama Transit recrute un(e) Magasinier a Cameroon. AREKO GROUP recrute AREKO Group recherche un(e) Responsable Commercial Vente Pneu a Cameroon. Gama Transit Group recrute Gama Transit recrute un(e) Déclarant en Douane a Cameroon. Gama Transit Group recrute Gama Transit recrute un(e) Agent de Shipping a Cameroon. Gama Transit Group recrute Gama Transit recrute un(e) Aconier a Cameroon. Nous avons retenu uniquement les offres du jour avec des details d'application exploitables. Consultez les details et postulez via Joblinca.com. Creez votre compte gratuitement aujourd'hui.",
+  "captions": {
+    "default": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant.",
+    "tiktok": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. View details and apply through Joblinca.com",
+    "facebook": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Consultez les details sur Joblinca.com.",
+    "instagram": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Lien en bio ou Joblinca.com.",
+    "linkedin": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Selection du jour pour les candidats au Cameroun.",
+    "whatsapp": "De nouvelles offres sont disponibles sur Joblinca aujourd'hui. Creez votre compte gratuitement et postulez maintenant. Joblinca.com"
+  },
+  "hashtags": [
+    "#Joblinca",
+    "#JobsInCameroon",
+    "#CameroonJobs",
+    "#HiringNow",
+    "#RecrutementCameroun",
+    "#EmploiCameroun",
+    "#InternshipsEntryLevelJobs"
+  ],
+  "scenePlan": [
+    {
+      "id": "hook",
+      "label": "Hook",
+      "durationSeconds": 5,
+      "voiceover": "Les offres Internships & Entry-Level recrutent au Cameroun aujourd'hui sur Joblinca.",
+      "onScreenText": [
+        "Emplois Internships & Entry-Level au Cameroun aujourd'hui",
+        "Nouvelles offres aujourd'hui"
+      ],
+      "visualNotes": [
+        "Use bold Joblinca brand opener.",
+        "Show vertical title card with Cameroon-focused styling."
+      ]
+    },
+    {
+      "id": "jobs-1",
+      "label": "Job Highlights 1",
+      "durationSeconds": 15,
+      "voiceover": "Gama Transit Group recrute Gama Transit recrute un(e) Magasinier a Cameroon. AREKO GROUP recrute AREKO Group recherche un(e) Responsable Commercial Vente Pneu a Cameroon. Gama Transit Group recrute Gama Transit recrute un(e) Déclarant en Douane a Cameroon.",
+      "onScreenText": [
+        "Gama Transit recrute un(e) Magasinier | Gama Transit Group | Cameroon",
+        "AREKO Group recherche un(e) Responsable Commercial Vente Pneu | AREKO GROUP | Cameroon",
+        "Gama Transit recrute un(e) Déclarant en Douane | Gama Transit Group | Cameroon"
+      ],
+      "visualNotes": [
+        "Use one card per job with company, role, city, and trust badge when available.",
+        "Keep motion simple and legible for short-form mobile viewing."
+      ]
+    },
+    {
+      "id": "jobs-2",
+      "label": "Job Highlights 2",
+      "durationSeconds": 15,
+      "voiceover": "Gama Transit Group recrute Gama Transit recrute un(e) Agent de Shipping a Cameroon. Gama Transit Group recrute Gama Transit recrute un(e) Aconier a Cameroon.",
+      "onScreenText": [
+        "Gama Transit recrute un(e) Agent de Shipping | Gama Transit Group | Cameroon",
+        "Gama Transit recrute un(e) Aconier | Gama Transit Group | Cameroon"
+      ],
+      "visualNotes": [
+        "Use one card per job with company, role, city, and trust badge when available.",
+        "Keep motion simple and legible for short-form mobile viewing."
+      ]
+    },
+    {
+      "id": "trust",
+      "label": "Trust Line",
+      "durationSeconds": 5,
+      "voiceover": "Nous avons retenu uniquement les offres du jour avec des details d'application exploitables.",
+      "onScreenText": [
+        "Publishable daily jobs",
+        "Clear application details"
+      ],
+      "visualNotes": [
+        "Show trust badges and Joblinca review framing without overstating verification."
+      ]
+    },
+    {
+      "id": "cta",
+      "label": "CTA",
+      "durationSeconds": 5,
+      "voiceover": "Consultez les details et postulez via Joblinca.com. Creez votre compte gratuitement aujourd'hui.",
+      "onScreenText": [
+        "View details and apply through Joblinca.com",
+        "Joblinca.com"
+      ],
+      "visualNotes": [
+        "Close with strong website CTA and clean branded footer."
+      ]
+    }
+  ]
+}

@@ -7,6 +7,8 @@ import PipelineProgress from '@/components/hiring-pipeline/PipelineProgress';
 import EligibilityBadge from '@/components/applications/EligibilityBadge';
 import RankingExplanation from '@/components/applications/RankingExplanation';
 import type { ApplicationCurrentStage, HiringPipelineStage } from '@/lib/hiring-pipeline/types';
+import { useTranslation } from '@/lib/i18n/context';
+import { formatLocalizedDate } from '@/lib/i18n/application-presentation';
 
 interface Profile {
   id: string;
@@ -48,6 +50,7 @@ export default function ApplicationsTable({
   pipelineStages,
   customQuestions,
 }: ApplicationsTableProps) {
+  const { t, locale } = useTranslation();
   const [appState, setAppState] = useState<
     Record<
       string,
@@ -168,7 +171,7 @@ export default function ApplicationsTable({
     if (profile.first_name && profile.last_name) {
       return `${profile.first_name} ${profile.last_name}`;
     }
-    return profile.full_name || 'Anonymous';
+    return profile.full_name || t('recruiterApplications.anonymousApplicant');
   };
 
   if (applications.length === 0) {
@@ -188,10 +191,10 @@ export default function ApplicationsTable({
           />
         </svg>
         <h3 className="text-lg font-medium text-white mb-2">
-          No applications yet
+          {t('recruiterApplications.empty.none')}
         </h3>
         <p className="text-gray-400">
-          Applications will appear here once candidates start applying.
+          {t('recruiterJobDetail.applicationsEmpty')}
         </p>
       </div>
     );
@@ -228,12 +231,16 @@ export default function ApplicationsTable({
                   </p>
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <p className="text-sm text-gray-400">
-                    Applied {new Date(app.created_at).toLocaleDateString()}
+                    {t('recruiterJobDetail.appliedDate', {
+                      date: formatLocalizedDate(app.created_at, locale) || app.created_at,
+                    })}
                   </p>
                   <EligibilityBadge status={app.eligibility_status} compact />
                   {typeof app.overall_stage_score === 'number' && app.overall_stage_score > 0 && (
                     <span className="text-xs text-gray-500">
-                      Stage score {app.overall_stage_score.toFixed(1)}
+                      {t('recruiterApplications.stageScore', {
+                        score: app.overall_stage_score.toFixed(1),
+                      })}
                     </span>
                   )}
                 </div>
@@ -253,7 +260,7 @@ export default function ApplicationsTable({
             </div>
             <div className="flex items-center gap-4">
               <StageBadge
-                label={getCurrentStage(app)?.label || 'Unassigned'}
+                label={getCurrentStage(app)?.label || t('recruiterApplications.unassigned')}
                 stageType={getCurrentStage(app)?.stageType || 'applied'}
               />
               <svg
@@ -280,7 +287,7 @@ export default function ApplicationsTable({
               {app.cover_letter && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-400 mb-2">
-                    Cover Letter
+                    {t('recruiterJobDetail.coverLetter')}
                   </h4>
                   <p className="text-gray-300 whitespace-pre-wrap bg-gray-900 p-4 rounded-lg">
                     {app.cover_letter}
@@ -292,7 +299,7 @@ export default function ApplicationsTable({
               {app.answers && app.answers.length > 0 && customQuestions && (
                 <div>
                   <h4 className="text-sm font-medium text-gray-400 mb-2">
-                    Screening Questions
+                    {t('recruiterJobDetail.screeningQuestions')}
                   </h4>
                   <div className="bg-gray-900 p-4 rounded-lg space-y-4">
                     {app.answers.map((answerObj) => {
@@ -303,7 +310,7 @@ export default function ApplicationsTable({
 
                       let displayAnswer: string;
                       if (typeof answerObj.answer === 'boolean') {
-                        displayAnswer = answerObj.answer ? 'Yes' : 'No';
+                        displayAnswer = answerObj.answer ? t('common.yes') : t('common.no');
                       } else if (Array.isArray(answerObj.answer)) {
                         displayAnswer = answerObj.answer.join(', ');
                       } else {
@@ -328,22 +335,30 @@ export default function ApplicationsTable({
 
               {/* Status Update */}
               <div>
-                <h4 className="text-sm font-medium text-gray-400 mb-2">Stage Progress</h4>
+                <h4 className="text-sm font-medium text-gray-400 mb-2">
+                  {t('recruiterJobDetail.stageProgress')}
+                </h4>
                 <PipelineProgress stages={pipelineStages} currentStage={getCurrentStage(app)} />
               </div>
 
               <div className="rounded-lg border border-gray-700 bg-gray-900/40 p-4">
-                <h4 className="text-sm font-medium text-gray-400 mb-2">Eligibility Snapshot</h4>
+                <h4 className="text-sm font-medium text-gray-400 mb-2">
+                  {t('recruiterJobDetail.eligibilitySnapshot')}
+                </h4>
                 <div className="flex flex-wrap items-center gap-3">
                   <EligibilityBadge status={app.eligibility_status} />
                   {typeof app.ranking_score === 'number' && app.ranking_score > 0 && (
                     <span className="text-sm text-gray-400">
-                      Ranking {app.ranking_score.toFixed(1)}
+                      {t('recruiterApplications.rankScore', {
+                        score: app.ranking_score.toFixed(1),
+                      })}
                     </span>
                   )}
                   {typeof app.overall_stage_score === 'number' && app.overall_stage_score > 0 && (
                     <span className="text-sm text-gray-400">
-                      Stage score {app.overall_stage_score.toFixed(1)}
+                      {t('recruiterApplications.stageScore', {
+                        score: app.overall_stage_score.toFixed(1),
+                      })}
                     </span>
                   )}
                 </div>
@@ -362,7 +377,7 @@ export default function ApplicationsTable({
 
               <div>
                 <h4 className="text-sm font-medium text-gray-400 mb-2">
-                  Move Candidate
+                  {t('recruiterApplicationDetail.moveCandidate')}
                 </h4>
                 <div className="flex flex-wrap items-center gap-3">
                   <select
@@ -390,7 +405,9 @@ export default function ApplicationsTable({
                     }
                     className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {updating === app.id ? 'Moving...' : 'Move to stage'}
+                    {updating === app.id
+                      ? t('recruiterApplicationDetail.moving')
+                      : t('recruiterApplicationDetail.moveToStage')}
                   </button>
                   {getNextStage(app) && (
                     <button
@@ -398,7 +415,9 @@ export default function ApplicationsTable({
                       disabled={updating === app.id}
                       className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-medium text-gray-100 hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      Next: {getNextStage(app)!.label}
+                      {t('recruiterApplicationDetail.quickAdvance', {
+                        stage: getNextStage(app)!.label,
+                      })}
                     </button>
                   )}
                 </div>

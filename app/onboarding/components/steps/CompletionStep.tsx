@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { CheckCircle, ArrowRight, Sparkles } from 'lucide-react';
 import { Role } from '@/lib/onboarding/types';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface CompletionStepProps {
   role: Role;
@@ -11,45 +12,45 @@ interface CompletionStepProps {
   isLoading: boolean;
 }
 
-const roleMessages = {
-  job_seeker: {
-    title: "You're all set!",
-    message: "Your profile is ready. Start exploring job opportunities tailored for you.",
-    cta: "Find Jobs",
-    features: [
-      "Browse jobs in Cameroon",
-      "Apply with one click",
-      "Get matched with opportunities",
-    ],
-  },
-  talent: {
-    title: "Profile complete!",
-    message: "Your skills are showcased. Connect with internships and projects.",
-    cta: "Explore Opportunities",
-    features: [
-      "Discover internships",
-      "Showcase your portfolio",
-      "Connect with recruiters",
-    ],
-  },
-  recruiter: {
-    title: "Ready to hire!",
-    message: "Your company profile is set. Start posting jobs and finding talent.",
-    cta: "Post Your First Job",
-    features: [
-      "Post unlimited jobs",
-      "AI-powered screening",
-      "Access top talent",
-    ],
-  },
-};
-
 export default function CompletionStep({
   role,
   firstName,
   onComplete,
   isLoading,
 }: CompletionStepProps) {
+  const { t } = useTranslation();
+  const roleMessages = {
+    job_seeker: {
+      title: t('onboarding.completion.jobSeekerTitle'),
+      message: t('onboarding.completion.jobSeekerMessage'),
+      cta: t('onboarding.completion.jobSeekerCta'),
+      features: [
+        t('onboarding.completion.jobSeekerFeature1'),
+        t('onboarding.completion.jobSeekerFeature2'),
+        t('onboarding.completion.jobSeekerFeature3'),
+      ],
+    },
+    talent: {
+      title: t('onboarding.completion.talentTitle'),
+      message: t('onboarding.completion.talentMessage'),
+      cta: t('onboarding.completion.talentCta'),
+      features: [
+        t('onboarding.completion.talentFeature1'),
+        t('onboarding.completion.talentFeature2'),
+        t('onboarding.completion.talentFeature3'),
+      ],
+    },
+    recruiter: {
+      title: t('onboarding.completion.recruiterTitle'),
+      message: t('onboarding.completion.recruiterMessage'),
+      cta: t('onboarding.completion.recruiterCta'),
+      features: [
+        t('onboarding.completion.recruiterFeature1'),
+        t('onboarding.completion.recruiterFeature2'),
+        t('onboarding.completion.recruiterFeature3'),
+      ],
+    },
+  } as const;
   const config = roleMessages[role] || roleMessages.job_seeker;
 
   return (
@@ -96,7 +97,9 @@ export default function CompletionStep({
         transition={{ delay: 0.4 }}
         className="text-xl text-gray-300 mb-2"
       >
-        Welcome, {firstName || 'there'}!
+        {t('onboarding.completion.welcome', {
+          name: firstName || t('onboarding.completion.defaultName'),
+        })}
       </motion.p>
 
       {/* Description */}
@@ -153,7 +156,7 @@ export default function CompletionStep({
         {isLoading ? (
           <>
             <span className="animate-spin rounded-full h-5 w-5 border-2 border-current border-t-transparent" />
-            <span>Setting up...</span>
+            <span>{t('onboarding.completion.settingUp')}</span>
           </>
         ) : (
           <>
