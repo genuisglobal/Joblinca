@@ -70,6 +70,9 @@ export interface AutoPipelineMaintenanceResult {
   stale_cleanup: {
     expired: number;
   };
+  stale_runs: {
+    closed: number;
+  };
   total_duration_ms: number;
 }
 
@@ -156,21 +159,58 @@ export async function runAutoPipelineMaintenance(): Promise<AutoPipelineMaintena
     return null;
   }
 
-  console.log('[auto-pipeline] Maintenance step 1: Auto-publishing trustworthy jobs...');
+  console.log('[auto-pipeline] Maintenance step 1: Closing stale runs...');
+  const staleRunsResult = await closeStaleAggregationRuns(supabase);
+
+  console.log('[auto-pipeline] Maintenance step 2: Auto-publishing trustworthy jobs...');
   const publishResult = await autoPublishDiscoveredJobs(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 2: Cleaning up duplicates...');
+  console.log('[auto-pipeline] Maintenance step 3: Cleaning up duplicates...');
   const dedupResult = await autoCleanDuplicates(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 3: Cleaning up expired jobs...');
+  console.log('[auto-pipeline] Maintenance step 4: Cleaning up expired jobs...');
   const staleResult = await cleanupExpiredJobs(supabase);
 
   return {
     auto_publish: publishResult,
     dedup_cleanup: dedupResult,
     stale_cleanup: staleResult,
+    stale_runs: staleRunsResult,
     total_duration_ms: Date.now() - start,
   };
+}
+
+/**
+ * Mark aggregation runs that are stuck in 'running' as 'failed'.
+ *
+ * The full scrape pipeline runs in a single serverless invocation; when it
+ * exceeds the function timeout it is killed mid-run, leaving the in-flight
+ * per-source run permanently 'running'. This sweep closes those rows so the
+ * run history stays accurate and stuck rows don't accumulate.
+ */
+async function closeStaleAggregationRuns(
+  supabase: SupabaseClient,
+  maxAgeMinutes = 20,
+) {
+  const cutoff = new Date(Date.now() - maxAgeMinutes * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('aggregation_runs')
+    .update({
+      status: 'failed',
+      finished_at: new Date().toISOString(),
+      error_summary: 'Auto-closed: run stuck in "running" (likely function timeout)',
+    })
+    .eq('status', 'running')
+    .lt('created_at', cutoff)
+    .select('id');
+
+  if (error) {
+    console.error('[auto-pipeline] closeStaleAggregationRuns error:', error.message);
+    return { closed: 0 };
+  }
+
+  return { closed: data?.length ?? 0 };
 }
 
 /**

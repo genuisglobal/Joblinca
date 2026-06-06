@@ -13,6 +13,10 @@
       "schedule": "0 6 * * *"
     },
     {
+      "path": "/api/cron/pipeline-maintenance",
+      "schedule": "0 8,14,20 * * *"
+    },
+    {
       "path": "/api/cron/subscription-renewal",
       "schedule": "15 6 * * *"
     },
