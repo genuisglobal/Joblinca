@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import BadgeGrid from '@/app/dashboard/skillup/components/BadgeGrid';
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
@@ -1468,9 +1469,12 @@ export default function ApplicationDetailPage({
             <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.applicantInformation')}</h2>
             <div className="flex items-start gap-4">
               {application.profiles?.avatar_url ? (
-                <img
+                <Image
                   src={application.profiles.avatar_url}
                   alt=""
+                  width={80}
+                  height={80}
+                  unoptimized
                   className="w-20 h-20 rounded-full object-cover"
                 />
               ) : (

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
@@ -97,9 +98,12 @@ function surfaceClasses(type: SponsorType) {
 function renderLogo(item: SponsorFeedItem) {
   if (item.logoUrl) {
     return (
-      <img
+      <Image
         src={item.logoUrl}
         alt={item.sponsorName}
+        width={48}
+        height={48}
+        unoptimized
         className="h-12 w-12 rounded-xl border border-neutral-700 bg-neutral-900 object-cover"
       />
     );

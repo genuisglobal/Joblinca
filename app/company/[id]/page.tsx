@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { unstable_noStore as noStore } from 'next/cache';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
@@ -140,9 +141,12 @@ export default async function CompanyPage({ params }: PageProps) {
           <div className="mx-auto max-w-5xl px-6 py-12">
             <div className="flex items-start gap-6">
               {profile?.avatar_url ? (
-                <img
+                <Image
                   src={profile.avatar_url}
                   alt={recruiter.company_name}
+                  width={80}
+                  height={80}
+                  unoptimized
                   className="h-20 w-20 rounded-2xl border border-neutral-700 object-cover"
                 />
               ) : (

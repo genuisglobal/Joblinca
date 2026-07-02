@@ -3,6 +3,7 @@ import { checkAdminStatus } from '@/lib/admin';
 import { listLatestJobMarketingImages } from '@/lib/job-image-generator/service';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import JobActions from './JobActions';
 import MatchInsightsPanel from '@/components/jobs/MatchInsightsPanel';
 
@@ -194,11 +195,16 @@ export default async function AdminJobDetailPage({ params }: PageProps) {
                     key={image.variation}
                     className="rounded-xl border border-gray-700 bg-gray-900/60 overflow-hidden"
                   >
-                    <img
-                      src={image.imageUrl}
-                      alt={image.headline}
-                      className="w-full h-64 object-cover"
-                    />
+                    <div className="relative h-64 w-full">
+                      <Image
+                        src={image.imageUrl}
+                        alt={image.headline}
+                        fill
+                        sizes="(max-width: 768px) 100vw, 50vw"
+                        unoptimized
+                        className="object-cover"
+                      />
+                    </div>
                     <div className="p-4 space-y-2">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-white capitalize">

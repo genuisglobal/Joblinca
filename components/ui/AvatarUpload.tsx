@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import Image from 'next/image';
 import { Camera, User, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from '@/lib/i18n/context';
@@ -113,9 +114,12 @@ export default function AvatarUpload({
               exit={{ opacity: 0 }}
               className="relative w-full h-full"
             >
-              <img
+              <Image
                 src={displayUrl}
                 alt={t('onboarding.avatar.profileAlt')}
+                fill
+                sizes="(max-width: 768px) 9rem, 9rem"
+                unoptimized
                 className="w-full h-full object-cover"
               />
               {/* Hover overlay */}

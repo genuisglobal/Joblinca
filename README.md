@@ -1,144 +1,175 @@
-# JobLinca – National‑Scale Hiring Platform
+# Joblinca
 
-JobLinca is a bilingual (English/French) hiring platform designed for Cameroon.  
-It connects recruiters and job seekers through a mobile‑first web application, WhatsApp and SMS bots, AI‑powered vetting, payments, certifications and project portfolios.  
-This repository contains a complete scaffold of the application built with **Next.js 14**, **Tailwind CSS**, **Supabase** (PostgreSQL + Auth + Storage + Row‑Level Security), and modular API routes.  The codebase is structured to be production‑ready, scalable and easy to extend.
+Joblinca is a bilingual hiring platform for Cameroon. It connects job seekers,
+talent profiles, recruiters, field agents, and administrators through a
+mobile-first web app, WhatsApp workflows, job aggregation, structured hiring
+pipelines, subscriptions, and AI-assisted career and recruiter tools.
 
-## Monorepo structure
+The application is built with Next.js 14, React, Tailwind CSS, Supabase, and
+modular route handlers for jobs, applications, payments, messaging, SkillUp,
+scraping, and admin operations.
 
+## Product Focus
+
+Joblinca should optimize for three core journeys:
+
+- Job seekers find relevant jobs, apply quickly, and receive updates by web,
+  email, SMS, or WhatsApp.
+- Recruiters post roles, review structured applications, screen candidates, and
+  schedule interviews.
+- Admins keep the marketplace trusted by approving jobs, managing scraped
+  opportunities, monitoring reports, and supporting field operations.
+
+## Key Capabilities
+
+- Public job board with local, remote, internship, gig, and global opportunity
+  browse flows.
+- Native job applications with resumes, eligibility checks, applicant ranking,
+  hiring stages, notes, feedback, and interview scheduling.
+- Recruiter dashboard for jobs, applications, candidates, engagement, profiles,
+  verification, subscriptions, and API keys.
+- Job seeker and talent dashboards for profiles, saved jobs, applications,
+  messages, interview prep, SkillUp learning, challenges, achievements, and
+  portfolios.
+- WhatsApp job agent, screening flows, matched job notifications, daily drills,
+  opt-in/opt-out handling, and webhook persistence.
+- Job aggregation pipeline with source management, deduplication, publishing
+  thresholds, scraper runs, outreach, and admin review.
+- Payments and subscriptions through PayUnit-compatible flows, promo codes,
+  renewal notifications, and webhook finalization.
+- AI-assisted features for application analysis, recruiter decision support,
+  job descriptions, interview prep, resume generation, and SkillUp
+  recommendations.
+- Admin tooling for jobs, applications, users, recruiters, verification,
+  payments, reports, support, field agents, sponsorships, aggregation, and
+  SkillUp content.
+
+## Tech Stack
+
+- Next.js 14 App Router
+- React 18
+- TypeScript
+- Tailwind CSS
+- Supabase Auth, Postgres, Storage, and RLS
+- OpenAI API for AI-assisted features
+- PayUnit payment integration and optional fixed-IP proxy
+- WhatsApp Business Cloud API
+- Sentry for production error monitoring
+
+## Repository Layout
+
+```text
+app/                  Next.js pages, layouts, and route handlers
+components/           Shared UI components
+lib/                  Domain services, Supabase clients, AI, payments, scraping
+supabase/migrations/  Database schema and policy migrations
+tests/                Focused Node and TS tests
+docs/                 Runbooks, UAT material, feature notes, and ADRs
+scripts/              Test, UAT, scraper, admin, and video helper scripts
+services/             Supporting deployable services such as the PayUnit proxy
+infra/                Infrastructure helpers such as cron worker config
+public/               Static assets and PWA files
+ads/                  Generated marketing assets and video batches
 ```
-joblinka/
-├── app/                  # Next.js App Router pages and route handlers
-│   ├── api/              # API endpoints (e.g. jobs, vetting)
-│   ├── auth/             # Authentication pages (login / register)
-│   ├── dashboard/        # Protected dashboard page
-│   ├── jobs/             # Job board pages
-│   └── ...
-├── components/           # React UI components (add as you build features)
-├── lib/                  # Shared libraries (Supabase clients, utils)
-├── supabase/
-│   └── migrations/       # SQL migrations defining the database schema & RLS
-├── .env.example          # Environment variable specification
-├── package.json          # Project configuration and dependencies
-├── next.config.js        # Next.js configuration (i18n enabled)
-├── tailwind.config.ts    # Tailwind CSS configuration
-└── README.md             # Project overview and setup instructions
-```
 
-## Key technologies
+## Local Development
 
-- **Next.js 14** – App Router, React Server Components & Server Actions for a modern full‑stack experience.  
-  Using server components to fetch data near where it’s used improves code organisation and security【867614661607272†L43-L70】.  
-- **Supabase** – Postgres database with **Row‑Level Security (RLS)** to ensure each user can only access their own data【841124215369508†L104-L108】.  Built‑in Auth manages email/phone sign‑up and session cookies.  
-- **Tailwind CSS** – Utility‑first styling with dark‑mode support.  
-- **OpenAI API** – Used by separate microservices (deployable on Replit) for CV screening, matching, grading and chatbot logic.  
-  It is also leveraged by the built‑in resume optimiser to suggest improvements to job seeker CVs.  An `OPENAI_API_KEY` must be provided via environment variables to enable this feature.
-- **WhatsApp & SMS providers** – Generic REST clients integrate messaging flows via webhooks.
-
-## Database schema & migrations
-
-The `supabase/migrations/000_initial.sql` file contains the full database schema and initial RLS policies.  
-Key tables include users (managed by Supabase Auth), profiles, recruiters, jobs, applications, vetting_requests & results, projects, tests, certifications, verifications, transactions, subscriptions, messaging logs and admin_actions.  
-
-RLS policies restrict access based on the current authenticated user.  For example, only recruiters can manage their own job postings, applicants can read their own applications, and the public can only view published jobs and public projects.  The policies enable safe multi‑tenancy and enforce least privilege access by default.
-
-## Local development
-
-1. **Install dependencies**
+1. Install dependencies.
 
    ```bash
    npm install
    ```
 
-2. **Create a Supabase project** and obtain your `SUPABASE_URL`, `ANON_KEY` and `SERVICE_ROLE_KEY`.  
-   Follow the official **Supabase + Next.js** tutorial【841124215369508†L116-L200】 for instructions on creating a project and retrieving the keys.
+2. Create `.env.local` from `.env.example` and fill the required environment
+   variables.
 
-3. **Prepare environment variables**
-
-   Copy `.env.example` to `.env.local` and fill in your keys.  The `NEXT_PUBLIC_*` variables are safe to expose in the browser.  Keep `SUPABASE_SERVICE_ROLE_KEY` secret.
-
-4. **Apply database migrations**
-
-   Install the Supabase CLI and link your project.  Then push the migration:
+3. Apply Supabase migrations to your linked project.
 
    ```bash
-   supabase login # login to Supabase CLI (only once)
+   supabase login
    supabase link --project-ref <your-project-ref>
    supabase db push
    ```
 
-   Alternatively, run the SQL file in the Supabase dashboard’s SQL editor.
-
-5. **Start the dev server**
+4. Start the development server.
 
    ```bash
    npm run dev
    ```
 
-   The app is now available at `http://localhost:3000`.
+The app runs at `http://localhost:3000` by default.
 
-### Test data
+## Useful Commands
 
-The migration script does not insert seed data.  You can manually create users via the Supabase dashboard or add rows in the relevant tables to test the flows.
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run i18n:check
+npm run build
+```
 
-## Production deployment
+Targeted test commands are also available for application dashboards, hiring
+pipelines, interviews, WhatsApp, AI hardening, SkillUp, job images, and
+opportunity handling. See `package.json` for the full list.
 
-JobLinca is designed to run on **Vercel** (for the Next.js frontend and API routes) and **Supabase Cloud** (for the database, Auth and Storage).  A typical deployment involves:
+## Environment Notes
 
-1. **Create a Supabase project** and push the schema via the Supabase CLI.
-2. **Fork this repository** into your GitHub account.
-3. **Create a Vercel project** and import the repository.  Set the environment variables in the Vercel dashboard, including Supabase keys, payment provider keys, messaging tokens and OpenAI API key.
-4. **Configure Supabase Auth** domain to allow your Vercel URL.
-5. **Enable Storage** buckets for uploads (projects, certificates, IDs) and set RLS policies accordingly.
-6. **Deploy** – Vercel will build the Next.js app and host it globally.  
+Required values depend on which product areas are enabled. The most important
+groups are:
 
-### Replit AI microservices
+- Supabase: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+  `SUPABASE_SERVICE_ROLE_KEY`
+- App URLs and cron: `NEXT_PUBLIC_APP_URL`, cron secrets
+- AI: `OPENAI_API_KEY`
+- WhatsApp: `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`,
+  `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`
+- Payments: PayUnit credentials, webhook secret, and optional proxy settings
+- Observability: Sentry DSN and related config
 
-Complex AI tasks (CV screening, matching, grading and chatbots) should be implemented as independent REST services and deployed on [Replit](https://replit.com).  Those services can be called from the Next.js API routes or Supabase Edge Functions using your `OPENAI_API_KEY`.
+Keep service-role keys, payment secrets, webhook secrets, and messaging tokens
+server-side only.
 
-### Fixed-IP PayUnit proxy
+## Security Priorities
 
-If PayUnit blocks server-to-server requests from serverless providers, deploy the dedicated fixed-IP proxy in [`services/payunit-proxy`](./services/payunit-proxy).  The main app will prefer that proxy when `PAYUNIT_PROXY_URL` and `PAYUNIT_PROXY_SHARED_SECRET` are configured.
+- Prefer user-scoped Supabase clients in user-facing routes. Use the service
+  role only where bypassing RLS is necessary and documented.
+- Verify all webhook signatures before processing payment or WhatsApp events.
+- Treat phone numbers, resumes, identity documents, applicant notes, and message
+  bodies as sensitive data.
+- Keep storage buckets private for resumes, IDs, certificates, and verification
+  documents unless a signed URL is intentionally generated.
+- Validate request bodies with structured schemas and return narrow error
+  messages to clients.
+- Rate-limit public, webhook, AI, payment, and messaging endpoints.
 
-## Core modules (overview)
+## Deployment
 
- - **Authentication & Profiles** – Email/phone authentication via Supabase, role‑based access, and editable user profiles.  The core `profiles` table stores basic details (full name, phone and role). Additional role‑specific information is stored in separate tables: `job_seeker_profiles` (location, headline, resume URL and career info), `talent_profiles` (school status, portfolio and internship eligibility) and `recruiter_profiles` (recruiter type, verification status, tier plan, company name and contact details).
-- **Job board system** – Recruiters can post, edit and delete jobs; candidates browse published jobs without logging in; search and SEO friendly pages; admin approves postings before they go live.
-- **Job application system** – Candidates apply quickly (name + phone + CV) or via their profile.  Applications are stored in the `applications` table and recruiters can track statuses.
-- **Messaging** – WhatsApp and SMS bots allow candidates to apply, receive alerts and interview updates. WhatsApp webhook handling is implemented at `/api/whatsapp/webhook` (legacy alias: `/api/messaging/whatsapp`); SMS webhook handling is available at `/api/messaging/sms`.
-- **Payments & Subscriptions** – Generic aggregator integration supports job posting fees, vetting services, candidate alerts and verification/certification fees.  Transactions are logged in the `transactions` table and subscriptions in `subscriptions`.
-- **Vetting & Hiring service** – Recruiters request vetting packages (Basic, Standard, Premium).  Admin assigns vetting officers.  AI pre‑screens candidates and officers finalise shortlists.  Results are stored in `vetting_results`.
-- **Projects & Portfolio** – Candidates showcase projects with files, GitHub/Youtube links and tags.  Public portfolio pages allow recruiters to browse skills.
-- **Certifications & Tests** – Admins create MCQ/practical tests.  Candidates attempt tests and earn badges (Bronze, Silver, Gold, Platinum).  Certificates are PDF files with QR codes for public verification.
-- **Resume Builder & Optimiser** – Logged‑in job seekers and talents can create or upload CVs and edit them via a simple form.  Premium subscribers can leverage the built‑in AI to optimise their summary and bullet points once per day and generate an ATS‑friendly PDF.  All resumes are stored in the `resumes` table with per‑user Row‑Level Security and usage is tracked in `resume_usage` to enforce daily limits.
-- **Identity & Experience Verification** – Users upload IDs, selfies, certificates and employer references.  Verification officers approve or reject requests and verified users receive a badge.
-- **Admin dashboard** – Admins approve recruiters/jobs, manage users, vetting, verifications, payments, create tests and view analytics.
+The main app is designed for Vercel and Supabase Cloud. The PayUnit proxy in
+`services/payunit-proxy` can be deployed separately when a fixed egress IP is
+needed. Cron routes should be called only by trusted schedulers using the
+configured cron secret.
 
-### International Remote Jobs
+Before production deployment, run:
 
-JobLinca integrates with multiple public job feeds to surface verified global opportunities.  Listings are stored in the `external_jobs` table and served on the **Global Opportunities** page.  Jobs are categorised (e.g. *Teaching*, *Visa Sponsorship*) by scanning titles and descriptions for keywords.  Cameroonian job seekers can browse by category, search by keyword and apply via the original listing site.  The `/api/refresh-external-jobs` route now refreshes the remote/international feed only; Cameroon-specific sources are handled by the separate aggregation pipeline and `discovered_jobs` subsystem.  The legacy external feed aggregates sources such as:
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
 
-- **Remotive** – a free remote jobs API.  Each listing links back to Remotive and includes job title, company, location and salary when available【335617390489077†L72-L125】.  We respect Remotive’s guidelines and only refresh the feed a few times per day.
-- **Jobicy remote jobs feed** – an open JSON feed of remote jobs.  Our integration requests a limited number of listings to minimise load.  Titles and industries are analysed to assign categories like *Teaching* or *Visa Sponsorship*.
+Also verify Supabase migrations, RLS policies, webhook secrets, storage bucket
+policies, payment callbacks, and WhatsApp webhook configuration.
 
-These international jobs are clearly separated from local recruiter‑posted jobs to preserve the integrity of the domestic job board.
+## Current Improvement Backlog
 
-Additional providers can be integrated by implementing the corresponding fetch functions in [`lib/externalJobs.ts`](./lib/externalJobs.ts).  For example, Upwork’s API requires OAuth credentials (client ID and secret) and is disabled by default.  To enable Upwork integration you must set `UPWORK_CLIENT_ID` and `UPWORK_CLIENT_SECRET` in your environment and implement the OAuth flow.  Similarly, Findwork provides an API key–protected feed; add your `FINDWORK_API_KEY` to `.env.local` to enable fetching those listings.
-
-## Contributing
-
-This repository is a starting point.  Many modules (messaging, payments, vetting) are still skeletons and require integration with real providers.  Contributions are welcome to flesh out features, improve UX and harden security.
-
-## Security & best practices
-
-- Always enforce **HTTPS**.  In production, Vercel automatically provides SSL.  
-* Ensure **Row‑Level Security (RLS)** policies cover every table so users can only access their own records.  Supabase’s built‑in RLS ensures data is protected【841124215369508†L104-L108】.  
-* **Profiles are private** – each user can only see and update their own profile; only admins can view all user profiles.
-* **Financial & verification data is restricted** – transactions, subscriptions and verification records are only visible to the account owner (and relevant officers or admins), protecting sensitive information.
-- Store sensitive files (IDs, certificates) in Supabase Storage with private buckets and serve them via signed URLs.  
-- Validate and sanitise all inputs (e.g., using [Zod](https://zod.dev/)).
-- Follow the principle of least privilege when accessing external APIs and database roles.
-
----
-
-Feel free to adapt and extend JobLinca for your needs.  We hope it accelerates the deployment of inclusive hiring platforms across Africa.
+- Normalize brand spelling across user-facing text and generated assets.
+- Audit all service-role usage and document each accepted bypass.
+- Replace sensitive raw logs in webhook and messaging paths with redacted
+  structured logs.
+- Convert remaining raw `<img>` elements to `next/image` where practical.
+- Add end-to-end coverage for registration, application, recruiter review,
+  payment finalization, WhatsApp opt-in, and admin approval flows.
+- Continue improving scraped job freshness, deduplication, source trust, salary
+  normalization, and scam detection.
