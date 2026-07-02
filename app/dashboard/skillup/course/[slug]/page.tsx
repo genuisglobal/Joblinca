@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -43,7 +43,7 @@ export default function CoursePlayerPage() {
   const [quizModuleId, setQuizModuleId] = useState<string | null>(null);
   const [startingModule, setStartingModule] = useState<string | null>(null);
 
-  const fetchCourse = () => {
+  const fetchCourse = useCallback(() => {
     fetch(`/api/skillup/courses/${slug}`)
       .then((r) => r.json())
       .then((data) => {
@@ -58,11 +58,11 @@ export default function CoursePlayerPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  };
+  }, [slug]);
 
   useEffect(() => {
     fetchCourse();
-  }, [slug]);
+  }, [fetchCourse]);
 
   const activeModule = course?.modules.find((m) => m.id === activeModuleId);
 

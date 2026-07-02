@@ -108,7 +108,7 @@ export default function MatchInsightsPanel({ jobId }: { jobId: string }) {
     return () => {
       isMounted = false;
     };
-  }, [jobId]);
+  }, [jobId, t]);
 
   return (
     <div className="bg-gray-800 rounded-xl p-6">

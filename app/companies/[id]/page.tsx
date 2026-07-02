@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequestLocale } from '@/lib/i18n/server';
@@ -138,9 +139,12 @@ export default async function CompanyProfilePage({ params }: CompanyPageProps) {
         <div className="mx-auto max-w-4xl px-6 py-12">
           <div className="flex items-start gap-6">
             {logoUrl ? (
-              <img
+              <Image
                 src={logoUrl}
                 alt={recruiter.company_name}
+                width={80}
+                height={80}
+                unoptimized
                 className="h-20 w-20 rounded-2xl border border-neutral-700 bg-neutral-800 object-cover"
               />
             ) : (

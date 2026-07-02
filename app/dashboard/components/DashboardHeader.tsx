@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import VerificationBadge from './VerificationBadge';
 import Link from 'next/link';
@@ -153,9 +154,12 @@ export default function DashboardHeader() {
 
           <div className="flex items-center gap-3">
             {user?.avatarUrl ? (
-              <img
+              <Image
                 src={user.avatarUrl}
                 alt={t('dashboardShell.avatarAlt')}
+                width={40}
+                height={40}
+                unoptimized
                 className="w-10 h-10 rounded-full object-cover"
               />
             ) : (

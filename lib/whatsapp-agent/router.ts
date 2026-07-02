@@ -1251,6 +1251,15 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       return { handled: true, reason: 'handled' };
     }
 
+    if (intent.intent === 'talent') {
+      await startJobSearchFromIntent(lead, text, 'internship', {
+        locationHint: intent.locationHint,
+        roleKeywordsHint: intent.roleKeywordsHint,
+        timeFilterHint: intent.timeFilterHint,
+      });
+      return { handled: true, reason: 'handled' };
+    }
+
     if (looksLikeInternshipIntent(text)) {
       await startJobSearchFromIntent(lead, text, 'internship');
       return { handled: true, reason: 'handled' };

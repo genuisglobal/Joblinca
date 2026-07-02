@@ -3,6 +3,7 @@ import { parseTimeFilter } from '@/lib/whatsapp-agent/parser';
 
 export type WaDetectedIntent =
   | 'jobseeker'
+  | 'talent'
   | 'recruiter'
   | 'menu'
   | 'unknown';
@@ -81,11 +82,11 @@ function detectIntent(value: string): WaDetectedIntent {
   ]);
 
   if (recruiterIntent && !jobIntent) return 'recruiter';
-  if (talentIntent && !jobIntent) return 'jobseeker';
+  if (talentIntent && !jobIntent) return 'talent';
   if (jobIntent) return 'jobseeker';
   if (menuCommand) return 'menu';
   if (recruiterIntent) return 'recruiter';
-  if (talentIntent) return 'jobseeker';
+  if (talentIntent) return 'talent';
   return 'unknown';
 }
 

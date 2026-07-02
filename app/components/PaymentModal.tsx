@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Image from 'next/image';
 import { useTranslation } from '@/lib/i18n';
 import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
@@ -481,9 +482,11 @@ export default function PaymentModal({
                   ) : (
                     <>
                       <span className="inline-flex items-center justify-center h-6 w-6 rounded bg-white/10">
-                        <img
+                        <Image
                           src="/partners/mtn.png"
                           alt="MTN"
+                          width={16}
+                          height={16}
                           className="h-4 w-4 object-contain"
                         />
                       </span>
@@ -507,9 +510,11 @@ export default function PaymentModal({
                   ) : (
                     <>
                       <span className="inline-flex items-center justify-center h-6 w-6 rounded bg-white/10">
-                        <img
+                        <Image
                           src="/partners/orange.png"
                           alt="Orange"
+                          width={16}
+                          height={16}
                           className="h-4 w-4 object-contain"
                         />
                       </span>

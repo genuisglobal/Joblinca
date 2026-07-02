@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTranslation } from '@/lib/i18n';
 import { addLocalePrefix, type Locale } from '@/lib/i18n/locale';
 import {
@@ -327,7 +328,14 @@ export default function RemoteJobsPage() {
                     {/* Company Icon */}
                     <div className="hidden sm:flex w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600/20 to-accent-500/20 border border-primary-600/30 items-center justify-center shrink-0">
                       {job.company_logo ? (
-                        <img src={job.company_logo} alt="" className="w-8 h-8 rounded object-contain" />
+                        <Image
+                          src={job.company_logo}
+                          alt=""
+                          width={32}
+                          height={32}
+                          unoptimized
+                          className="w-8 h-8 rounded object-contain"
+                        />
                       ) : (
                         <Globe className="w-6 h-6 text-primary-400" />
                       )}

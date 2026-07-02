@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { CustomQuestion, QuestionAnswer } from '@/lib/questions';
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
 import PipelineProgress from '@/components/hiring-pipeline/PipelineProgress';
@@ -215,9 +216,12 @@ export default function ApplicationsTable({
           >
             <div className="flex items-center gap-4">
               {app.profiles?.avatar_url ? (
-                <img
+                <Image
                   src={app.profiles.avatar_url}
                   alt="Applicant"
+                  width={40}
+                  height={40}
+                  unoptimized
                   className="w-10 h-10 rounded-full object-cover"
                 />
               ) : (

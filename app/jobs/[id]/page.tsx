@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Image from 'next/image';
 import { unstable_noStore as noStore } from 'next/cache';
 import { notFound } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
@@ -454,11 +455,16 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
           <div className="lg:col-span-2">
             <div className="mb-6 rounded-lg border border-gray-700 bg-gray-800 p-6">
               {job.image_url && (
-                <img
-                  src={job.image_url}
-                  alt={`${job.title} at ${job.company_name}`}
-                  className="mb-6 h-48 w-full rounded-lg object-cover"
-                />
+                <div className="relative mb-6 h-48 w-full overflow-hidden rounded-lg">
+                  <Image
+                    src={job.image_url}
+                    alt={`${job.title} at ${job.company_name}`}
+                    fill
+                    sizes="(max-width: 1024px) 100vw, 768px"
+                    unoptimized
+                    className="object-cover"
+                  />
+                </div>
               )}
 
               <div className="mb-4 flex flex-wrap items-center gap-2">

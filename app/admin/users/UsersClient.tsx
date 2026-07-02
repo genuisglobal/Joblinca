@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 
 interface User {
   id: string;
@@ -256,7 +257,14 @@ export default function UsersClient({
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center overflow-hidden">
                           {user.avatar_url ? (
-                            <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                            <Image
+                              src={user.avatar_url}
+                              alt=""
+                              width={40}
+                              height={40}
+                              unoptimized
+                              className="h-full w-full object-cover"
+                            />
                           ) : (
                             <span className="text-gray-400 text-sm font-medium">
                               {getName(user).charAt(0).toUpperCase()}

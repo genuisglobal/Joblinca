@@ -316,7 +316,7 @@ export default function RecruiterJobDetailPage({
     return () => {
       mounted = false;
     };
-  }, [supabase, router, params.id, localize]);
+  }, [supabase, router, params.id, localize, t]);
 
   useEffect(() => {
     if (!job) {

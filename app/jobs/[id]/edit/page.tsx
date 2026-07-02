@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import InternshipConfigurationFields, {
   applyInternshipTrackPreset,
@@ -459,9 +460,12 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
             )}
             {form.company_logo_url && (
               <div className="mt-3 flex items-center gap-4 rounded-lg border border-gray-700 bg-gray-700/50 p-3">
-                <img
+                <Image
                   src={form.company_logo_url}
                   alt="Company logo preview"
+                  width={56}
+                  height={56}
+                  unoptimized
                   className="h-14 w-14 rounded-lg object-cover"
                 />
                 <div className="min-w-0 flex-1">

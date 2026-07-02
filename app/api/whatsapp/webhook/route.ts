@@ -29,12 +29,21 @@ import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
 import { handleWhatsAppJobAgentInbound } from '@/lib/whatsapp-agent/router';
 import { handleDailyDrillReply } from '@/lib/skillup/drill-inbound';
+import { maskPII } from '@/lib/pii-mask';
 
 function toUnixTimestamp(value: string | undefined): number {
   if (!value) return 0;
   const parsed = Number(value);
   if (Number.isNaN(parsed)) return 0;
   return parsed;
+}
+
+function maskWaId(value: string): string {
+  if (value.length <= 4) {
+    return '[masked]';
+  }
+
+  return `***${value.slice(-4)}`;
 }
 
 // ─── GET: webhook verification ────────────────────────────────────────────────
@@ -230,8 +239,12 @@ async function routeInboundMessage(
     return;
   }
 
-  // Default: log unhandled message (future: forward to AM inbox, AI reply, etc.)
-  console.log(`[WA] Unhandled message type=${msg.type} from=${msg.from}`, { textBody });
+  // Default: log unhandled message without exposing phone numbers or message PII.
+  console.info('[WA] Unhandled inbound message', {
+    type: msg.type,
+    from: maskWaId(msg.from),
+    textBody: textBody ? maskPII(textBody) : null,
+  });
 }
 
 // ─── Status update handler ────────────────────────────────────────────────────
