@@ -114,7 +114,8 @@ export default function NewJobPage() {
   const [applyEmail, setApplyEmail] = useState('');
   const [applyPhone, setApplyPhone] = useState('');
   const [applyWhatsapp, setApplyWhatsapp] = useState('');
-  const [closesAt, setClosesAt] = useState('');
+  // Default deadline so jobs don't stay listed forever; editable/clearable
+  const [closesAt, setClosesAt] = useState(() => buildDefaultDeadline(45));
 
   // Custom screening questions
   const [customQuestions, setCustomQuestions] = useState<CustomQuestion[]>([]);
@@ -140,6 +141,131 @@ export default function NewJobPage() {
     applyWhatsapp: false,
   });
   const lastAppliedDefaultsRef = useRef<RecruiterDefaultSnapshot | null>(null);
+
+  // ── Draft persistence: a 25-field form must survive refreshes ─────────────
+  const JOB_DRAFT_KEY = 'joblinca-job-post-draft';
+  const [draftRestored, setDraftRestored] = useState(false);
+  const draftHydratedRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(JOB_DRAFT_KEY);
+      if (raw) {
+        const draft = JSON.parse(raw) as { fields?: Record<string, unknown> };
+        const f = draft.fields || {};
+        const str = (key: string) => (typeof f[key] === 'string' ? (f[key] as string) : null);
+
+        if (str('title')) setTitle(str('title')!);
+        if (str('description')) setDescription(str('description')!);
+        if (str('location')) setLocation(str('location')!);
+        if (str('salary')) setSalary(str('salary')!);
+        if (str('salaryMin')) setSalaryMin(str('salaryMin')!);
+        if (str('salaryMax')) setSalaryMax(str('salaryMax')!);
+        if (str('salaryCurrency')) setSalaryCurrency(str('salaryCurrency')!);
+        if (
+          typeof f.salaryPeriod === 'string' &&
+          ['HOUR', 'DAY', 'WEEK', 'MONTH', 'YEAR'].includes(f.salaryPeriod)
+        ) {
+          setSalaryPeriod(f.salaryPeriod as 'HOUR' | 'DAY' | 'WEEK' | 'MONTH' | 'YEAR');
+        }
+        if (str('companyName')) setCompanyName(str('companyName')!);
+        if (str('companyLogoUrl')) setCompanyLogoUrl(str('companyLogoUrl')!);
+        if (str('workType')) setWorkType(str('workType')!);
+        if (str('jobType')) setJobType(str('jobType')!);
+        if (str('visibility')) setVisibility(str('visibility')!);
+        if (str('internshipTrack')) setInternshipTrack(str('internshipTrack')!);
+        if (f.internshipRequirements && typeof f.internshipRequirements === 'object') {
+          setInternshipRequirements({
+            ...createEmptyInternshipRequirementsFormState(),
+            ...(f.internshipRequirements as Record<string, unknown>),
+          } as ReturnType<typeof createEmptyInternshipRequirementsFormState>);
+        }
+        if (typeof f.applyMethod === 'string') setApplyMethod(f.applyMethod as ApplyMethod);
+        if (str('externalApplyUrl')) setExternalApplyUrl(str('externalApplyUrl')!);
+        if (str('applyEmail')) setApplyEmail(str('applyEmail')!);
+        if (str('applyPhone')) setApplyPhone(str('applyPhone')!);
+        if (str('applyWhatsapp')) setApplyWhatsapp(str('applyWhatsapp')!);
+        if (typeof f.closesAt === 'string') setClosesAt(f.closesAt);
+        if (Array.isArray(f.customQuestions)) {
+          setCustomQuestions(f.customQuestions as CustomQuestion[]);
+        }
+
+        // Restored values must not be clobbered by recruiter profile defaults
+        setFieldEdited({
+          companyName: Boolean(str('companyName')),
+          companyLogoUrl: Boolean(str('companyLogoUrl')),
+          applyEmail: Boolean(str('applyEmail')),
+          applyPhone: Boolean(str('applyPhone')),
+          applyWhatsapp: Boolean(str('applyWhatsapp')),
+        });
+
+        setDraftRestored(true);
+      }
+    } catch {
+      // Corrupt draft — start clean
+    }
+    draftHydratedRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const draftSnapshot = JSON.stringify({
+    title,
+    description,
+    location,
+    salary,
+    salaryMin,
+    salaryMax,
+    salaryCurrency,
+    salaryPeriod,
+    companyName,
+    companyLogoUrl,
+    workType,
+    jobType,
+    visibility,
+    internshipTrack,
+    internshipRequirements,
+    applyMethod,
+    externalApplyUrl,
+    applyEmail,
+    applyPhone,
+    applyWhatsapp,
+    closesAt,
+    customQuestions,
+  });
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return;
+    const timeout = setTimeout(() => {
+      try {
+        const fields = JSON.parse(draftSnapshot) as Record<string, unknown>;
+        const hasContent =
+          Boolean((fields.title as string)?.trim()) ||
+          Boolean((fields.description as string)?.trim());
+        if (hasContent) {
+          localStorage.setItem(JOB_DRAFT_KEY, JSON.stringify({ savedAt: Date.now(), fields }));
+        } else {
+          localStorage.removeItem(JOB_DRAFT_KEY);
+        }
+      } catch {
+        // storage unavailable — autosave is best-effort
+      }
+    }, 600);
+    return () => clearTimeout(timeout);
+  }, [draftSnapshot]);
+
+  function clearJobDraft() {
+    try {
+      localStorage.removeItem(JOB_DRAFT_KEY);
+    } catch {
+      // ignore
+    }
+  }
+
+  function discardDraftAndReset() {
+    clearJobDraft();
+    window.location.reload();
+  }
+  // ──────────────────────────────────────────────────────────────────────────
 
   function markFieldEdited(
     field: 'companyName' | 'companyLogoUrl' | 'applyEmail' | 'applyPhone' | 'applyWhatsapp'
@@ -663,6 +789,7 @@ export default function NewJobPage() {
       });
       if (res.ok) {
         const { id } = await res.json();
+        clearJobDraft();
         if (postingMode === 'recruiter') {
           router.push(`/dashboard/recruiter/jobs/${id}?created=1`);
         } else {
@@ -874,6 +1001,19 @@ export default function NewJobPage() {
         </div>
       )}
       {/* Use lighter card and input backgrounds for better readability */}
+      {draftRestored && (
+        <div className="mb-4 flex items-center justify-between gap-3 p-3 bg-blue-900/30 border border-blue-700 rounded-lg text-sm text-blue-300">
+          <span>We restored your unsaved job draft.</span>
+          <button
+            type="button"
+            onClick={discardDraftAndReset}
+            className="text-blue-300 hover:text-white underline whitespace-nowrap"
+          >
+            Start fresh
+          </button>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
         <div className="rounded-xl border border-blue-700/50 bg-blue-900/20 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -1296,7 +1436,7 @@ export default function NewJobPage() {
           )}
 
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-300">Application Deadline (Optional)</label>
+            <label className="block text-sm font-medium text-gray-300">Application Deadline</label>
             <input
               type="date"
               value={closesAt}
@@ -1304,7 +1444,9 @@ export default function NewJobPage() {
               className="mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded focus:outline-none focus:ring focus:border-blue-500"
               min={new Date().toISOString().split('T')[0]}
             />
-            <p className="text-xs text-gray-500 mt-1">Leave empty for no deadline</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Jobs close automatically after the deadline. Clear the date only if this role is always open.
+            </p>
           </div>
         </div>
 

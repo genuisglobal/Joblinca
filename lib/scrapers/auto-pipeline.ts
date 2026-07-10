@@ -20,6 +20,7 @@ import { AUTOMATED_SCRAPER_SOURCE_SLUGS } from './catalog';
 import { loadPublishThresholds } from '@/lib/aggregation/publish-thresholds';
 import { runAiVettingPass, type AiVettingStats } from '@/lib/aggregation/ai-vetting';
 import { getCompanyReputation, recordCompanyEvent } from '@/lib/aggregation/company-reputation';
+import { runPendingJobsReview, type PendingReviewStats } from '@/lib/jobs/posting-gate';
 
 /** Scraped jobs with no stated deadline stay live this long after last sighting */
 const DEFAULT_JOB_TTL_DAYS = 45;
@@ -51,6 +52,7 @@ export interface AutoPipelineResult {
     skipped_duplicate: number;
     skipped_company_gate: number;
     skipped_expired: number;
+    skipped_no_description: number;
     errors: number;
   };
   dedup_cleanup: {
@@ -66,6 +68,7 @@ export interface AutoPipelineResult {
 
 export interface AutoPipelineMaintenanceResult {
   ai_vetting: AiVettingStats;
+  pending_jobs_review: PendingReviewStats;
   auto_publish: {
     eligible: number;
     published: number;
@@ -73,6 +76,7 @@ export interface AutoPipelineMaintenanceResult {
     skipped_duplicate: number;
     skipped_company_gate: number;
     skipped_expired: number;
+    skipped_no_description: number;
     errors: number;
   };
   dedup_cleanup: {
@@ -192,8 +196,12 @@ export async function runAutoPipelineMaintenance(): Promise<AutoPipelineMaintena
   console.log('[auto-pipeline] Maintenance step 5: Cleaning up expired jobs...');
   const staleResult = await cleanupExpiredJobs(supabase);
 
+  console.log('[auto-pipeline] Maintenance step 6: Reviewing pending recruiter posts...');
+  const pendingReviewResult = await runPendingJobsReview(supabase);
+
   return {
     ai_vetting: vettingResult,
+    pending_jobs_review: pendingReviewResult,
     auto_publish: publishResult,
     dedup_cleanup: dedupResult,
     stale_cleanup: staleResult,
@@ -247,6 +255,7 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
     skipped_duplicate: 0,
     skipped_company_gate: 0,
     skipped_expired: 0,
+    skipped_no_description: 0,
     errors: 0,
   };
 
@@ -338,6 +347,7 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
       // Prefer the AI-cleaned text when the vetting pass produced one.
       const description = dj.description_clean || dj.description_raw || null;
       if (!description || description.length < 30) {
+        stats.skipped_no_description++;
         continue;
       }
       const language =

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import OpenAI from 'openai';
+import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 
 export const runtime = 'nodejs';
 
@@ -33,13 +34,19 @@ export async function POST(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, admin_type')
     .eq('id', user.id)
     .single();
 
-  if (!profile || profile.role !== 'recruiter') {
+  // Admins post jobs through the same form (including on behalf of
+  // recruiters), so they get the AI generator too
+  const isActiveAdmin = Boolean(
+    profile?.admin_type && ACTIVE_ADMIN_TYPES.includes(profile.admin_type)
+  );
+
+  if (!profile || (profile.role !== 'recruiter' && !isActiveAdmin)) {
     return NextResponse.json(
-      { error: 'Only recruiters can generate descriptions' },
+      { error: 'Only recruiters and admins can generate descriptions' },
       { status: 403 }
     );
   }
