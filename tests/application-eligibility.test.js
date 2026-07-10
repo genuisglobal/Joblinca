@@ -24,6 +24,14 @@ function loadModule(relativePath) {
       return loadModule(normalized);
     }
 
+    if (request.startsWith('@/')) {
+      const resolved = request.slice(2);
+      const normalized = path.normalize(
+        resolved.endsWith('.ts') || resolved.endsWith('.js') ? resolved : `${resolved}.ts`
+      );
+      return loadModule(normalized);
+    }
+
     return require(request);
   };
 

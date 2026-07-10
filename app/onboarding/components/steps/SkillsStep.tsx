@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Zap } from 'lucide-react';
 import SkillInput from '@/components/ui/SkillInput';
 import { Skill } from '@/lib/onboarding/types';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface SkillsStepProps {
   skills: Skill[];
@@ -14,6 +15,8 @@ export default function SkillsStep({
   skills,
   onSkillsChange,
 }: SkillsStepProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -26,10 +29,10 @@ export default function SkillsStep({
           <Zap className="w-8 h-8 text-yellow-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          What are your skills?
+          {t('onboarding.skills.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          Add your skills and rate your proficiency level
+          {t('onboarding.skills.subtitle')}
         </p>
       </motion.div>
 
@@ -54,14 +57,14 @@ export default function SkillsStep({
         className="bg-gray-800/50 rounded-lg p-4 mt-6"
       >
         <h3 className="text-sm font-medium text-gray-300 mb-2">
-          Skill rating guide:
+          {t('onboarding.skills.ratingGuide')}
         </h3>
         <div className="grid grid-cols-2 gap-2 text-sm text-gray-500">
-          <div>1 star - Beginner</div>
-          <div>2 stars - Basic</div>
-          <div>3 stars - Intermediate</div>
-          <div>4 stars - Advanced</div>
-          <div className="col-span-2">5 stars - Expert</div>
+          <div>{t('onboarding.skills.rating1')}</div>
+          <div>{t('onboarding.skills.rating2')}</div>
+          <div>{t('onboarding.skills.rating3')}</div>
+          <div>{t('onboarding.skills.rating4')}</div>
+          <div className="col-span-2">{t('onboarding.skills.rating5')}</div>
         </div>
       </motion.div>
     </div>

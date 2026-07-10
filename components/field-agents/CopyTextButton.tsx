@@ -5,11 +5,13 @@ import { useState } from 'react';
 interface CopyTextButtonProps {
   value: string;
   label?: string;
+  copiedLabel?: string;
 }
 
 export default function CopyTextButton({
   value,
   label = 'Copy',
+  copiedLabel = 'Copied',
 }: CopyTextButtonProps) {
   const [copied, setCopied] = useState(false);
 
@@ -25,7 +27,7 @@ export default function CopyTextButton({
       onClick={handleCopy}
       className="rounded-lg border border-gray-600 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-800"
     >
-      {copied ? 'Copied' : label}
+      {copied ? copiedLabel : label}
     </button>
   );
 }

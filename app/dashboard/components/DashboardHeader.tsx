@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import VerificationBadge from './VerificationBadge';
 import Link from 'next/link';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 
 interface UserInfo {
   firstName?: string;
@@ -25,10 +28,11 @@ interface SubscriptionData {
 }
 
 export default function DashboardHeader() {
+  const { t, locale } = useTranslation();
   const [user, setUser] = useState<UserInfo | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     async function fetchUser() {
@@ -87,28 +91,31 @@ export default function DashboardHeader() {
   const displayName =
     user?.firstName && user?.lastName
       ? `${user.firstName} ${user.lastName}`
-      : user?.fullName || user?.email || 'User';
+      : user?.fullName || user?.email || t('common.user');
 
   const roleLabel = {
-    recruiter: 'Recruiter',
-    job_seeker: 'Job Seeker',
-    talent: 'Talent',
-    field_agent: 'Field Agent',
-  }[user?.role || ''] || 'User';
+    recruiter: t('dashboardShell.role.recruiter'),
+    job_seeker: t('dashboardShell.role.jobSeeker'),
+    talent: t('dashboardShell.role.talent'),
+    field_agent: t('dashboardShell.role.fieldAgent'),
+  }[user?.role || ''] || t('dashboardShell.role.user');
 
   const showSubscription =
     user?.role === 'recruiter' || user?.role === 'job_seeker' || user?.role === 'talent';
   const isSubscribed = Boolean(subscription?.isActive);
   const expiryText = subscription?.expiresAt
-    ? new Date(subscription.expiresAt).toLocaleDateString()
-    : 'No expiry';
+    ? new Date(subscription.expiresAt).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US')
+    : t('billing.noExpiry');
+  const subscriptionHref = addLocalePrefix('/dashboard/subscription', locale);
 
   return (
     <header className="bg-gray-800 border-b border-gray-700 px-6 py-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Dashboard</h1>
-          <p className="text-gray-400 text-sm">{roleLabel} Portal</p>
+          <h1 className="text-2xl font-bold text-white">{t('dashboardShell.title')}</h1>
+          <p className="text-gray-400 text-sm">
+            {t('dashboardShell.portal', { role: roleLabel })}
+          </p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -118,21 +125,24 @@ export default function DashboardHeader() {
                 <div className="h-8 w-52 bg-gray-700 rounded-lg animate-pulse" />
               ) : isSubscribed ? (
                 <Link
-                  href="/dashboard/subscription"
+                  href={subscriptionHref}
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-600/40 bg-emerald-900/20 text-emerald-300 text-xs"
                 >
                   <span className="h-2 w-2 rounded-full bg-emerald-400" />
                   <span>
-                    Subscribed: {subscription?.plan?.name || 'Active Plan'} - Expires {expiryText}
+                    {t('dashboardShell.subscribedSummary', {
+                      plan: subscription?.plan?.name || t('billing.activePlan'),
+                      date: expiryText,
+                    })}
                   </span>
                 </Link>
               ) : (
                 <Link
-                  href="/dashboard/subscription"
+                  href={subscriptionHref}
                   className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-yellow-600/40 bg-yellow-900/20 text-yellow-300 text-xs"
                 >
                   <span className="h-2 w-2 rounded-full bg-yellow-400" />
-                  <span>No active subscription</span>
+                  <span>{t('dashboardShell.noActiveSubscription')}</span>
                 </Link>
               )}
             </div>
@@ -144,9 +154,12 @@ export default function DashboardHeader() {
 
           <div className="flex items-center gap-3">
             {user?.avatarUrl ? (
-              <img
+              <Image
                 src={user.avatarUrl}
-                alt="Avatar"
+                alt={t('dashboardShell.avatarAlt')}
+                width={40}
+                height={40}
+                unoptimized
                 className="w-10 h-10 rounded-full object-cover"
               />
             ) : (

@@ -22,6 +22,7 @@ export class KamerPowerScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 1; page <= this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = page === 1 ? `${BASE_URL}/` : `${BASE_URL}/page/${page}/`;
 
       try {
@@ -86,6 +87,8 @@ export class KamerPowerScraper extends BaseScraper {
           });
         });
 
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
+
         // Check if there's a next page
         const hasNext = $('link[rel="next"]').length > 0
           || $('a.next').length > 0
@@ -97,7 +100,7 @@ export class KamerPowerScraper extends BaseScraper {
           await this.delay();
         }
       } catch (err) {
-        console.error(`[scraper:kamerpower] Page ${page} error:`, err);
+        this.recordScrapeError(`page ${page}`, err);
         break;
       }
     }

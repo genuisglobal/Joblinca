@@ -1,0 +1,78 @@
+{
+  "date": "2026-05-08",
+  "generatedAt": "2026-05-08T11:05:40.910Z",
+  "dryRun": true,
+  "jobsFound": 25,
+  "jobsAfterLanguageFilter": 25,
+  "jobsProcessed": 10,
+  "excluded": {},
+  "batchesCreated": 5,
+  "outputFolder": "ads/videos/daily/2026-05-08",
+  "batches": [
+    {
+      "id": "2026-05-08-single_job_alert-fr-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer",
+      "type": "single_job_alert",
+      "language": "fr",
+      "folder": "ads/videos/daily/2026-05-08/01-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer",
+      "files": {
+        "batchJson": "ads/videos/daily/2026-05-08/01-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer/batch.json",
+        "script": "ads/videos/daily/2026-05-08/01-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer/script.txt",
+        "caption": "ads/videos/daily/2026-05-08/01-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer/caption.txt",
+        "hashtags": "ads/videos/daily/2026-05-08/01-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer/hashtags.txt",
+        "heygenPayload": "ads/videos/daily/2026-05-08/01-single-job-alert-fr-pategou-consulting-pategou-consulting-recrute-un-e-customer-care-officer/heygen-payload.json"
+      }
+    },
+    {
+      "id": "2026-05-08-single_job_alert-fr-single-job-alert-fr-danish-refugee-council-drc-appel-d-offre-ngo-danish-refugee-council-drc-pour-la-fourniture-de-semences",
+      "type": "single_job_alert",
+      "language": "fr",
+      "folder": "ads/videos/daily/2026-05-08/02-single-job-alert-fr-danish-refugee-council-drc-appel-d-offre-ngo-danish-refugee-council-drc-pour-la-fourniture-de-semences",
+      "files": {
+        "batchJson": "ads/videos/daily/2026-05-08/02-single-job-alert-fr-danish-refugee-council-drc-appel-d-offre-ngo-danish-refugee-council-drc-pour-la-fourniture-de-semences/batch.json",
+        "script": "ads/videos/daily/2026-05-08/02-single-job-alert-fr-danish-refugee-council-drc-appel-d-offre-ngo-danish-refugee-council-drc-pour-la-fourniture-de-semences/script.txt",
+        "caption": "ads/videos/daily/2026-05-08/02-single-job-alert-fr-danish-refugee-council-drc-appel-d-offre-ngo-danish-refugee-council-drc-pour-la-fourniture-de-semences/caption.txt",
+        "hashtags": "ads/videos/daily/2026-05-08/02-single-job-alert-fr-danish-refugee-council-drc-appel-d-offre-ngo-danish-refugee-council-drc-pour-la-fourniture-de-semences/hashtags.txt",
+        "heygenPayload": "ads/videos/daily/2026-05-08/02-single-job-alert-fr-danish-refugee-council-drc-appel-d-offre-ngo-danish-refugee-council-drc-pour-la-fourniture-de-semences/heygen-payload.json"
+      }
+    },
+    {
+      "id": "2026-05-08-single_job_alert-fr-single-job-alert-fr-gama-transit-group-gama-transit-recrute-un-e-magasinier",
+      "type": "single_job_alert",
+      "language": "fr",
+      "folder": "ads/videos/daily/2026-05-08/03-single-job-alert-fr-gama-transit-group-gama-transit-recrute-un-e-magasinier",
+      "files": {
+        "batchJson": "ads/videos/daily/2026-05-08/03-single-job-alert-fr-gama-transit-group-gama-transit-recrute-un-e-magasinier/batch.json",
+        "script": "ads/videos/daily/2026-05-08/03-single-job-alert-fr-gama-transit-group-gama-transit-recrute-un-e-magasinier/script.txt",
+        "caption": "ads/videos/daily/2026-05-08/03-single-job-alert-fr-gama-transit-group-gama-transit-recrute-un-e-magasinier/caption.txt",
+        "hashtags": "ads/videos/daily/2026-05-08/03-single-job-alert-fr-gama-transit-group-gama-transit-recrute-un-e-magasinier/hashtags.txt",
+        "heygenPayload": "ads/videos/daily/2026-05-08/03-single-job-alert-fr-gama-transit-group-gama-transit-recrute-un-e-magasinier/heygen-payload.json"
+      }
+    },
+    {
+      "id": "2026-05-08-category_jobs-fr-category-jobs-fr-internships-entry-level-fr",
+      "type": "category_jobs",
+      "language": "fr",
+      "folder": "ads/videos/daily/2026-05-08/04-category-jobs-fr-internships-entry-level-fr",
+      "files": {
+        "batchJson": "ads/videos/daily/2026-05-08/04-category-jobs-fr-internships-entry-level-fr/batch.json",
+        "script": "ads/videos/daily/2026-05-08/04-category-jobs-fr-internships-entry-level-fr/script.txt",
+        "caption": "ads/videos/daily/2026-05-08/04-category-jobs-fr-internships-entry-level-fr/caption.txt",
+        "hashtags": "ads/videos/daily/2026-05-08/04-category-jobs-fr-internships-entry-level-fr/hashtags.txt",
+        "heygenPayload": "ads/videos/daily/2026-05-08/04-category-jobs-fr-internships-entry-level-fr/heygen-payload.json"
+      }
+    },
+    {
+      "id": "2026-05-08-category_jobs-fr-category-jobs-fr-sales-commercial-fr",
+      "type": "category_jobs",
+      "language": "fr",
+      "folder": "ads/videos/daily/2026-05-08/05-category-jobs-fr-sales-commercial-fr",
+      "files": {
+        "batchJson": "ads/videos/daily/2026-05-08/05-category-jobs-fr-sales-commercial-fr/batch.json",
+        "script": "ads/videos/daily/2026-05-08/05-category-jobs-fr-sales-commercial-fr/script.txt",
+        "caption": "ads/videos/daily/2026-05-08/05-category-jobs-fr-sales-commercial-fr/caption.txt",
+        "hashtags": "ads/videos/daily/2026-05-08/05-category-jobs-fr-sales-commercial-fr/hashtags.txt",
+        "heygenPayload": "ads/videos/daily/2026-05-08/05-category-jobs-fr-sales-commercial-fr/heygen-payload.json"
+      }
+    }
+  ]
+}

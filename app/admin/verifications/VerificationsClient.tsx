@@ -40,10 +40,18 @@ interface VerificationDoc {
   user_id: string;
   id_document_url: string | null;
   selfie_url: string | null;
+  business_registration_url: string | null;
   certificates: unknown | null;
   employer_reference: string | null;
+  submission_source: 'self_service' | 'field_agent' | null;
+  officer_code_snapshot: string | null;
+  company_name_snapshot: string | null;
+  office_location: string | null;
+  field_visit_notes: string | null;
+  field_officer_recommendation: 'approve' | 'needs_review' | 'reject' | null;
   status: string;
   created_at: string;
+  officer?: Profile | null;
 }
 
 interface Counts {
@@ -76,6 +84,7 @@ export default function VerificationsClient({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showRejectModal, setShowRejectModal] = useState<{ type: 'recruiter' | 'job-seeker'; id: string } | null>(null);
+  const [selectedVerificationDoc, setSelectedVerificationDoc] = useState<VerificationDoc | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
   const getName = (profile: Profile | null) => {
@@ -142,6 +151,12 @@ export default function VerificationsClient({
 
   const getVerificationDocs = (userId: string) => {
     return verificationDocs.find(doc => doc.user_id === userId);
+  };
+
+  const getSourceLabel = (source: VerificationDoc['submission_source']) => {
+    if (source === 'field_agent') return 'Field intake';
+    if (source === 'self_service') return 'Self-service';
+    return 'Unknown source';
   };
 
   const filteredRecruiters = recruiters.filter(r =>
@@ -227,9 +242,11 @@ export default function VerificationsClient({
           recruiters={filteredRecruiters}
           getName={getName}
           getVerificationDocs={getVerificationDocs}
+          getSourceLabel={getSourceLabel}
           actionLoading={actionLoading}
           onVerify={(id) => handleVerify('recruiter', id)}
           onReject={(id) => setShowRejectModal({ type: 'recruiter', id })}
+          onReviewDocs={(doc) => setSelectedVerificationDoc(doc)}
         />
       ) : (
         <JobSeekersTable
@@ -280,6 +297,96 @@ export default function VerificationsClient({
           </div>
         </div>
       )}
+
+      {selectedVerificationDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-gray-800">
+            <div className="border-b border-gray-700 px-6 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Verification Documents</h3>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {getSourceLabel(selectedVerificationDoc.submission_source)} • Submitted{' '}
+                    {new Date(selectedVerificationDoc.created_at).toLocaleDateString()}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedVerificationDoc(null)}
+                  className="text-sm text-gray-400 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-6 px-6 py-5 md:grid-cols-2">
+              <div className="space-y-4">
+                <DetailItem
+                  label="ID document"
+                  value={selectedVerificationDoc.id_document_url}
+                  isLink
+                />
+                <DetailItem
+                  label="Selfie"
+                  value={selectedVerificationDoc.selfie_url}
+                  isLink
+                />
+                <DetailItem
+                  label="Business registration"
+                  value={selectedVerificationDoc.business_registration_url}
+                  isLink
+                />
+                <DetailItem
+                  label="Employer reference"
+                  value={selectedVerificationDoc.employer_reference}
+                />
+                <DetailItem
+                  label="Company snapshot"
+                  value={selectedVerificationDoc.company_name_snapshot}
+                />
+              </div>
+
+              <div className="space-y-4">
+                <DetailItem
+                  label="Office location"
+                  value={selectedVerificationDoc.office_location}
+                />
+                <DetailItem
+                  label="Officer code"
+                  value={selectedVerificationDoc.officer_code_snapshot}
+                />
+                <DetailItem
+                  label="Officer recommendation"
+                  value={selectedVerificationDoc.field_officer_recommendation}
+                />
+                <DetailItem
+                  label="Submitted by"
+                  value={
+                    selectedVerificationDoc.officer
+                      ? getName(selectedVerificationDoc.officer)
+                      : null
+                  }
+                />
+                <DetailItem
+                  label="Officer email"
+                  value={selectedVerificationDoc.officer?.email || null}
+                />
+              </div>
+            </div>
+
+            {selectedVerificationDoc.field_visit_notes && (
+              <div className="border-t border-gray-700 px-6 py-5">
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-gray-500">
+                  Field Visit Notes
+                </p>
+                <p className="mt-3 whitespace-pre-wrap text-sm text-gray-200">
+                  {selectedVerificationDoc.field_visit_notes}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -288,16 +395,20 @@ function RecruitersTable({
   recruiters,
   getName,
   getVerificationDocs,
+  getSourceLabel,
   actionLoading,
   onVerify,
   onReject,
+  onReviewDocs,
 }: {
   recruiters: Recruiter[];
   getName: (profile: Profile | null) => string;
   getVerificationDocs: (userId: string) => VerificationDoc | undefined;
+  getSourceLabel: (source: VerificationDoc['submission_source']) => string;
   actionLoading: string | null;
   onVerify: (id: string) => void;
   onReject: (id: string) => void;
+  onReviewDocs: (doc: VerificationDoc) => void;
 }) {
   if (recruiters.length === 0) {
     return (
@@ -337,11 +448,24 @@ function RecruitersTable({
                 <td className="p-4 text-center">
                   <StatusBadge status={recruiter.verification_status} />
                   {docs && (
-                    <p className="text-xs text-blue-400 mt-1">Has documents</p>
+                    <>
+                      <p className="mt-1 text-xs text-blue-400">Has documents</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {getSourceLabel(docs.submission_source)}
+                      </p>
+                    </>
                   )}
                 </td>
                 <td className="p-4">
                   <div className="flex items-center justify-end gap-2">
+                    {docs && (
+                      <button
+                        onClick={() => onReviewDocs(docs)}
+                        className="px-3 py-1 text-sm bg-gray-700 text-white rounded hover:bg-gray-600 transition-colors"
+                      >
+                        Review docs
+                      </button>
+                    )}
                     {(recruiter.verification_status === 'pending' || recruiter.verification_status === 'unverified') && (
                       <>
                         <button
@@ -504,5 +628,33 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex items-center px-2 py-1 text-xs font-medium rounded-full border ${bg} ${text}`}>
       {label}
     </span>
+  );
+}
+
+function DetailItem({
+  label,
+  value,
+  isLink = false,
+}: {
+  label: string;
+  value: string | null;
+  isLink?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-[0.2em] text-gray-500">{label}</p>
+      {isLink && value ? (
+        <a
+          href={value}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 inline-block break-all text-sm text-blue-400 hover:text-blue-300"
+        >
+          Open document
+        </a>
+      ) : (
+        <p className="mt-2 break-words text-sm text-gray-200">{value || 'Not provided'}</p>
+      )}
+    </div>
   );
 }

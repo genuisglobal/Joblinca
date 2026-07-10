@@ -1,20 +1,37 @@
-import { checkAdminStatus, getAdminTypeLabel } from '@/lib/admin';
+import { getAdminTypeLabel, ACTIVE_ADMIN_TYPES, type AdminType } from '@/lib/admin-types';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
+import { addLocalePrefix } from '@/lib/i18n/locale';
+import { getRequestLocale } from '@/lib/i18n/server';
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { isAdmin, adminType, userId, email } = await checkAdminStatus();
+  const locale = getRequestLocale();
+  const supabase = createServerSupabaseClient();
+  const localize = (href: string) => addLocalePrefix(href, locale);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  if (!userId) {
-    redirect('/auth/login?redirect=/admin');
+  if (!user) {
+    redirect(`${localize('/auth/login')}?redirect=${encodeURIComponent(localize('/admin'))}`);
   }
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, admin_type')
+    .eq('id', user.id)
+    .maybeSingle();
+
+  const adminType = (profile?.admin_type as AdminType | null) ?? null;
+  const isAdmin = Boolean(adminType && ACTIVE_ADMIN_TYPES.includes(adminType));
+
   if (!isAdmin) {
-    redirect('/dashboard');
+    redirect(localize(profile?.role === 'admin' ? '/jobs' : '/dashboard'));
   }
 
   return (
@@ -29,52 +46,53 @@ export default async function AdminLayout({
         </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          <NavLink href="/admin" icon={<DashboardIcon />} label="Dashboard" />
-          <NavLink href="/admin/jobs/new" icon={<PlusIcon />} label="Post Job" />
+          <NavLink href={localize('/admin')} icon={<DashboardIcon />} label="Dashboard" />
+          <NavLink href={localize('/admin/jobs/new')} icon={<PlusIcon />} label="Post Job" />
 
           <div className="pt-4 mt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500 uppercase mb-2 px-3">Management</p>
           </div>
-          <NavLink href="/admin/jobs" icon={<BriefcaseIcon />} label="Jobs" />
-          <NavLink href="/admin/verifications" icon={<ShieldCheckIcon />} label="Verifications" />
-          <NavLink href="/admin/reports" icon={<FlagIcon />} label="Reports" />
-          <NavLink href="/admin/users" icon={<UsersIcon />} label="Users" />
-          <NavLink href="/admin/field-agents" icon={<UsersIcon />} label="Field Agents" />
-          <NavLink href="/admin/recruiters" icon={<BuildingIcon />} label="Recruiters" />
-          <NavLink href="/admin/applications" icon={<DocumentIcon />} label="Applications" />
-          <NavLink href="/admin/whatsapp/blast" icon={<MegaphoneIcon />} label="WhatsApp Blast" />
+          <NavLink href={localize('/admin/jobs')} icon={<BriefcaseIcon />} label="Jobs" />
+          <NavLink href={localize('/admin/verifications')} icon={<ShieldCheckIcon />} label="Verifications" />
+          <NavLink href={localize('/admin/support')} icon={<LifeBuoyIcon />} label="Support" />
+          <NavLink href={localize('/admin/reports')} icon={<FlagIcon />} label="Reports" />
+          <NavLink href={localize('/admin/users')} icon={<UsersIcon />} label="Users" />
+          <NavLink href={localize('/admin/field-agents')} icon={<UsersIcon />} label="Field Agents" />
+          <NavLink href={localize('/admin/recruiters')} icon={<BuildingIcon />} label="Recruiters" />
+          <NavLink href={localize('/admin/applications')} icon={<DocumentIcon />} label="Applications" />
+          <NavLink href={localize('/admin/whatsapp/blast')} icon={<MegaphoneIcon />} label="WhatsApp Blast" />
 
           <div className="pt-4 mt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500 uppercase mb-2 px-3">Aggregation</p>
           </div>
-          <NavLink href="/admin/aggregation" icon={<LayersIcon />} label="Control Room" />
-          <NavLink href="/admin/aggregation/sources" icon={<GlobeIcon />} label="Sources" />
-          <NavLink href="/admin/aggregation/discovered-jobs" icon={<CompassIcon />} label="Discovered Jobs" />
-          <NavLink href="/admin/aggregation/outreach" icon={<PhoneOutIcon />} label="Outreach" />
-          <NavLink href="/admin/aggregation/runs" icon={<ClockIcon />} label="Runs" />
+          <NavLink href={localize('/admin/aggregation')} icon={<LayersIcon />} label="Control Room" />
+          <NavLink href={localize('/admin/aggregation/sources')} icon={<GlobeIcon />} label="Sources" />
+          <NavLink href={localize('/admin/aggregation/discovered-jobs')} icon={<CompassIcon />} label="Discovered Jobs" />
+          <NavLink href={localize('/admin/aggregation/outreach')} icon={<PhoneOutIcon />} label="Outreach" />
+          <NavLink href={localize('/admin/aggregation/runs')} icon={<ClockIcon />} label="Runs" />
 
           <div className="pt-4 mt-4 border-t border-gray-700">
             <p className="text-xs text-gray-500 uppercase mb-2 px-3">Finance</p>
           </div>
-          <NavLink href="/admin/payments" icon={<CreditCardIcon />} label="Payments" />
-          <NavLink href="/admin/promo-codes" icon={<TagIcon />} label="Promo Codes" />
-          <NavLink href="/admin/sponsorships" icon={<MegaphoneIcon />} label="Sponsorships" />
+          <NavLink href={localize('/admin/payments')} icon={<CreditCardIcon />} label="Payments" />
+          <NavLink href={localize('/admin/promo-codes')} icon={<TagIcon />} label="Promo Codes" />
+          <NavLink href={localize('/admin/sponsorships')} icon={<MegaphoneIcon />} label="Sponsorships" />
 
           {adminType === 'super' && (
             <>
               <div className="pt-4 mt-4 border-t border-gray-700">
                 <p className="text-xs text-gray-500 uppercase mb-2 px-3">Super Admin</p>
               </div>
-              <NavLink href="/admin/admins" icon={<KeyIcon />} label="Manage Admins" />
-              <NavLink href="/admin/audit-log" icon={<ClipboardIcon />} label="Audit Log" />
+              <NavLink href={localize('/admin/admins')} icon={<KeyIcon />} label="Manage Admins" />
+              <NavLink href={localize('/admin/audit-log')} icon={<ClipboardIcon />} label="Audit Log" />
             </>
           )}
         </nav>
 
         <div className="p-4 border-t border-gray-700">
-          <p className="text-xs text-gray-400 truncate">{email}</p>
+          <p className="text-xs text-gray-400 truncate">{user.email}</p>
           <Link
-            href="/dashboard"
+            href={localize('/dashboard')}
             className="text-xs text-blue-400 hover:text-blue-300 mt-1 block"
           >
             &larr; Back to Dashboard
@@ -187,6 +205,19 @@ function FlagIcon() {
   return (
     <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" />
+    </svg>
+  );
+}
+
+function LifeBuoyIcon() {
+  return (
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" className="w-5 h-5">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 8a4 4 0 100 8 4 4 0 000-8zm0-5a9 9 0 00-9 9m9-9a9 9 0 019 9m-9 9a9 9 0 01-9-9m9 9a9 9 0 009-9m-6.364-6.364l2.828 2.828m-11.314 0l2.828-2.828m0 11.314l-2.828 2.828m11.314 0l-2.828-2.828"
+      />
     </svg>
   );
 }

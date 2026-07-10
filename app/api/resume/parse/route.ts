@@ -5,15 +5,36 @@ import OpenAI from 'openai';
 import { createEmptyResume } from '@/lib/resume';
 import type { ResumeData } from '@/lib/resume';
 import { maskPII } from '@/lib/pii-mask';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { rateLimit, getRateLimitIdentifier } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
 export async function POST(request: NextRequest) {
+  // The /resume page is public, so parsing works for anonymous users too —
+  // rate limit by user ID (or IP) instead of requiring auth, to protect AI costs.
+  const supabase = createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const limit = await rateLimit(
+    `resume-parse:${getRateLimitIdentifier(request, user?.id)}`,
+    { requests: 5, window: '1h' }
+  );
+  if (!limit.allowed) return limit.response!;
+
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: 'File too large. Maximum size is 5MB.' }, { status: 413 });
     }
 
     const arrayBuffer = await file.arrayBuffer();

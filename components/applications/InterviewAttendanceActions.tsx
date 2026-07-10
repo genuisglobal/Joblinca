@@ -3,7 +3,11 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CandidateInterviewRecord } from '@/lib/applications/dashboard';
-import { getInterviewResponseStatusLabel } from '@/lib/interview-scheduling/utils';
+import { useTranslation } from '@/lib/i18n/context';
+import {
+  formatLocalizedDateTime,
+  translateInterviewResponseStatus,
+} from '@/lib/i18n/application-presentation';
 
 interface InterviewAttendanceActionsProps {
   interview: CandidateInterviewRecord;
@@ -45,6 +49,7 @@ export default function InterviewAttendanceActions({
   onUpdated,
 }: InterviewAttendanceActionsProps) {
   const router = useRouter();
+  const { t, locale } = useTranslation();
   const [responseStatus, setResponseStatus] = useState(interview.candidateResponseStatus);
   const [note, setNote] = useState(interview.candidateResponseNote || '');
   const [respondedAt, setRespondedAt] = useState(interview.candidateRespondedAt);
@@ -73,7 +78,7 @@ export default function InterviewAttendanceActions({
 
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(payload?.error || 'Failed to save interview response');
+        throw new Error(payload?.error || t('interviewAttendance.saveFailed'));
       }
 
       const updatedInterview = normalizeInterviewResponse(payload.interview);
@@ -84,8 +89,8 @@ export default function InterviewAttendanceActions({
         type: 'success',
         text:
           nextStatus === 'confirmed'
-            ? 'Attendance confirmed.'
-            : 'The recruiter has been told that you cannot attend this slot.',
+            ? t('interviewAttendance.successConfirmed')
+            : t('interviewAttendance.successDeclined'),
       });
 
       if (onUpdated) {
@@ -96,8 +101,7 @@ export default function InterviewAttendanceActions({
     } catch (error) {
       setMessage({
         type: 'error',
-        text:
-          error instanceof Error ? error.message : 'Failed to save interview response',
+        text: error instanceof Error ? error.message : t('interviewAttendance.saveFailed'),
       });
     } finally {
       setSubmitting(null);
@@ -113,16 +117,16 @@ export default function InterviewAttendanceActions({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">
-            Attendance response
+            {t('interviewAttendance.title')}
           </p>
           <p className="mt-2 text-sm text-gray-300">
-            Let the recruiter know whether you can attend this interview slot.
+            {t('interviewAttendance.description')}
           </p>
         </div>
         <span
           className={`inline-flex rounded-full border px-3 py-1 text-xs font-medium ${responseTone}`}
         >
-          {getInterviewResponseStatusLabel(responseStatus)}
+          {translateInterviewResponseStatus(t, responseStatus)}
         </span>
       </div>
 
@@ -130,7 +134,7 @@ export default function InterviewAttendanceActions({
         value={note}
         onChange={(event) => setNote(event.target.value)}
         rows={2}
-        placeholder="Optional note for the recruiter"
+        placeholder={t('interviewAttendance.placeholder')}
         className="mt-3 w-full rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-blue-500 focus:outline-none"
       />
 
@@ -141,7 +145,9 @@ export default function InterviewAttendanceActions({
           disabled={Boolean(submitting)}
           className="rounded-lg bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          {submitting === 'confirmed' ? 'Saving...' : 'Confirm attendance'}
+          {submitting === 'confirmed'
+            ? t('interviewAttendance.saving')
+            : t('interviewAttendance.confirm')}
         </button>
         <button
           type="button"
@@ -149,13 +155,17 @@ export default function InterviewAttendanceActions({
           disabled={Boolean(submitting)}
           className="rounded-lg bg-red-600 px-3 py-2 text-sm text-white hover:bg-red-700 disabled:opacity-50"
         >
-          {submitting === 'declined' ? 'Saving...' : "Can't attend"}
+          {submitting === 'declined'
+            ? t('interviewAttendance.saving')
+            : t('interviewAttendance.decline')}
         </button>
       </div>
 
       {respondedAt && (
         <p className="mt-3 text-xs text-gray-500">
-          Last updated {new Date(respondedAt).toLocaleString()}
+          {t('interviewAttendance.lastUpdated', {
+            date: formatLocalizedDateTime(respondedAt, locale, interview.timezone),
+          })}
         </p>
       )}
 

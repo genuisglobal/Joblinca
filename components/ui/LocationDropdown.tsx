@@ -2,6 +2,7 @@
 
 import { ChevronDown, MapPin } from 'lucide-react';
 import { RESIDENCE_LOCATIONS } from '@/lib/onboarding/constants';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface LocationDropdownProps {
   value: string | null;
@@ -11,13 +12,39 @@ interface LocationDropdownProps {
   placeholder?: string;
 }
 
+const FRENCH_LOCATION_LABELS: Record<string, string> = {
+  douala: 'Douala (Littoral)',
+  yaounde: 'Yaounde (Centre)',
+  bamenda: 'Bamenda (Nord-Ouest)',
+  bafoussam: 'Bafoussam (Ouest)',
+  buea: 'Buea (Sud-Ouest)',
+  limbe: 'Limbe (Sud-Ouest)',
+  garoua: 'Garoua (Nord)',
+  maroua: 'Maroua (Extreme-Nord)',
+  ngaoundere: 'Ngaoundere (Adamaoua)',
+  bertoua: 'Bertoua (Est)',
+  ebolowa: 'Ebolowa (Sud)',
+  kribi: 'Kribi (Sud)',
+  kumba: 'Kumba (Sud-Ouest)',
+  nkongsamba: 'Nkongsamba (Littoral)',
+  edea: 'Edea (Littoral)',
+  dschang: 'Dschang (Ouest)',
+  foumban: 'Foumban (Ouest)',
+  other: 'Autre',
+};
+
 export default function LocationDropdown({
   value,
   onChange,
   error,
   disabled = false,
-  placeholder = 'Select your city',
+  placeholder,
 }: LocationDropdownProps) {
+  const { locale } = useTranslation();
+  const getLocationLabel = (locationValue: string, fallbackLabel: string) =>
+    locale === 'fr' ? (FRENCH_LOCATION_LABELS[locationValue] || fallbackLabel) : fallbackLabel;
+  const resolvedPlaceholder = placeholder || (locale === 'fr' ? 'Selectionnez votre ville' : 'Select your city');
+
   return (
     <div className="w-full">
       <div className="relative">
@@ -40,7 +67,7 @@ export default function LocationDropdown({
           `}
         >
           <option value="" className="text-gray-500">
-            {placeholder}
+            {resolvedPlaceholder}
           </option>
           {RESIDENCE_LOCATIONS.map((location) => (
             <option
@@ -48,7 +75,7 @@ export default function LocationDropdown({
               value={location.value}
               className="text-gray-100 bg-gray-800"
             >
-              {location.label}
+              {getLocationLabel(location.value, location.label)}
             </option>
           ))}
         </select>

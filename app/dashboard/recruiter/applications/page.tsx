@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import StatsCard from '../../components/StatsCard';
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
@@ -129,6 +130,17 @@ export default function RecruiterApplicationsPage() {
   const eligibilityFilter = (searchParams.get('eligibility') as EligibilityFilter) || 'all';
   const searchQuery = searchParams.get('q') || '';
 
+  const getApplicantName = useCallback(
+    (profile: Profile | null): string => {
+      if (!profile) return t('recruiterApplications.unknownApplicant');
+      if (profile.first_name && profile.last_name) {
+        return `${profile.first_name} ${profile.last_name}`;
+      }
+      return profile.full_name || t('recruiterApplications.anonymousApplicant');
+    },
+    [t]
+  );
+
   // Stats counts
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {
@@ -198,7 +210,15 @@ export default function RecruiterApplicationsPage() {
     });
 
     return filtered;
-  }, [applications, stageFilter, jobFilter, eligibilityFilter, sortBy, searchQuery]);
+  }, [
+    applications,
+    stageFilter,
+    jobFilter,
+    eligibilityFilter,
+    sortBy,
+    searchQuery,
+    getApplicantName,
+  ]);
 
   // Load data
   const loadData = useCallback(async () => {
@@ -396,15 +416,6 @@ export default function RecruiterApplicationsPage() {
       setSelectedIds(new Set(filteredApplications.map((a) => a.id)));
     }
   };
-
-  // Helper: get applicant name
-  function getApplicantName(profile: Profile | null): string {
-    if (!profile) return t('recruiterApplications.unknownApplicant');
-    if (profile.first_name && profile.last_name) {
-      return `${profile.first_name} ${profile.last_name}`;
-    }
-    return profile.full_name || t('recruiterApplications.anonymousApplicant');
-  }
 
   function buildMessageHref(app: Application) {
     const draft = buildRecruiterTemplateMessage({
@@ -702,9 +713,12 @@ export default function RecruiterApplicationsPage() {
                 {/* Applicant */}
                 <div className="col-span-3 flex items-center gap-3">
                   {app.profiles?.avatar_url ? (
-                    <img
+                    <Image
                       src={app.profiles.avatar_url}
                       alt=""
+                      width={40}
+                      height={40}
+                      unoptimized
                       className="w-10 h-10 rounded-full object-cover"
                     />
                   ) : (

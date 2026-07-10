@@ -68,10 +68,25 @@ export default async function AdminVerificationsPage({ searchParams }: PageProps
     })) ?? [];
 
   // Fetch verification documents
-  const { data: verificationDocs } = await supabase
+  const { data: rawVerificationDocs } = await supabase
     .from('verifications')
-    .select('*')
+    .select(`
+      *,
+      officer:submitted_by_officer_user_id (
+        id,
+        full_name,
+        first_name,
+        last_name,
+        email
+      )
+    `)
     .order('created_at', { ascending: false });
+
+  const verificationDocs =
+    (rawVerificationDocs ?? []).map((doc: any) => ({
+      ...doc,
+      officer: Array.isArray(doc.officer) ? doc.officer[0] ?? null : doc.officer ?? null,
+    })) ?? [];
 
   // Get counts (use normalized arrays)
   const recruiterCounts = {
@@ -101,7 +116,7 @@ export default async function AdminVerificationsPage({ searchParams }: PageProps
         activeTab={activeTab}
         recruiters={recruiters}
         jobSeekers={jobSeekers}
-        verificationDocs={verificationDocs || []}
+        verificationDocs={verificationDocs}
         recruiterCounts={recruiterCounts}
         jobSeekerCounts={jobSeekerCounts}
       />

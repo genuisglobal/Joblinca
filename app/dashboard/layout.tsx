@@ -3,12 +3,16 @@ import { redirect } from 'next/navigation';
 import DashboardSidebar from './components/DashboardSidebar';
 import DashboardHeader from './components/DashboardHeader';
 import RegistrationOfficerPrompt from './components/RegistrationOfficerPrompt';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { addLocalePrefix } from '@/lib/i18n/locale';
+import { ACTIVE_ADMIN_TYPES, type AdminType } from '@/lib/admin';
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const locale = getRequestLocale();
   const supabase = createServerSupabaseClient();
 
   const {
@@ -16,20 +20,24 @@ export default async function DashboardLayout({
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/auth/login');
+    redirect(`${addLocalePrefix('/auth/login', locale)}?redirect=${encodeURIComponent(addLocalePrefix('/dashboard', locale))}`);
   }
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, admin_type')
     .eq('id', user.id)
     .single();
 
   const rawRole = profile?.role || 'job_seeker';
+  const isActiveAdmin = Boolean(
+    profile?.admin_type &&
+    ACTIVE_ADMIN_TYPES.includes(profile.admin_type as AdminType)
+  );
 
   // Admins should never access /dashboard/* - redirect them to /admin
   if (rawRole === 'admin') {
-    redirect('/admin');
+    redirect(addLocalePrefix(isActiveAdmin ? '/admin' : '/jobs', locale));
   }
 
   // For non-admin users, cast to the expected role type

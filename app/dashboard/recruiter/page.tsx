@@ -93,6 +93,29 @@ interface SubscriptionStatus {
   expiresAt: string | null;
 }
 
+interface RecruiterEngagementMethodCount {
+  method: 'external_url' | 'email' | 'phone' | 'whatsapp' | 'copy_link';
+  count: number;
+}
+
+interface RecruiterEngagementJob {
+  jobId: string;
+  title: string;
+  applyMethod: string | null;
+  currentSavedCount: number;
+  externalClicks: Record<RecruiterAnalyticsWindow, number>;
+  lastExternalClickAt: string | null;
+}
+
+interface RecruiterEngagementSummary {
+  totals: {
+    currentSavedJobs: number;
+    externalClicks: Record<RecruiterAnalyticsWindow, number>;
+  };
+  methods: Record<RecruiterAnalyticsWindow, RecruiterEngagementMethodCount[]>;
+  jobs: RecruiterEngagementJob[];
+}
+
 const ANALYTICS_WINDOWS: { value: RecruiterAnalyticsWindow; label: string }[] = [
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
@@ -114,6 +137,7 @@ export default function RecruiterDashboardPage() {
   const [selectedPlan, setSelectedPlan] = useState<RecruiterVerificationPlan | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [analyticsWindow, setAnalyticsWindow] = useState<RecruiterAnalyticsWindow>('30d');
+  const [engagement, setEngagement] = useState<RecruiterEngagementSummary | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -242,6 +266,16 @@ export default function RecruiterDashboardPage() {
         } else {
           setApplications([]);
           setStageEvents([]);
+        }
+
+        const engagementRes = await fetch('/api/recruiter/engagement', {
+          cache: 'no-store',
+        });
+        if (engagementRes.ok) {
+          const engagementPayload = (await engagementRes.json()) as RecruiterEngagementSummary;
+          setEngagement(engagementPayload);
+        } else {
+          setEngagement(null);
         }
 
         // Fetch verification status
@@ -427,6 +461,31 @@ export default function RecruiterDashboardPage() {
   const needsReviewApplications = analytics.needsReviewCount;
   const ineligibleApplications = analytics.ineligibleCount;
   const hiredApplications = analytics.hiredCount;
+  const externalClicksInWindow = engagement?.totals.externalClicks[analyticsWindow] || 0;
+  const currentSavedJobs = engagement?.totals.currentSavedJobs || 0;
+  const applyIntentSignals = funnelTimeline.totals.apply + externalClicksInWindow;
+  const visibleMethodSignals = useMemo(
+    () =>
+      (engagement?.methods[analyticsWindow] || []).filter((entry) => entry.count > 0),
+    [analyticsWindow, engagement]
+  );
+  const copyLinkSignals =
+    engagement?.methods[analyticsWindow]?.find((entry) => entry.method === 'copy_link')?.count || 0;
+  const topEngagementJobs = useMemo(
+    () =>
+      [...(engagement?.jobs || [])]
+        .sort((a, b) => {
+          const aSignalScore = a.externalClicks[analyticsWindow] + a.currentSavedCount;
+          const bSignalScore = b.externalClicks[analyticsWindow] + b.currentSavedCount;
+          if (bSignalScore !== aSignalScore) {
+            return bSignalScore - aSignalScore;
+          }
+
+          return b.externalClicks[analyticsWindow] - a.externalClicks[analyticsWindow];
+        })
+        .slice(0, 5),
+    [analyticsWindow, engagement]
+  );
   const recentJobs = jobs.slice(0, 5);
   const recentApplications = applications.slice(0, 5);
 
@@ -456,6 +515,42 @@ export default function RecruiterDashboardPage() {
 
   function formatRate(value: number) {
     return `${Math.round(value)}%`;
+  }
+
+  function formatApplyMethodLabel(method: string | null) {
+    switch (method) {
+      case 'joblinca':
+        return 'Native apply';
+      case 'external_url':
+        return 'External URL';
+      case 'email':
+        return 'Email';
+      case 'phone':
+        return 'Phone';
+      case 'whatsapp':
+        return 'WhatsApp';
+      case 'multiple':
+        return 'Multiple methods';
+      default:
+        return 'Apply method not set';
+    }
+  }
+
+  function formatSignalMethodLabel(method: RecruiterEngagementMethodCount['method']) {
+    switch (method) {
+      case 'external_url':
+        return 'Website clicks';
+      case 'email':
+        return 'Email clicks';
+      case 'phone':
+        return 'Phone clicks';
+      case 'whatsapp':
+        return 'WhatsApp clicks';
+      case 'copy_link':
+        return 'Copy link';
+      default:
+        return method;
+    }
   }
 
   return (
@@ -857,6 +952,119 @@ export default function RecruiterDashboardPage() {
             segments={sourceChannelSummary}
             emptyLabel="No source-channel funnel activity for this window yet."
           />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-700 bg-gray-800 p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-white">Discovery Signals</h2>
+            <p className="mt-1 text-sm text-gray-400">
+              Track candidate intent before it becomes an application, especially for jobs using external apply methods.
+            </p>
+          </div>
+          <p className="text-sm text-gray-400">
+            Clicks use the active {analyticsWindow} window. Saves are current live saves.
+          </p>
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <StatsCard
+            title="External Clicks"
+            value={externalClicksInWindow}
+            color="blue"
+            description={`Candidate exits in the last ${funnelTimeline.windowDays} days`}
+          />
+          <StatsCard
+            title="Current Saves"
+            value={currentSavedJobs}
+            color="yellow"
+            description="Jobs currently saved in candidate accounts"
+          />
+          <StatsCard
+            title="Apply Intent"
+            value={applyIntentSignals}
+            color="green"
+            description="Native applications plus external clicks in window"
+          />
+          <StatsCard
+            title="Link Shares"
+            value={copyLinkSignals}
+            color="purple"
+            description="Copy-link actions in the active window"
+          />
+        </div>
+
+        <div className="mt-5 grid grid-cols-1 xl:grid-cols-2 gap-5">
+          <div className="rounded-xl border border-gray-700 bg-gray-900/40 p-5">
+            <h3 className="text-lg font-semibold text-white">External Apply Breakdown</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              Which off-platform paths candidates are choosing for this window.
+            </p>
+            {visibleMethodSignals.length === 0 ? (
+              <p className="mt-4 text-sm text-gray-500">
+                No external click signals yet for this window.
+              </p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {visibleMethodSignals.map((signal) => (
+                  <div
+                    key={signal.method}
+                    className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800/60 px-3 py-2"
+                  >
+                    <span className="text-sm text-gray-300">
+                      {formatSignalMethodLabel(signal.method)}
+                    </span>
+                    <span className="text-sm font-semibold text-white">
+                      {signal.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900/40 p-5">
+            <h3 className="text-lg font-semibold text-white">Top Interest Jobs</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              Jobs getting the most saved-job and external-click attention right now.
+            </p>
+            {topEngagementJobs.length === 0 ? (
+              <p className="mt-4 text-sm text-gray-500">
+                No pre-application engagement signals recorded yet.
+              </p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {topEngagementJobs.map((job) => (
+                  <Link
+                    key={job.jobId}
+                    href={`/dashboard/recruiter/jobs/${job.jobId}`}
+                    className="block rounded-lg border border-gray-700 bg-gray-800/60 p-4 transition-colors hover:bg-gray-800"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-white">{job.title}</p>
+                        <p className="mt-1 text-xs text-gray-400">
+                          {formatApplyMethodLabel(job.applyMethod)}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-200">
+                        {job.externalClicks[analyticsWindow]} clicks
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-400">
+                      <span>{job.currentSavedCount} current saves</span>
+                      {job.lastExternalClickAt && (
+                        <span>
+                          Last click {new Date(job.lastExternalClickAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

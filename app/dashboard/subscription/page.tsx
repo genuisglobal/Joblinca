@@ -3,6 +3,9 @@ import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getUserSubscription } from '@/lib/subscriptions';
 import AutoRenewToggle from './AutoRenewToggle';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
+import { addLocalePrefix, type Locale } from '@/lib/i18n/locale';
 
 interface TransactionRow {
   id: string;
@@ -33,14 +36,43 @@ function statusClasses(status: string): string {
   return 'bg-yellow-900/30 border border-yellow-600/40 text-yellow-300';
 }
 
+function formatDate(value: string | null, locale: Locale) {
+  if (!value) {
+    return null;
+  }
+
+  return new Date(value).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US');
+}
+
+function formatDateTime(value: string, locale: Locale) {
+  return new Date(value).toLocaleString(locale === 'fr' ? 'fr-FR' : 'en-US');
+}
+
+function getStatusLabel(
+  status: string,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (status) {
+    case 'completed':
+      return t('billing.status.completed');
+    case 'failed':
+      return t('billing.status.failed');
+    default:
+      return t('billing.status.pending');
+  }
+}
+
 export default async function DashboardSubscriptionPage() {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+  const localize = (href: string) => addLocalePrefix(href, locale);
   const supabase = createServerSupabaseClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/auth/login');
+    redirect(`${localize('/auth/login')}?redirect=${encodeURIComponent(localize('/dashboard/subscription'))}`);
   }
 
   const { data: profile } = await supabase
@@ -55,10 +87,18 @@ export default async function DashboardSubscriptionPage() {
     profile?.role === 'talent'
       ? profile.role
       : 'job_seeker';
-  const pricingHref = `/pricing?role=${encodeURIComponent(role)}&from=account`;
-  const upgradeLabel = role === 'recruiter' ? 'View Posting Plans' : 'Upgrade Plan';
-  const renewLabel = role === 'recruiter' ? 'Open Recruiter Pricing' : 'Renew';
-  const changePlanLabel = role === 'recruiter' ? 'Recruiter Plans' : 'Change Plan';
+  const pricingHref = localize(
+    `/pricing?role=${encodeURIComponent(role)}&from=account`
+  );
+  const upgradeLabel = role === 'recruiter'
+    ? t('billing.viewPostingPlans')
+    : t('billing.upgradePlan');
+  const renewLabel = role === 'recruiter'
+    ? t('billing.openRecruiterPricing')
+    : t('billing.renew');
+  const changePlanLabel = role === 'recruiter'
+    ? t('billing.recruiterPlans')
+    : t('billing.changePlan');
 
   const subscription = await getUserSubscription(user.id);
 
@@ -77,9 +117,9 @@ export default async function DashboardSubscriptionPage() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Billing & Subscription</h1>
+          <h1 className="text-2xl font-bold text-white">{t('billing.title')}</h1>
           <p className="text-gray-400 text-sm">
-            Manage your active plan, renewal, upgrades, and payment history.
+            {t('billing.subtitle')}
           </p>
         </div>
         <div className="flex gap-2">
@@ -101,7 +141,7 @@ export default async function DashboardSubscriptionPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-gray-800 border border-gray-700 rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">Active Subscription</h2>
+            <h2 className="text-lg font-semibold text-white">{t('billing.activeSubscription')}</h2>
             <span
               className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                 subscription.isActive
@@ -109,28 +149,28 @@ export default async function DashboardSubscriptionPage() {
                   : 'bg-yellow-900/30 border border-yellow-600/40 text-yellow-300'
               }`}
             >
-              {subscription.isActive ? 'Subscribed' : 'Free'}
+              {subscription.isActive ? t('billing.subscribed') : t('billing.free')}
             </span>
           </div>
 
           {subscription.isActive ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-gray-400 text-sm">Plan Name</span>
+                <span className="text-gray-400 text-sm">{t('billing.planName')}</span>
                 <span className="text-white font-medium">
-                  {subscription.plan?.name || 'Active Plan'}
+                  {subscription.plan?.name || t('billing.activePlan')}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-gray-400 text-sm">Expiry Date</span>
+                <span className="text-gray-400 text-sm">{t('billing.expiryDate')}</span>
                 <span className="text-white font-medium">
                   {subscription.expiresAt
-                    ? new Date(subscription.expiresAt).toLocaleDateString()
-                    : 'No expiry'}
+                    ? formatDate(subscription.expiresAt, locale)
+                    : t('billing.noExpiry')}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-gray-400 text-sm">Days Remaining</span>
+                <span className="text-gray-400 text-sm">{t('billing.daysRemaining')}</span>
                 <span className="text-white font-medium">
                   {subscription.expiresAt ? subscription.daysRemaining : '-'}
                 </span>
@@ -143,33 +183,33 @@ export default async function DashboardSubscriptionPage() {
             <div className="space-y-4">
               <p className="text-gray-400 text-sm">
                 {role === 'recruiter'
-                  ? 'Recruiters use pay-per-job plans. Choose your posting tier from your account pricing view.'
-                  : 'You do not have an active subscription right now.'}
+                  ? t('billing.recruiterNoSubscription')
+                  : t('billing.noActiveSubscription')}
               </p>
               <Link
                 href={pricingHref}
                 className="inline-flex px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
               >
-                {role === 'recruiter' ? 'View Recruiter Plans' : 'Activate Subscription'}
+                {role === 'recruiter' ? t('billing.viewRecruiterPlans') : t('billing.activateSubscription')}
               </Link>
             </div>
           )}
         </div>
 
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
+          <h2 className="text-lg font-semibold text-white mb-4">{t('billing.quickActions')}</h2>
           <div className="space-y-3">
             <Link
-              href="/dashboard"
+              href={localize('/dashboard')}
               className="block w-full px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors text-center"
             >
-              Go to Dashboard
+              {t('billing.goToDashboard')}
             </Link>
             <Link
-              href="/"
+              href={localize('/')}
               className="block w-full px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors text-center"
             >
-              Go to Homepage
+              {t('billing.goToHomepage')}
             </Link>
             <Link
               href={pricingHref}
@@ -182,9 +222,9 @@ export default async function DashboardSubscriptionPage() {
       </div>
 
       <div className="bg-gray-800 border border-gray-700 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Payment History</h2>
+        <h2 className="text-lg font-semibold text-white mb-4">{t('billing.paymentHistory')}</h2>
         {transactionRows.length === 0 ? (
-          <p className="text-gray-400 text-sm">No payments yet.</p>
+          <p className="text-gray-400 text-sm">{t('billing.noPaymentsYet')}</p>
         ) : (
           <div className="space-y-3">
             {transactionRows.map((tx) => {
@@ -198,10 +238,10 @@ export default async function DashboardSubscriptionPage() {
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div>
                       <p className="text-white font-medium">
-                        {plan?.name || tx.description || 'Payment'}
+                        {plan?.name || tx.description || t('billing.payment')}
                       </p>
                       <p className="text-gray-400 text-xs">
-                        {new Date(tx.created_at).toLocaleString()}
+                        {formatDateTime(tx.created_at, locale)}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -209,13 +249,13 @@ export default async function DashboardSubscriptionPage() {
                         {Number(tx.amount).toLocaleString()} {tx.currency || 'XAF'}
                       </span>
                       <span className={`px-2 py-0.5 rounded-full text-xs ${statusClasses(tx.status)}`}>
-                        {tx.status}
+                        {getStatusLabel(tx.status, t)}
                       </span>
                     </div>
                   </div>
                   {tx.provider_reference && (
                     <p className="text-xs text-gray-500 mt-2 font-mono">
-                      Ref: {tx.provider_reference}
+                      {t('billing.reference')}: {tx.provider_reference}
                     </p>
                   )}
                 </div>

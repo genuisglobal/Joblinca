@@ -25,6 +25,7 @@ export class CameroonJobsScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 1; page <= this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = `${BASE_URL}/jobpagination.php?page=${page}`;
 
       try {
@@ -115,11 +116,13 @@ export class CameroonJobsScraper extends BaseScraper {
           });
         });
 
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
+
         if (page < this.config.maxPages) {
           await this.delay();
         }
       } catch (err) {
-        console.error(`[scraper:cameroonjobs] Page ${page} error:`, err);
+        this.recordScrapeError(`page ${page}`, err);
         break;
       }
     }

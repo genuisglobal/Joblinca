@@ -34,6 +34,7 @@ export class EmploiCmScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 0; page < this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = `${BASE_URL}${LISTING_PATH}?page=${page}`;
 
       try {
@@ -56,7 +57,10 @@ export class EmploiCmScraper extends BaseScraper {
 
         // Detect Cloudflare challenge
         if (html.includes('cf-browser-verification') || html.includes('challenge-platform') || html.includes('cf-challenge')) {
-          console.warn(`[scraper:emploicm] Cloudflare challenge on page ${page}. Set SCRAPER_API_KEY to bypass.`);
+          this.recordScrapeError(
+            `page ${page}`,
+            new Error('Cloudflare challenge — set SCRAPER_API_KEY to bypass')
+          );
           break;
         }
 
@@ -133,6 +137,8 @@ export class EmploiCmScraper extends BaseScraper {
           });
         });
 
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
+
         // Check for next page
         const hasNext = $('li.pager__item--next a').length > 0
           || $('a[title*="next"]').length > 0
@@ -143,7 +149,16 @@ export class EmploiCmScraper extends BaseScraper {
           await this.delay();
         }
       } catch (err) {
-        console.error(`[scraper:emploicm] Page ${page} error:`, err);
+        // Cloudflare rejects at the HTTP layer (403) before the HTML check runs
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('HTTP 403')) {
+          this.recordScrapeError(
+            `page ${page}`,
+            new Error('Cloudflare challenge (HTTP 403) — set SCRAPER_API_KEY to bypass')
+          );
+        } else {
+          this.recordScrapeError(`page ${page}`, err);
+        }
         break;
       }
     }

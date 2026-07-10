@@ -2,6 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 interface Skill {
   name: string;
@@ -189,9 +190,12 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
         <div className="flex items-center gap-6">
           <div className="relative">
             {formData.avatarUrl ? (
-              <img
+              <Image
                 src={formData.avatarUrl}
                 alt="Profile"
+                width={96}
+                height={96}
+                unoptimized
                 className="w-24 h-24 rounded-full object-cover border-2 border-gray-600"
               />
             ) : (

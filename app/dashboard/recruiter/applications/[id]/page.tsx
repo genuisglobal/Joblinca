@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import BadgeGrid from '@/app/dashboard/skillup/components/BadgeGrid';
 import StageBadge from '@/components/hiring-pipeline/StageBadge';
@@ -15,9 +16,7 @@ import {
   getRecruiterDecisionSupport,
 } from '@/lib/ai/recruiterDecisionSupport';
 import {
-  formatDecisionLabel,
   getDecisionTone,
-  getRecommendationLabel,
 } from '@/lib/hiring-pipeline/presentation';
 import type {
   ApplicationCurrentStage,
@@ -33,17 +32,23 @@ import type {
 import {
   DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS,
   findInterviewSlotTemplate,
-  formatBlackoutDateSummary,
-  formatWeeklyAvailabilitySummary,
   type JobInterviewSelfScheduleSettings,
 } from '@/lib/interview-scheduling/self-schedule';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
-  formatInterviewDateTimeLabel,
-  getInterviewModeLabel,
-  getInterviewResponseStatusLabel,
-  getInterviewSlotStatusLabel,
-  getInterviewStatusLabel,
-} from '@/lib/interview-scheduling/utils';
+  formatLocalizedDate,
+  formatLocalizedDateTime,
+  translateInterviewMode,
+  translateInterviewResponseStatus,
+  translateInterviewStatus,
+} from '@/lib/i18n/application-presentation';
+import {
+  formatBlackoutDateSummaryLocalized,
+  formatWeeklyAvailabilitySummaryLocalized,
+  translateInterviewSlotStatus,
+  translateRankingSignalLabel,
+} from '@/lib/i18n/recruiter-presentation';
 
 interface Job {
   id: string;
@@ -134,17 +139,6 @@ interface InterviewSelfScheduleResponse {
   settings: JobInterviewSelfScheduleSettings;
 }
 
-const FEEDBACK_RECOMMENDATION_OPTIONS: {
-  value: FeedbackRecommendation;
-  label: string;
-}[] = [
-  { value: 'strong_yes', label: 'Strong yes' },
-  { value: 'yes', label: 'Yes' },
-  { value: 'mixed', label: 'Mixed' },
-  { value: 'no', label: 'No' },
-  { value: 'strong_no', label: 'Strong no' },
-];
-
 function normalizeRelation<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) {
     return value[0] ?? null;
@@ -201,35 +195,38 @@ function hasResumeAttachment(application: Application) {
   return Boolean(application.resume_url || (typeof resumePath === 'string' && resumePath.trim()));
 }
 
-function getEligibilityTone(status: Application['eligibility_status']) {
+function getEligibilityTone(
+  status: Application['eligibility_status'],
+  t: (key: string) => string
+) {
   switch (status) {
     case 'eligible':
       return {
         bg: 'bg-emerald-500/10',
         border: 'border-emerald-500/30',
         text: 'text-emerald-100',
-        label: 'Eligible at submission',
+        label: t('recruiterApplicationDetail.eligibility.eligibleAtSubmission'),
       };
     case 'needs_review':
       return {
         bg: 'bg-amber-500/10',
         border: 'border-amber-500/30',
         text: 'text-amber-100',
-        label: 'Eligible, but profile gaps were detected',
+        label: t('recruiterApplicationDetail.eligibility.profileGaps'),
       };
     case 'ineligible':
       return {
         bg: 'bg-red-500/10',
         border: 'border-red-500/30',
         text: 'text-red-100',
-        label: 'Submitted against an ineligible profile',
+        label: t('recruiterApplicationDetail.eligibility.ineligibleProfile'),
       };
     default:
       return {
         bg: 'bg-gray-700/40',
         border: 'border-gray-700',
         text: 'text-gray-200',
-        label: 'No eligibility snapshot captured',
+        label: t('recruiterApplicationDetail.eligibility.none'),
       };
   }
 }
@@ -271,6 +268,58 @@ function getInterviewSlotStatusTone(status: ApplicationInterviewSlotView['status
   }
 }
 
+function getLocalizedFeedbackRecommendationLabel(
+  recommendation: FeedbackRecommendation | null | undefined,
+  t: (key: string) => string
+) {
+  switch (recommendation) {
+    case 'strong_yes':
+      return t('feedbackRecommendation.strongYes');
+    case 'yes':
+      return t('feedbackRecommendation.yes');
+    case 'mixed':
+      return t('feedbackRecommendation.mixed');
+    case 'no':
+      return t('feedbackRecommendation.no');
+    case 'strong_no':
+      return t('feedbackRecommendation.strongNo');
+    default:
+      return null;
+  }
+}
+
+function getLocalizedDecisionLabel(
+  decisionStatus: string | null | undefined,
+  t: (key: string, vars?: Record<string, string | number>) => string
+) {
+  switch (decisionStatus) {
+    case 'hired':
+      return t('status.hired');
+    case 'rejected':
+      return t('status.rejected');
+    case 'withdrawn':
+      return t('status.withdrawn');
+    default:
+      return t('status.active');
+  }
+}
+
+function getLocalizedEligibilityStatusLabel(
+  status: Application['eligibility_status'],
+  t: (key: string) => string
+) {
+  switch (status) {
+    case 'eligible':
+      return t('eligibility.eligible');
+    case 'needs_review':
+      return t('eligibility.needsReview');
+    case 'ineligible':
+      return t('eligibility.ineligible');
+    default:
+      return t('eligibility.noCheck');
+  }
+}
+
 export default function ApplicationDetailPage({
   params,
 }: {
@@ -278,6 +327,18 @@ export default function ApplicationDetailPage({
 }) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useTranslation();
+  const localize = useCallback((href: string) => addLocalePrefix(href, locale), [locale]);
+  const feedbackRecommendationOptions = useMemo(
+    () => [
+      { value: 'strong_yes' as FeedbackRecommendation, label: t('feedbackRecommendation.strongYes') },
+      { value: 'yes' as FeedbackRecommendation, label: t('feedbackRecommendation.yes') },
+      { value: 'mixed' as FeedbackRecommendation, label: t('feedbackRecommendation.mixed') },
+      { value: 'no' as FeedbackRecommendation, label: t('feedbackRecommendation.no') },
+      { value: 'strong_no' as FeedbackRecommendation, label: t('feedbackRecommendation.strongNo') },
+    ],
+    [t]
+  );
 
   const [loading, setLoading] = useState(true);
   const [application, setApplication] = useState<Application | null>(null);
@@ -347,7 +408,11 @@ export default function ApplicationDetailPage({
       } = await supabase.auth.getUser();
 
       if (authError || !user) {
-        router.replace('/auth/login');
+        router.replace(
+          `${localize('/auth/login')}?redirect=${encodeURIComponent(
+            localize(`/dashboard/recruiter/applications/${params.id}`)
+          )}`
+        );
         return;
       }
 
@@ -389,7 +454,7 @@ export default function ApplicationDetailPage({
 
       if (appError || !appData) {
         console.error('Application not found:', appError);
-        router.replace('/dashboard/recruiter/applications');
+        router.replace(localize('/dashboard/recruiter/applications'));
         return;
       }
 
@@ -397,7 +462,7 @@ export default function ApplicationDetailPage({
       const job = normalizeRelation(appData.jobs);
       if (!job || job.recruiter_id !== user.id) {
         console.error('Not authorized to view this application');
-        router.replace('/dashboard/recruiter/applications');
+        router.replace(localize('/dashboard/recruiter/applications'));
         return;
       }
 
@@ -567,7 +632,7 @@ export default function ApplicationDetailPage({
       console.error('Failed to load application:', err);
       setLoading(false);
     }
-  }, [supabase, router, params.id]);
+  }, [supabase, router, params.id, localize]);
 
   useEffect(() => {
     loadData();
@@ -809,7 +874,7 @@ export default function ApplicationDetailPage({
           text:
             typeof payload.error === 'string'
               ? payload.error
-              : 'Failed to schedule interview',
+              : t('recruiterApplicationDetail.scheduleInterviewFailed'),
         });
         return;
       }
@@ -825,18 +890,18 @@ export default function ApplicationDetailPage({
         type: 'success',
         text: payload.notifications?.delivered
           ? editingInterviewId
-            ? 'Interview rescheduled and candidate notifications sent.'
-            : 'Interview scheduled and candidate notifications sent.'
+            ? t('recruiterApplicationDetail.interviewRescheduledNotified')
+            : t('recruiterApplicationDetail.interviewScheduledNotified')
           : editingInterviewId
-            ? 'Interview rescheduled. No delivery channel was available for the candidate yet.'
-            : 'Interview scheduled. No delivery channel was available for the candidate yet.',
+            ? t('recruiterApplicationDetail.interviewRescheduledNoChannel')
+            : t('recruiterApplicationDetail.interviewScheduledNoChannel'),
       });
       await loadData();
     } catch (err) {
       console.error('Failed to schedule interview:', err);
       setScheduleMessage({
         type: 'error',
-        text: 'Failed to schedule interview',
+        text: t('recruiterApplicationDetail.scheduleInterviewFailed'),
       });
     } finally {
       setSchedulingInterview(false);
@@ -907,7 +972,7 @@ export default function ApplicationDetailPage({
           text:
             typeof payload.error === 'string'
               ? payload.error
-              : 'Failed to create interview slot',
+              : t('recruiterApplicationDetail.createInterviewSlotFailed'),
         });
         return;
       }
@@ -922,15 +987,15 @@ export default function ApplicationDetailPage({
       setScheduleMessage({
         type: 'success',
         text: payload.notifications?.delivered
-          ? 'Self-schedule slot created and candidate invitation sent.'
-          : 'Self-schedule slot created.',
+          ? t('recruiterApplicationDetail.selfScheduleSlotCreatedNotified')
+          : t('recruiterApplicationDetail.selfScheduleSlotCreated'),
       });
       await loadData();
     } catch (err) {
       console.error('Failed to create interview slot:', err);
       setScheduleMessage({
         type: 'error',
-        text: 'Failed to create interview slot',
+        text: t('recruiterApplicationDetail.createInterviewSlotFailed'),
       });
     } finally {
       setSchedulingInterview(false);
@@ -968,7 +1033,7 @@ export default function ApplicationDetailPage({
           text:
             typeof payload.error === 'string'
               ? payload.error
-              : 'Failed to generate interview slots',
+              : t('recruiterApplicationDetail.generateInterviewSlotsFailed'),
         });
         return;
       }
@@ -976,19 +1041,38 @@ export default function ApplicationDetailPage({
       const createdCount = Number(payload.createdCount || 0);
       const skippedCount = Array.isArray(payload.skippedDates) ? payload.skippedDates.length : 0;
       const deliveredCount = Number(payload.notificationDeliveries || 0);
+      const summaryParts = [t('recruiterApplicationDetail.generatedInterviewSlotsCreated', {
+        count: createdCount,
+      })];
+
+      if (scheduleNotifications) {
+        summaryParts.push(
+          t('recruiterApplicationDetail.generatedInterviewSlotsInvitations', {
+            count: deliveredCount,
+          })
+        );
+      }
+
+      if (skippedCount > 0) {
+        summaryParts.push(
+          t('recruiterApplicationDetail.generatedInterviewSlotsSkipped', {
+            count: skippedCount,
+          })
+        );
+      }
 
       setScheduleMessage({
         type: 'success',
         text: createdCount === 0
-          ? 'No new self-schedule slots were created.'
-          : `${createdCount} self-schedule slot${createdCount === 1 ? '' : 's'} created${scheduleNotifications ? `, ${deliveredCount} invitation${deliveredCount === 1 ? '' : 's'} sent` : ''}${skippedCount > 0 ? `, ${skippedCount} skipped because they were already occupied` : ''}.`,
+          ? t('recruiterApplicationDetail.noNewInterviewSlots')
+          : summaryParts.join(', '),
       });
       await loadData();
     } catch (err) {
       console.error('Failed to generate interview slots:', err);
       setScheduleMessage({
         type: 'error',
-        text: 'Failed to generate interview slots',
+        text: t('recruiterApplicationDetail.generateInterviewSlotsFailed'),
       });
     } finally {
       setGeneratingSlots(false);
@@ -1035,7 +1119,7 @@ export default function ApplicationDetailPage({
           text:
             typeof payload.error === 'string'
               ? payload.error
-              : 'Failed to update interview',
+              : t('recruiterApplicationDetail.updateInterviewFailed'),
         });
         return;
       }
@@ -1046,28 +1130,30 @@ export default function ApplicationDetailPage({
 
       const actionLabel =
         action === 'cancel'
-          ? 'cancelled'
+          ? t('recruiterApplicationDetail.interviewAction.cancelled')
           : action === 'complete'
-            ? 'marked as completed'
-            : 'marked as no-show';
+            ? t('recruiterApplicationDetail.interviewAction.completed')
+            : t('recruiterApplicationDetail.interviewAction.noShow');
 
       setScheduleMessage({
         type: 'success',
         text:
           action === 'cancel' && payload.notifications?.delivered
-            ? 'Interview cancelled and candidate notifications sent.'
+            ? t('recruiterApplicationDetail.interviewCancelledNotified')
             : action === 'complete' && payload.notifications?.delivered
-              ? 'Interview marked completed and follow-up sent.'
+              ? t('recruiterApplicationDetail.interviewCompletedNotified')
               : action === 'no_show' && payload.notifications?.delivered
-                ? 'Interview marked as no-show and follow-up sent.'
-            : `Interview ${actionLabel}.`,
+                ? t('recruiterApplicationDetail.interviewNoShowNotified')
+            : t('recruiterApplicationDetail.interviewActionCompleted', {
+                action: actionLabel,
+              }),
       });
       await loadData();
     } catch (err) {
       console.error('Failed to update interview:', err);
       setScheduleMessage({
         type: 'error',
-        text: 'Failed to update interview',
+        text: t('recruiterApplicationDetail.updateInterviewFailed'),
       });
     } finally {
       setUpdatingInterviewId(null);
@@ -1097,21 +1183,21 @@ export default function ApplicationDetailPage({
           text:
             typeof payload.error === 'string'
               ? payload.error
-              : 'Failed to update interview slot',
+              : t('recruiterApplicationDetail.updateInterviewSlotFailed'),
         });
         return;
       }
 
       setScheduleMessage({
         type: 'success',
-        text: 'Interview slot cancelled.',
+        text: t('recruiterApplicationDetail.interviewSlotCancelled'),
       });
       await loadData();
     } catch (err) {
       console.error('Failed to update interview slot:', err);
       setScheduleMessage({
         type: 'error',
-        text: 'Failed to update interview slot',
+        text: t('recruiterApplicationDetail.updateInterviewSlotFailed'),
       });
     } finally {
       setUpdatingSlotId(null);
@@ -1120,15 +1206,15 @@ export default function ApplicationDetailPage({
 
   // Helper functions
   function getApplicantName(profile: Profile | null): string {
-    if (!profile) return 'Unknown';
+    if (!profile) return t('recruiterApplications.unknownApplicant');
     if (profile.first_name && profile.last_name) {
       return `${profile.first_name} ${profile.last_name}`;
     }
-    return profile.full_name || 'Anonymous';
+    return profile.full_name || t('recruiterApplications.anonymousApplicant');
   }
 
   function buildInboxHref(receiverId: string, draft: string) {
-    return `/dashboard/recruiter/messages?partner=${encodeURIComponent(receiverId)}&draft=${encodeURIComponent(draft)}`;
+    return `${localize('/dashboard/recruiter/messages')}?partner=${encodeURIComponent(receiverId)}&draft=${encodeURIComponent(draft)}`;
   }
 
   function normalizePhoneForWhatsapp(phone: string | null | undefined) {
@@ -1143,55 +1229,69 @@ export default function ApplicationDetailPage({
   function formatActivityAction(activity: Activity): string {
     switch (activity.action) {
       case 'created':
-        return 'Application submitted';
+        return t('recruiterApplicationDetail.activity.created');
       case 'status_changed':
-        return `Status changed from ${activity.old_value} to ${activity.new_value}`;
+        return t('recruiterApplicationDetail.activity.statusChanged', {
+          from: activity.old_value || t('recruiterApplications.unknownJob'),
+          to: activity.new_value || t('recruiterApplications.unknownJob'),
+        });
       case 'stage_changed':
-        return `Stage changed from ${activity.old_value || 'Unknown'} to ${activity.new_value}`;
+        return t('recruiterApplicationDetail.activity.stageChanged', {
+          from: activity.old_value || t('recruiterApplications.unknownApplicant'),
+          to: activity.new_value || t('recruiterApplications.unknownApplicant'),
+        });
       case 'note_added':
-        return 'Note added';
+        return t('recruiterApplicationDetail.activity.noteAdded');
       case 'feedback_submitted':
-        return 'Structured stage feedback submitted';
+        return t('recruiterApplicationDetail.activity.feedbackSubmitted');
       case 'scorecard_completed':
-        return 'Scorecard completed';
+        return t('recruiterApplicationDetail.activity.scorecardCompleted');
       case 'decision_recorded':
-        return `Decision updated to ${activity.new_value}`;
+        return t('recruiterApplicationDetail.activity.decisionRecorded', {
+          value: activity.new_value || t('status.active'),
+        });
       case 'interview_scheduled':
-        return `Interview scheduled for ${activity.new_value || 'candidate'}`;
+        return t('recruiterApplicationDetail.activity.interviewScheduled', {
+          value: activity.new_value || t('recruiterApplicationDetail.candidateLabel'),
+        });
       case 'interview_rescheduled':
-        return `Interview rescheduled to ${activity.new_value || 'candidate'}`;
+        return t('recruiterApplicationDetail.activity.interviewRescheduled', {
+          value: activity.new_value || t('recruiterApplicationDetail.candidateLabel'),
+        });
       case 'interview_cancelled':
-        return 'Interview cancelled';
+        return t('recruiterApplicationDetail.activity.interviewCancelled');
       case 'interview_completed':
-        return 'Interview marked as completed';
+        return t('recruiterApplicationDetail.activity.interviewCompleted');
       case 'interview_no_show':
-        return 'Candidate marked as no-show';
+        return t('recruiterApplicationDetail.activity.interviewNoShow');
       case 'interview_confirmation_sent':
-        return 'Interview confirmation sent';
+        return t('recruiterApplicationDetail.activity.interviewConfirmationSent');
       case 'interview_reschedule_sent':
-        return 'Interview reschedule notice sent';
+        return t('recruiterApplicationDetail.activity.interviewRescheduleSent');
       case 'interview_cancel_notice_sent':
-        return 'Interview cancellation notice sent';
+        return t('recruiterApplicationDetail.activity.interviewCancelNoticeSent');
       case 'interview_reminder_sent':
-        return 'Interview reminder sent';
+        return t('recruiterApplicationDetail.activity.interviewReminderSent');
       case 'interview_candidate_confirmed':
-        return 'Candidate confirmed interview attendance';
+        return t('recruiterApplicationDetail.activity.interviewCandidateConfirmed');
       case 'interview_candidate_declined':
-        return 'Candidate declined the interview slot';
+        return t('recruiterApplicationDetail.activity.interviewCandidateDeclined');
       case 'interview_completion_followup_sent':
-        return 'Completed interview follow-up sent';
+        return t('recruiterApplicationDetail.activity.interviewCompletionFollowupSent');
       case 'interview_no_show_followup_sent':
-        return 'No-show follow-up sent';
+        return t('recruiterApplicationDetail.activity.interviewNoShowFollowupSent');
       case 'rating_changed':
-        return `Rating changed to ${activity.new_value} stars`;
+        return t('recruiterApplicationDetail.activity.ratingChanged', {
+          stars: activity.new_value || 0,
+        });
       case 'viewed':
-        return 'Application viewed';
+        return t('recruiterApplicationDetail.activity.viewed');
       case 'pinned':
-        return 'Application pinned';
+        return t('recruiterApplicationDetail.activity.pinned');
       case 'unpinned':
-        return 'Application unpinned';
+        return t('recruiterApplicationDetail.activity.unpinned');
       case 'ai_analyzed':
-        return 'AI analysis completed';
+        return t('recruiterApplicationDetail.activity.aiAnalyzed');
       default:
         return activity.action;
     }
@@ -1202,7 +1302,7 @@ export default function ApplicationDetailPage({
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
-          <p className="text-gray-400">Loading application...</p>
+          <p className="text-gray-400">{t('recruiterApplicationDetail.loading')}</p>
         </div>
       </div>
     );
@@ -1217,7 +1317,7 @@ export default function ApplicationDetailPage({
     pipelineStages.find((stage) => stage.orderIndex > (currentStage?.orderIndex || 0)) || null;
   const decisionTone = getDecisionTone(application.decision_status || 'active');
   const eligibilityReasons = normalizeEligibilityReasons(application.eligibility_reasons);
-  const eligibilityTone = getEligibilityTone(application.eligibility_status);
+  const eligibilityTone = getEligibilityTone(application.eligibility_status, t);
   const upcomingInterviews = interviews.filter((item) => item.status === 'scheduled');
   const openInterviewSlots = interviewSlots.filter((slot) => slot.status === 'available');
   const applicantName = getApplicantName(application.profiles);
@@ -1226,30 +1326,33 @@ export default function ApplicationDetailPage({
   const whatsappNumber = normalizePhoneForWhatsapp(applicantPhone);
   const recruiterMessageTemplates = [
     {
-      label: 'Intro message',
+      label: t('recruiterApplicationDetail.messageTemplate.intro'),
       draft: buildRecruiterTemplateMessage({
         applicantName,
-        jobTitle: application.jobs?.title || 'this role',
+        jobTitle: application.jobs?.title || t('recruiterApplications.roleFallback'),
         companyName: application.jobs?.company_name,
         purpose: 'initial_contact',
+        locale,
       }),
     },
     {
-      label: 'Phone screen',
+      label: t('recruiterApplicationDetail.messageTemplate.phoneScreen'),
       draft: buildRecruiterTemplateMessage({
         applicantName,
-        jobTitle: application.jobs?.title || 'this role',
+        jobTitle: application.jobs?.title || t('recruiterApplications.roleFallback'),
         companyName: application.jobs?.company_name,
         purpose: 'phone_screen',
+        locale,
       }),
     },
     {
-      label: 'Request update',
+      label: t('recruiterApplicationDetail.messageTemplate.requestUpdate'),
       draft: buildRecruiterTemplateMessage({
         applicantName,
-        jobTitle: application.jobs?.title || 'this role',
+        jobTitle: application.jobs?.title || t('recruiterApplications.roleFallback'),
         companyName: application.jobs?.company_name,
         purpose: 'document_request',
+        locale,
       }),
     },
   ];
@@ -1257,13 +1360,14 @@ export default function ApplicationDetailPage({
     aiInsights?.status === 'completed'
       ? getRecruiterDecisionSupport({
           applicantName,
-          jobTitle: application.jobs?.title || 'this role',
+          jobTitle: application.jobs?.title || t('recruiterApplications.roleFallback'),
           companyName: application.jobs?.company_name,
           matchScore: aiInsights.match_score,
           strengths: aiInsights.strengths,
           gaps: aiInsights.gaps,
           eligibilityStatus: application.eligibility_status,
           decisionStatus: application.decision_status,
+          locale,
         })
       : null;
 
@@ -1287,35 +1391,43 @@ export default function ApplicationDetailPage({
       <div className="flex items-start justify-between">
         <div>
           <Link
-            href="/dashboard/recruiter/applications"
+            href={localize('/dashboard/recruiter/applications')}
             className="text-gray-400 hover:text-white text-sm mb-2 inline-flex items-center gap-1"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Back to Applications
+            {t('recruiterApplicationDetail.backToApplications')}
           </Link>
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold text-white">
               {applicantName}
             </h1>
             <StageBadge
-              label={currentStage?.label || 'Unassigned'}
+              label={currentStage?.label || t('recruiterApplications.unassigned')}
               stageType={currentStage?.stageType || 'applied'}
             />
             <span
               className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${decisionTone.bg} ${decisionTone.text} ${decisionTone.border}`}
             >
-              Decision: {formatDecisionLabel(application.decision_status || 'active')}
+              {t('recruiterApplicationDetail.decisionLabel', {
+                status: getLocalizedDecisionLabel(application.decision_status || 'active', t),
+              })}
             </span>
           </div>
           <p className="text-gray-400 mt-1">
-            Applied for {application.jobs?.title} on{' '}
-            {new Date(application.created_at).toLocaleDateString()}
+            {t('recruiterApplicationDetail.appliedFor', {
+              title: application.jobs?.title || t('recruiterApplications.roleFallback'),
+              date: formatLocalizedDate(application.created_at, locale) || application.created_at,
+            })}
           </p>
           {application.stage_entered_at && (
             <p className="mt-1 text-xs text-gray-500">
-              Current stage since {new Date(application.stage_entered_at).toLocaleString()}
+              {t('recruiterApplicationDetail.stageSince', {
+                date:
+                  formatLocalizedDateTime(application.stage_entered_at, locale) ||
+                  application.stage_entered_at,
+              })}
             </p>
           )}
         </div>
@@ -1327,7 +1439,7 @@ export default function ApplicationDetailPage({
                 ? 'bg-yellow-600 text-white'
                 : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
             }`}
-            title={application.is_pinned ? 'Unpin' : 'Pin'}
+            title={application.is_pinned ? t('recruiterApplicationDetail.unpin') : t('recruiterApplicationDetail.pin')}
           >
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
               <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
@@ -1343,7 +1455,7 @@ export default function ApplicationDetailPage({
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              View CV
+              {t('recruiterApplicationDetail.viewCv')}
             </a>
           )}
         </div>
@@ -1354,12 +1466,15 @@ export default function ApplicationDetailPage({
         <div className="lg:col-span-2 space-y-6">
           {/* Applicant Info */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Applicant Information</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.applicantInformation')}</h2>
             <div className="flex items-start gap-4">
               {application.profiles?.avatar_url ? (
-                <img
+                <Image
                   src={application.profiles.avatar_url}
                   alt=""
+                  width={80}
+                  height={80}
+                  unoptimized
                   className="w-20 h-20 rounded-full object-cover"
                 />
               ) : (
@@ -1397,14 +1512,14 @@ export default function ApplicationDetailPage({
                     )}
                     className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-medium text-white hover:bg-sky-700"
                   >
-                    Message in JobLinca
+                    {t('recruiterApplicationDetail.messageInInbox')}
                   </Link>
                   {applicantPhone && (
                     <a
                       href={`tel:${applicantPhone}`}
                       className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-medium text-gray-100 hover:bg-gray-600"
                     >
-                      Call candidate
+                      {t('recruiterApplicationDetail.callCandidate')}
                     </a>
                   )}
                   {whatsappNumber && (
@@ -1419,10 +1534,16 @@ export default function ApplicationDetailPage({
                   )}
                   {applicantEmail && (
                     <a
-                      href={`mailto:${applicantEmail}?subject=${encodeURIComponent(`Application update: ${application.jobs?.title || 'JobLinca role'}`)}&body=${encodeURIComponent(recruiterMessageTemplates[2].draft)}`}
+                      href={`mailto:${applicantEmail}?subject=${encodeURIComponent(
+                        t('recruiterApplicationDetail.emailSubject', {
+                          title:
+                            application.jobs?.title ||
+                            t('recruiterApplications.roleFallback'),
+                        })
+                      )}&body=${encodeURIComponent(recruiterMessageTemplates[2].draft)}`}
                       className="rounded-lg bg-gray-700 px-3 py-2 text-sm font-medium text-gray-100 hover:bg-gray-600"
                     >
-                      Email
+                      {t('recruiterApplicationDetail.email')}
                     </a>
                   )}
                 </div>
@@ -1444,9 +1565,11 @@ export default function ApplicationDetailPage({
           <div className="bg-gray-800 rounded-xl p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">Eligibility Snapshot</h2>
+                <h2 className="text-lg font-semibold text-white">
+                  {t('recruiterApplicationDetail.eligibilityTitle')}
+                </h2>
                 <p className="mt-1 text-sm text-gray-400">
-                  Stored from the candidate&apos;s submission so recruiters can see profile gaps and strong signals immediately.
+                  {t('recruiterApplicationDetail.eligibilitySubtitle')}
                 </p>
               </div>
               <span
@@ -1461,8 +1584,13 @@ export default function ApplicationDetailPage({
             >
               <p className="text-sm">
                 {application.eligibility_status
-                  ? `Eligibility status recorded as ${application.eligibility_status.replace('_', ' ')} when the candidate submitted this application.`
-                  : 'This application predates the new eligibility capture flow or was submitted without eligibility diagnostics.'}
+                  ? t('recruiterApplicationDetail.eligibilityRecordedStatus', {
+                      status: getLocalizedEligibilityStatusLabel(
+                        application.eligibility_status,
+                        t
+                      ),
+                    })
+                  : t('recruiterApplicationDetail.eligibilityMissingDiagnostics')}
               </p>
             </div>
 
@@ -1473,7 +1601,9 @@ export default function ApplicationDetailPage({
               <div className="mt-5 grid gap-4 md:grid-cols-2">
                 {eligibilityReasons.blockingReasons.length > 0 && (
                   <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
-                    <h3 className="text-sm font-medium text-red-200">Blocking reasons</h3>
+                    <h3 className="text-sm font-medium text-red-200">
+                      {t('recruiterApplicationDetail.blockingReasons')}
+                    </h3>
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-red-100/90">
                       {eligibilityReasons.blockingReasons.map((reason) => (
                         <li key={reason}>{reason}</li>
@@ -1484,7 +1614,9 @@ export default function ApplicationDetailPage({
 
                 {eligibilityReasons.missingProfileFields.length > 0 && (
                   <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
-                    <h3 className="text-sm font-medium text-amber-200">Missing profile fields</h3>
+                    <h3 className="text-sm font-medium text-amber-200">
+                      {t('recruiterApplicationDetail.missingProfileFields')}
+                    </h3>
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-amber-100/90">
                       {eligibilityReasons.missingProfileFields.map((field) => (
                         <li key={field}>{field}</li>
@@ -1495,7 +1627,9 @@ export default function ApplicationDetailPage({
 
                 {eligibilityReasons.recommendedProfileUpdates.length > 0 && (
                   <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-                    <h3 className="text-sm font-medium text-blue-200">Recommended updates</h3>
+                    <h3 className="text-sm font-medium text-blue-200">
+                      {t('recruiterApplicationDetail.recommendedUpdates')}
+                    </h3>
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-blue-100/90">
                       {eligibilityReasons.recommendedProfileUpdates.map((item) => (
                         <li key={item}>{item}</li>
@@ -1506,7 +1640,9 @@ export default function ApplicationDetailPage({
 
                 {eligibilityReasons.matchedSignals.length > 0 && (
                   <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
-                    <h3 className="text-sm font-medium text-emerald-200">Matched signals</h3>
+                    <h3 className="text-sm font-medium text-emerald-200">
+                      {t('recruiterApplicationDetail.matchedSignals')}
+                    </h3>
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-emerald-100/90">
                       {eligibilityReasons.matchedSignals.map((signal) => (
                         <li key={signal}>{signal}</li>
@@ -1517,7 +1653,7 @@ export default function ApplicationDetailPage({
               </div>
             ) : (
               <div className="mt-5 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
-                No detailed eligibility reasons were stored for this application.
+                {t('recruiterApplicationDetail.noEligibilityReasons')}
               </div>
             )}
           </div>
@@ -1525,9 +1661,11 @@ export default function ApplicationDetailPage({
           <div className="bg-gray-800 rounded-xl p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">Hiring Pipeline</h2>
+                <h2 className="text-lg font-semibold text-white">
+                  {t('recruiterApplicationDetail.hiringPipelineTitle')}
+                </h2>
                 <p className="mt-1 text-sm text-gray-400">
-                  Current stage, pipeline progress, and movement history.
+                  {t('recruiterApplicationDetail.hiringPipelineSubtitle')}
                 </p>
               </div>
               {currentStage && (
@@ -1540,7 +1678,9 @@ export default function ApplicationDetailPage({
               className="mt-5"
             />
             <div className="mt-6">
-              <h3 className="text-sm font-medium text-gray-300 mb-3">Stage Timeline</h3>
+              <h3 className="text-sm font-medium text-gray-300 mb-3">
+                {t('recruiterApplicationDetail.stageTimeline')}
+              </h3>
               <StageTimeline events={stageEvents} />
             </div>
           </div>
@@ -1549,15 +1689,17 @@ export default function ApplicationDetailPage({
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-white">
-                  {editingInterviewId ? 'Interview Reschedule' : 'Interview Scheduling'}
+                  {editingInterviewId
+                    ? t('recruiterApplicationDetail.interviewReschedule')
+                    : t('recruiterApplicationDetail.interviewScheduling')}
                 </h2>
                 <p className="mt-1 text-sm text-gray-400">
-                  Schedule interviews, move candidates into the interview stage, and send confirmations from the ATS.
+                  {t('recruiterApplicationDetail.scheduleSectionSubtitle')}
                 </p>
               </div>
               <div className="rounded-xl border border-gray-700 bg-gray-900/40 px-4 py-3 text-right">
                 <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-                  Recruiter timezone
+                  {t('recruiterApplicationDetail.recruiterTimezone')}
                 </p>
                 <p className="mt-2 text-sm font-medium text-gray-200">{recruiterTimezone}</p>
               </div>
@@ -1578,7 +1720,7 @@ export default function ApplicationDetailPage({
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Interview date and time
+                  {t('recruiterApplicationDetail.interviewDateTime')}
                 </label>
                 <input
                   type="datetime-local"
@@ -1589,14 +1731,14 @@ export default function ApplicationDetailPage({
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Slot template
+                  {t('recruiterApplicationDetail.slotTemplate')}
                 </label>
                 <select
                   value={selectedSlotTemplateId}
                   onChange={(event) => handleTemplateSelect(event.target.value)}
                   className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="">No template</option>
+                  <option value="">{t('recruiterApplicationDetail.noTemplate')}</option>
                   {selfScheduleSettings.slotTemplates.map((template) => (
                     <option key={template.id} value={template.id}>
                       {template.name}
@@ -1604,12 +1746,12 @@ export default function ApplicationDetailPage({
                   ))}
                 </select>
                 <p className="mt-2 text-xs text-gray-500">
-                  Templates prefill mode, meeting link, and candidate instructions.
+                  {t('recruiterApplicationDetail.templateHelp')}
                 </p>
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Interview mode
+                  {t('recruiterApplicationDetail.interviewMode')}
                 </label>
                 <select
                   value={interviewMode}
@@ -1620,27 +1762,27 @@ export default function ApplicationDetailPage({
                   }
                   className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="video">Video call</option>
-                  <option value="phone">Phone call</option>
-                  <option value="onsite">On-site</option>
-                  <option value="other">Other</option>
+                  <option value="video">{translateInterviewMode(t, 'video')}</option>
+                  <option value="phone">{translateInterviewMode(t, 'phone')}</option>
+                  <option value="onsite">{translateInterviewMode(t, 'onsite')}</option>
+                  <option value="other">{translateInterviewMode(t, 'other')}</option>
                 </select>
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Location or call notes
+                  {t('recruiterApplicationDetail.locationOrNotes')}
                 </label>
                 <input
                   type="text"
                   value={interviewLocation}
                   onChange={(event) => setInterviewLocation(event.target.value)}
-                  placeholder="Office address, room, or call instructions"
+                  placeholder={t('recruiterApplicationDetail.locationOrNotesPlaceholder')}
                   className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
                 />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Meeting URL
+                  {t('recruiterApplicationDetail.meetingUrl')}
                 </label>
                 <input
                   type="url"
@@ -1654,31 +1796,35 @@ export default function ApplicationDetailPage({
 
             <div className="mt-4 rounded-xl border border-gray-700 bg-gray-900/35 p-4 text-sm text-gray-300">
               <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-                Self-schedule policy
+                {t('recruiterApplicationDetail.selfSchedulePolicy')}
               </p>
               <p className="mt-2">
-                Timezone:{' '}
+                {t('recruiterApplicationDetail.timezone')}:{' '}
                 <span className="font-medium text-white">
                   {selfScheduleSettings.timezone}
                 </span>
               </p>
               <p className="mt-1">
-                Minimum notice:{' '}
+                {t('recruiterApplicationDetail.minimumNotice')}:{' '}
                 <span className="font-medium text-white">
-                  {selfScheduleSettings.minimumNoticeHours} hours
+                  {t('recruiterApplicationDetail.hoursNotice', {
+                    count: selfScheduleSettings.minimumNoticeHours,
+                  })}
                 </span>
               </p>
               <p className="mt-1">
-                Slot interval:{' '}
+                {t('recruiterApplicationDetail.slotInterval')}:{' '}
                 <span className="font-medium text-white">
-                  {selfScheduleSettings.slotIntervalMinutes} minutes
+                  {t('recruiterApplicationDetail.minuteInterval', {
+                    count: selfScheduleSettings.slotIntervalMinutes,
+                  })}
                 </span>
               </p>
               <p className="mt-1 text-gray-400">
-                {formatWeeklyAvailabilitySummary(selfScheduleSettings)}
+                {formatWeeklyAvailabilitySummaryLocalized(t, selfScheduleSettings)}
               </p>
               <p className="mt-1 text-gray-400">
-                {formatBlackoutDateSummary(selfScheduleSettings)}
+                {formatBlackoutDateSummaryLocalized(t, locale, selfScheduleSettings)}
               </p>
             </div>
 
@@ -1686,21 +1832,21 @@ export default function ApplicationDetailPage({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-medium text-indigo-100">
-                    Generate slots from range
+                    {t('recruiterApplicationDetail.generateSlotsTitle')}
                   </h3>
                   <p className="mt-1 text-sm text-indigo-100/80">
-                    Creates one slot per enabled day in the selected range using the template and weekly start times.
+                    {t('recruiterApplicationDetail.generateSlotsDescription')}
                   </p>
                 </div>
                 <span className="rounded-full border border-indigo-400/30 px-3 py-1 text-xs font-medium text-indigo-100">
-                  Policy-driven
+                  {t('recruiterApplicationDetail.policyDriven')}
                 </span>
               </div>
 
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Range start
+                    {t('recruiterApplicationDetail.rangeStart')}
                   </label>
                   <input
                     type="date"
@@ -1711,7 +1857,7 @@ export default function ApplicationDetailPage({
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-gray-300">
-                    Range end
+                    {t('recruiterApplicationDetail.rangeEnd')}
                   </label>
                   <input
                     type="date"
@@ -1734,20 +1880,22 @@ export default function ApplicationDetailPage({
                   }
                   className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {generatingSlots ? 'Generating...' : 'Generate range slots'}
+                  {generatingSlots
+                    ? t('recruiterApplicationDetail.generating')
+                    : t('recruiterApplicationDetail.generateRangeSlots')}
                 </button>
               </div>
             </div>
 
             <div className="mt-4">
               <label className="mb-2 block text-sm font-medium text-gray-400">
-                Candidate instructions
+                {t('recruiterApplicationDetail.candidateInstructions')}
               </label>
               <textarea
                 value={interviewNotes}
                 onChange={(event) => setInterviewNotes(event.target.value)}
                 rows={3}
-                placeholder="Anything the candidate should prepare or bring"
+                placeholder={t('recruiterApplicationDetail.candidateInstructionsPlaceholder')}
                 className="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -1761,8 +1909,8 @@ export default function ApplicationDetailPage({
                   className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
                 />
                 <span>
-                  <span className="block font-medium text-white">Send confirmation now</span>
-                  Email and WhatsApp are sent when channels are available.
+                  <span className="block font-medium text-white">{t('recruiterApplicationDetail.sendConfirmationNow')}</span>
+                  {t('recruiterApplicationDetail.sendConfirmationDescription')}
                 </span>
               </label>
               <label className="flex items-start gap-3 rounded-xl border border-gray-700 bg-gray-900/35 px-4 py-3 text-sm text-gray-300">
@@ -1773,8 +1921,8 @@ export default function ApplicationDetailPage({
                   className="mt-1 h-4 w-4 rounded border-gray-500 bg-gray-700 text-blue-500 focus:ring-blue-500"
                 />
                 <span>
-                  <span className="block font-medium text-white">Move candidate to interview stage</span>
-                  Uses the first interview stage configured on this job.
+                  <span className="block font-medium text-white">{t('recruiterApplicationDetail.moveCandidateToInterview')}</span>
+                  {t('recruiterApplicationDetail.moveCandidateToInterviewDescription')}
                 </span>
               </label>
             </div>
@@ -1786,7 +1934,7 @@ export default function ApplicationDetailPage({
                     onClick={resetInterviewForm}
                     className="rounded-lg bg-gray-700 px-4 py-2 text-gray-100 hover:bg-gray-600"
                   >
-                    Cancel edit
+                    {t('recruiterApplicationDetail.cancelEdit')}
                   </button>
                 )}
                 <button
@@ -1794,7 +1942,9 @@ export default function ApplicationDetailPage({
                   disabled={!interviewDateTime || schedulingInterview || Boolean(editingInterviewId)}
                   className="rounded-lg bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50"
                 >
-                  {schedulingInterview ? 'Saving...' : 'Add self-schedule slot'}
+                  {schedulingInterview
+                    ? t('recruiterApplicationDetail.saving')
+                    : t('recruiterApplicationDetail.addSelfScheduleSlot')}
                 </button>
                 <button
                   onClick={handleScheduleInterview}
@@ -1803,25 +1953,27 @@ export default function ApplicationDetailPage({
                 >
                   {schedulingInterview
                     ? editingInterviewId
-                      ? 'Saving...'
-                      : 'Scheduling...'
+                      ? t('recruiterApplicationDetail.saving')
+                      : t('recruiterApplicationDetail.scheduling')
                     : editingInterviewId
-                      ? 'Save interview changes'
-                      : 'Schedule interview'}
+                      ? t('recruiterApplicationDetail.saveInterviewChanges')
+                      : t('recruiterApplicationDetail.scheduleInterview')}
                 </button>
               </div>
             </div>
 
             <div className="mt-6">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium text-gray-300">Interview history</h3>
+                <h3 className="text-sm font-medium text-gray-300">{t('recruiterApplicationDetail.interviewHistory')}</h3>
                 <span className="text-xs text-gray-500">
-                  {upcomingInterviews.length} upcoming
+                  {t('recruiterApplicationDetail.upcomingCount', {
+                    count: upcomingInterviews.length,
+                  })}
                 </span>
               </div>
               {interviews.length === 0 ? (
                 <div className="mt-3 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
-                  No interviews scheduled yet.
+                  {t('recruiterApplicationDetail.noInterviews')}
                 </div>
               ) : (
                 <div className="mt-3 space-y-3">
@@ -1833,20 +1985,21 @@ export default function ApplicationDetailPage({
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-white">
-                            {formatInterviewDateTimeLabel(
+                            {formatLocalizedDateTime(
                               interview.scheduledAt,
+                              locale,
                               interview.timezone
                             )}
                           </p>
                           <p className="mt-1 text-sm text-gray-400">
-                            {getInterviewModeLabel(interview.mode)}
+                            {translateInterviewMode(t, interview.mode)}
                             {interview.location ? ` · ${interview.location}` : ''}
                           </p>
                         </div>
                         <span
                           className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getInterviewStatusTone(interview.status)}`}
                         >
-                          {getInterviewStatusLabel(interview.status)}
+                          {translateInterviewStatus(t, interview.status)}
                         </span>
                       </div>
                       {interview.meetingUrl && (
@@ -1856,7 +2009,7 @@ export default function ApplicationDetailPage({
                           rel="noopener noreferrer"
                           className="mt-3 inline-flex text-sm text-blue-400 hover:text-blue-300"
                         >
-                          Open meeting link
+                          {t('applicationCard.openMeetingLink')}
                         </a>
                       )}
                       {interview.status === 'scheduled' && (
@@ -1865,7 +2018,7 @@ export default function ApplicationDetailPage({
                           scheduledAt={interview.scheduledAt}
                           jobTitle={application?.jobs?.title}
                           companyName={application?.jobs?.company_name}
-                          modeLabel={getInterviewModeLabel(interview.mode)}
+                          modeLabel={translateInterviewMode(t, interview.mode)}
                           location={interview.location}
                           meetingUrl={interview.meetingUrl}
                           notes={interview.notes}
@@ -1878,27 +2031,38 @@ export default function ApplicationDetailPage({
                       )}
                       <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
                         <span>
-                          Last notice:{' '}
+                          {t('recruiterApplicationDetail.lastNotice')}:{' '}
                           {interview.confirmationSentAt
-                            ? new Date(interview.confirmationSentAt).toLocaleString()
-                            : 'pending'}
+                            ? formatLocalizedDateTime(interview.confirmationSentAt, locale)
+                            : t('recruiterApplicationDetail.pending')}
                         </span>
                         <span>
-                          Reminder:{' '}
+                          {t('recruiterApplicationDetail.reminder')}:{' '}
                           {interview.reminderSentAt
-                            ? new Date(interview.reminderSentAt).toLocaleString()
-                            : 'pending'}
+                            ? formatLocalizedDateTime(interview.reminderSentAt, locale)
+                            : t('recruiterApplicationDetail.pending')}
                         </span>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <span
                           className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getInterviewResponseTone(interview.candidateResponseStatus)}`}
                         >
-                          Candidate: {getInterviewResponseStatusLabel(interview.candidateResponseStatus)}
+                          {t('recruiterApplicationDetail.candidateResponse', {
+                            status: translateInterviewResponseStatus(
+                              t,
+                              interview.candidateResponseStatus
+                            ),
+                          })}
                         </span>
                         {interview.candidateRespondedAt && (
                           <span className="text-xs text-gray-500">
-                            Updated {new Date(interview.candidateRespondedAt).toLocaleString()}
+                            {t('recruiterApplicationDetail.updatedAt', {
+                              date:
+                                formatLocalizedDateTime(
+                                  interview.candidateRespondedAt,
+                                  locale
+                                ) || interview.candidateRespondedAt,
+                            })}
                           </span>
                         )}
                       </div>
@@ -1914,7 +2078,7 @@ export default function ApplicationDetailPage({
                               onClick={() => handleEditInterview(interview)}
                               className="rounded-lg bg-gray-700 px-3 py-1.5 text-xs text-gray-100 hover:bg-gray-600"
                             >
-                              Edit / reschedule
+                              {t('recruiterApplicationDetail.editReschedule')}
                             </button>
                             <button
                               onClick={() =>
@@ -1923,7 +2087,7 @@ export default function ApplicationDetailPage({
                               disabled={updatingInterviewId === interview.id}
                               className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 disabled:opacity-50"
                             >
-                              Mark completed
+                              {t('recruiterApplicationDetail.markCompleted')}
                             </button>
                             <button
                               onClick={() =>
@@ -1932,7 +2096,7 @@ export default function ApplicationDetailPage({
                               disabled={updatingInterviewId === interview.id}
                               className="rounded-lg bg-amber-600 px-3 py-1.5 text-xs text-white hover:bg-amber-700 disabled:opacity-50"
                             >
-                              Mark no-show
+                              {t('recruiterApplicationDetail.markNoShow')}
                             </button>
                             <button
                               onClick={() =>
@@ -1941,7 +2105,7 @@ export default function ApplicationDetailPage({
                               disabled={updatingInterviewId === interview.id}
                               className="rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700 disabled:opacity-50"
                             >
-                              Cancel interview
+                              {t('recruiterApplicationDetail.cancelInterview')}
                             </button>
                           </>
                         )}
@@ -1954,14 +2118,18 @@ export default function ApplicationDetailPage({
 
             <div className="mt-6">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-medium text-gray-300">Self-schedule slots</h3>
+                <h3 className="text-sm font-medium text-gray-300">
+                  {t('recruiterApplicationDetail.selfScheduleSlots')}
+                </h3>
                 <span className="text-xs text-gray-500">
-                  {openInterviewSlots.length} open
+                  {t('recruiterApplicationDetail.openSlotsCount', {
+                    count: openInterviewSlots.length,
+                  })}
                 </span>
               </div>
               {interviewSlots.length === 0 ? (
                 <div className="mt-3 rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
-                  No self-schedule slots created yet.
+                  {t('recruiterApplicationDetail.noSelfScheduleSlots')}
                 </div>
               ) : (
                 <div className="mt-3 space-y-3">
@@ -1973,17 +2141,17 @@ export default function ApplicationDetailPage({
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-white">
-                            {formatInterviewDateTimeLabel(slot.scheduledAt, slot.timezone)}
+                            {formatLocalizedDateTime(slot.scheduledAt, locale, slot.timezone)}
                           </p>
                           <p className="mt-1 text-sm text-gray-400">
-                            {getInterviewModeLabel(slot.mode)}
+                            {translateInterviewMode(t, slot.mode)}
                             {slot.location ? ` | ${slot.location}` : ''}
                           </p>
                         </div>
                         <span
                           className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getInterviewSlotStatusTone(slot.status)}`}
                         >
-                          {getInterviewSlotStatusLabel(slot.status)}
+                          {translateInterviewSlotStatus(t, slot.status)}
                         </span>
                       </div>
 
@@ -1994,7 +2162,7 @@ export default function ApplicationDetailPage({
                           rel="noopener noreferrer"
                           className="mt-3 inline-flex text-sm text-blue-400 hover:text-blue-300"
                         >
-                          Open meeting link
+                          {t('applicationCard.openMeetingLink')}
                         </a>
                       )}
 
@@ -2006,13 +2174,17 @@ export default function ApplicationDetailPage({
 
                       <div className="mt-3 flex flex-wrap gap-3 text-xs text-gray-500">
                         <span>
-                          Invitation:{' '}
+                          {t('recruiterApplicationDetail.invitationStatus')}:{' '}
                           {slot.invitationSentAt
-                            ? new Date(slot.invitationSentAt).toLocaleString()
-                            : 'pending'}
+                            ? formatLocalizedDateTime(
+                                slot.invitationSentAt,
+                                locale,
+                                slot.timezone
+                              )
+                            : t('recruiterApplicationDetail.pending')}
                         </span>
                         {slot.bookedInterviewId && (
-                          <span>Interview created</span>
+                          <span>{t('recruiterApplicationDetail.interviewCreatedFromSlot')}</span>
                         )}
                       </div>
 
@@ -2023,7 +2195,9 @@ export default function ApplicationDetailPage({
                             disabled={updatingSlotId === slot.id}
                             className="rounded-lg bg-red-600 px-3 py-1.5 text-xs text-white hover:bg-red-700 disabled:opacity-50"
                           >
-                            {updatingSlotId === slot.id ? 'Cancelling...' : 'Cancel slot'}
+                            {updatingSlotId === slot.id
+                              ? t('recruiterApplicationDetail.cancelling')
+                              : t('recruiterApplicationDetail.cancelSlot')}
                           </button>
                         </div>
                       )}
@@ -2037,10 +2211,12 @@ export default function ApplicationDetailPage({
           {/* Applicant Learning Badges */}
           {applicantBadges.length > 0 && (
             <div className="bg-gray-800 rounded-xl p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Learning Badges</h2>
+              <h2 className="text-lg font-semibold text-white mb-4">
+                {t('recruiterApplicationDetail.learningBadges')}
+              </h2>
               <BadgeGrid badges={applicantBadges} compact />
               <p className="text-xs text-gray-500 mt-3">
-                Badges earned through Joblinca&apos;s Skill Up learning hub.
+                {t('recruiterApplicationDetail.learningBadgesSubtitle')}
               </p>
             </div>
           )}
@@ -2048,7 +2224,7 @@ export default function ApplicationDetailPage({
           {applicantAchievements.length > 0 && (
             <div className="bg-gray-800 rounded-xl p-6">
               <h2 className="text-lg font-semibold text-white mb-4">
-                Challenge Highlights
+                {t('recruiterApplicationDetail.challengeHighlights')}
               </h2>
               <div className="space-y-3">
                 {applicantAchievements.map((item) => {
@@ -2057,7 +2233,11 @@ export default function ApplicationDetailPage({
                       ? (item.metadata as Record<string, unknown>)
                       : {};
                   const rank =
-                    typeof metadata.rank === 'number' ? `Rank #${metadata.rank}` : null;
+                    typeof metadata.rank === 'number'
+                      ? t('recruiterApplicationDetail.rankLabel', {
+                          rank: metadata.rank,
+                        })
+                      : null;
                   const week =
                     typeof metadata.week_key === 'string'
                       ? metadata.week_key
@@ -2069,7 +2249,8 @@ export default function ApplicationDetailPage({
                         <p className="text-xs text-gray-400 mt-1">{item.description}</p>
                       )}
                       <p className="text-xs text-gray-500 mt-2">
-                        {[rank, week].filter(Boolean).join(' | ') || 'Challenge achievement'}
+                        {[rank, week].filter(Boolean).join(' | ') ||
+                          t('recruiterApplicationDetail.challengeAchievement')}
                       </p>
                     </div>
                   );
@@ -2081,7 +2262,9 @@ export default function ApplicationDetailPage({
           {/* Cover Letter */}
           {application.cover_letter && (
             <div className="bg-gray-800 rounded-xl p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Cover Letter</h2>
+              <h2 className="text-lg font-semibold text-white mb-4">
+                {t('recruiterJobDetail.coverLetter')}
+              </h2>
               <p className="text-gray-300 whitespace-pre-wrap">{application.cover_letter}</p>
             </div>
           )}
@@ -2089,16 +2272,23 @@ export default function ApplicationDetailPage({
           {/* Custom Answers */}
           {application.answers && application.answers.length > 0 && (
             <div className="bg-gray-800 rounded-xl p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Screening Answers</h2>
+              <h2 className="text-lg font-semibold text-white mb-4">
+                {t('recruiterJobDetail.screeningQuestions')}
+              </h2>
               <div className="space-y-4">
                 {application.answers.map((answer: any, index: number) => (
                   <div key={index} className="border-b border-gray-700 pb-4 last:border-0">
                     <p className="text-sm text-gray-400 mb-1">
-                      {answer.question || `Question ${index + 1}`}
+                      {answer.question ||
+                        t('recruiterApplicationDetail.questionLabel', {
+                          count: index + 1,
+                        })}
                     </p>
                     <p className="text-white">
                       {typeof answer.answer === 'boolean'
-                        ? answer.answer ? 'Yes' : 'No'
+                        ? answer.answer
+                          ? t('common.yes')
+                          : t('common.no')
                         : Array.isArray(answer.answer)
                           ? answer.answer.join(', ')
                           : String(answer.answer || '-')}
@@ -2112,9 +2302,11 @@ export default function ApplicationDetailPage({
           <div className="bg-gray-800 rounded-xl p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">Stage Feedback</h2>
+                <h2 className="text-lg font-semibold text-white">
+                  {t('recruiterApplicationDetail.stageFeedbackTitle')}
+                </h2>
                 <p className="mt-1 text-sm text-gray-400">
-                  Capture structured recruiter feedback for the current stage.
+                  {t('recruiterApplicationDetail.stageFeedbackSubtitle')}
                 </p>
               </div>
               {currentStage && (
@@ -2125,7 +2317,7 @@ export default function ApplicationDetailPage({
             <div className="mt-5 grid gap-4 md:grid-cols-3">
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Stage Score
+                  {t('recruiterApplicationDetail.stageScoreTitle')}
                 </label>
                 <input
                   type="number"
@@ -2139,7 +2331,7 @@ export default function ApplicationDetailPage({
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Recommendation
+                  {t('recruiterApplicationDetail.recommendation')}
                 </label>
                 <select
                   value={feedbackRecommendation}
@@ -2150,8 +2342,8 @@ export default function ApplicationDetailPage({
                   }
                   className="w-full rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="">Select recommendation</option>
-                  {FEEDBACK_RECOMMENDATION_OPTIONS.map((option) => (
+                  <option value="">{t('recruiterApplicationDetail.selectRecommendation')}</option>
+                  {feedbackRecommendationOptions.map((option) => (
                     <option key={option.value} value={option.value}>
                       {option.label}
                     </option>
@@ -2160,7 +2352,7 @@ export default function ApplicationDetailPage({
               </div>
               <div className="rounded-xl border border-gray-700 bg-gray-900/35 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-                  Overall stage score
+                  {t('recruiterApplicationDetail.overallStageScore')}
                 </p>
                 <p className="mt-2 text-3xl font-bold text-blue-300">
                   {application.overall_stage_score?.toFixed(1) || '0.0'}
@@ -2170,13 +2362,13 @@ export default function ApplicationDetailPage({
 
             <div className="mt-4">
               <label className="mb-2 block text-sm font-medium text-gray-400">
-                Feedback Summary
+                {t('recruiterApplicationDetail.feedbackSummary')}
               </label>
               <textarea
                 value={feedbackSummary}
                 onChange={(event) => setFeedbackSummary(event.target.value)}
                 rows={4}
-                placeholder="What did you observe at this stage?"
+                placeholder={t('recruiterApplicationDetail.feedbackPlaceholder')}
                 className="w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
               />
             </div>
@@ -2187,15 +2379,17 @@ export default function ApplicationDetailPage({
                 disabled={savingFeedback}
                 className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {savingFeedback ? 'Saving...' : 'Save Stage Feedback'}
+                {savingFeedback
+                  ? t('recruiterApplicationDetail.saving')
+                  : t('recruiterApplicationDetail.saveStageFeedback')}
               </button>
             </div>
 
             <div className="mt-6">
-              <h3 className="text-sm font-medium text-gray-300 mb-3">Feedback History</h3>
+              <h3 className="text-sm font-medium text-gray-300 mb-3">{t('recruiterApplicationDetail.feedbackHistory')}</h3>
               {stageFeedback.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-sm text-gray-400">
-                  No structured feedback submitted yet.
+                  {t('recruiterApplicationDetail.noFeedbackHistory')}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2213,12 +2407,14 @@ export default function ApplicationDetailPage({
                         )}
                         {typeof item.score === 'number' && (
                           <span className="text-sm font-semibold text-blue-300">
-                            Score {item.score.toFixed(1)}
+                            {t('recruiterApplicationDetail.scoreValue', {
+                              score: item.score.toFixed(1),
+                            })}
                           </span>
                         )}
                         {item.recommendation && (
                           <span className="text-sm text-gray-300">
-                            {getRecommendationLabel(item.recommendation)}
+                            {getLocalizedFeedbackRecommendationLabel(item.recommendation, t)}
                           </span>
                         )}
                       </div>
@@ -2228,7 +2424,7 @@ export default function ApplicationDetailPage({
                         </p>
                       )}
                       <p className="mt-3 text-xs text-gray-500">
-                        {new Date(item.createdAt).toLocaleString()}
+                        {formatLocalizedDateTime(item.createdAt, locale)}
                       </p>
                     </div>
                   ))}
@@ -2241,9 +2437,9 @@ export default function ApplicationDetailPage({
           <div className="bg-gray-800 rounded-xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold text-white">AI Recruiter Assistant</h2>
+                <h2 className="text-lg font-semibold text-white">{t('recruiterApplicationDetail.aiAssistant')}</h2>
                 <p className="mt-1 text-sm text-gray-400">
-                  Plain-language hiring guidance built from the submitted application.
+                  {t('recruiterApplicationDetail.aiAssistantSubtitle')}
                 </p>
               </div>
               <button
@@ -2254,12 +2450,12 @@ export default function ApplicationDetailPage({
                 {analyzingAI ? (
                   <>
                     <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-                    Analyzing...
+                    {t('recruiterApplicationDetail.analyzing')}
                   </>
                 ) : aiInsights?.status === 'completed' ? (
-                  'Re-analyze'
+                  t('recruiterApplicationDetail.reanalyze')
                 ) : (
-                  'Analyze with AI'
+                  t('recruiterApplicationDetail.analyzeWithAi')
                 )}
               </button>
             </div>
@@ -2297,12 +2493,12 @@ export default function ApplicationDetailPage({
                         )}
                         className="rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white hover:bg-purple-700"
                       >
-                        Use in inbox
+                        {t('recruiterApplicationDetail.useInInbox')}
                       </Link>
                     </div>
                     <div className="mt-4 rounded-lg bg-gray-900/50 p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-                        Suggested recruiter message
+                        {t('recruiterApplicationDetail.suggestedRecruiterMessage')}
                       </p>
                       <p className="mt-3 whitespace-pre-wrap text-sm text-gray-200">
                         {recruiterAiSupport.suggestedMessage}
@@ -2312,14 +2508,14 @@ export default function ApplicationDetailPage({
                           onClick={handleCopyAssistantMessage}
                           className="rounded-lg bg-gray-700 px-3 py-2 text-xs font-medium text-gray-100 hover:bg-gray-600"
                         >
-                          {copiedAssistantMessage ? 'Copied' : 'Copy message'}
+                          {copiedAssistantMessage ? t('common.copied') : t('recruiterApplicationDetail.copyMessage')}
                         </button>
                         <button
                           onClick={() => handleStageMoveByKey('interview')}
                           disabled={movingStage}
                           className="rounded-lg bg-gray-700 px-3 py-2 text-xs font-medium text-gray-100 hover:bg-gray-600 disabled:opacity-50"
                         >
-                          Move to interview
+                          {t('recruiterApplicationDetail.moveToInterview')}
                         </button>
                       </div>
                     </div>
@@ -2340,14 +2536,14 @@ export default function ApplicationDetailPage({
                     >
                       {aiInsights.match_score}%
                     </div>
-                    <p className="text-gray-400">Match Score</p>
+                    <p className="text-gray-400">{t('recruiterApplicationDetail.matchScore')}</p>
                   </div>
                 )}
 
                 {/* Strengths */}
                 {aiInsights.strengths && aiInsights.strengths.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-medium text-green-400 mb-2">Strengths</h3>
+                    <h3 className="text-sm font-medium text-green-400 mb-2">{t('recruiterApplicationDetail.strengths')}</h3>
                     <ul className="space-y-1">
                       {aiInsights.strengths.map((s, i) => (
                         <li key={i} className="text-gray-300 flex items-start gap-2">
@@ -2364,7 +2560,7 @@ export default function ApplicationDetailPage({
                 {/* Gaps */}
                 {aiInsights.gaps && aiInsights.gaps.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-medium text-yellow-400 mb-2">Areas to Consider</h3>
+                    <h3 className="text-sm font-medium text-yellow-400 mb-2">{t('recruiterApplicationDetail.areasToConsider')}</h3>
                     <ul className="space-y-1">
                       {aiInsights.gaps.map((g, i) => (
                         <li key={i} className="text-gray-300 flex items-start gap-2">
@@ -2381,43 +2577,45 @@ export default function ApplicationDetailPage({
                 {/* Reasoning */}
                 {aiInsights.reasoning && (
                   <div>
-                    <h3 className="text-sm font-medium text-gray-400 mb-2">Analysis</h3>
+                    <h3 className="text-sm font-medium text-gray-400 mb-2">
+                      {t('recruiterApplicationDetail.analysisLabel')}
+                    </h3>
                     <p className="text-gray-300">{aiInsights.reasoning}</p>
                   </div>
                 )}
 
                 <p className="text-xs text-gray-500 mt-4">
-                  AI suggestions are assistive only and should not be used as the sole basis for hiring decisions.
+                  {t('recruiterApplicationDetail.analysisDisclaimer')}
                 </p>
               </div>
             ) : aiInsights?.status === 'failed' ? (
               <div className="text-center py-8">
-                <p className="text-red-400 mb-2">Analysis failed</p>
+                <p className="text-red-400 mb-2">{t('recruiterApplicationDetail.analysisFailed')}</p>
                 <p className="text-sm text-gray-400">{aiInsights.error_message}</p>
               </div>
             ) : aiInsights?.status === 'processing' ? (
               <div className="text-center py-8">
                 <div className="animate-spin w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full mx-auto mb-4" />
-                <p className="text-gray-400">Analysis in progress...</p>
+                <p className="text-gray-400">{t('recruiterApplicationDetail.analysisInProgress')}</p>
               </div>
             ) : (
               <div className="text-center py-8 text-gray-400">
-                <p>No AI analysis yet.</p>
-                <p className="text-sm mt-1">Click the button above to analyze this application.</p>
+                <p>{t('recruiterApplicationDetail.noAiAnalysis')}</p>
+                <p className="text-sm mt-1">{t('recruiterApplicationDetail.noAiAnalysisHelp')}</p>
               </div>
             )}
           </div>
 
           {/* Notes */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Notes</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.notes')}</h2>
 
             {/* Add Note Form */}
             <div className="mb-6">
               <textarea
                 value={newNote}
                 onChange={(e) => setNewNote(e.target.value)}
-                placeholder="Add a note about this candidate..."
+                placeholder={t('recruiterApplicationDetail.notePlaceholder')}
                 rows={3}
                 className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               />
@@ -2427,21 +2625,23 @@ export default function ApplicationDetailPage({
                   disabled={!newNote.trim() || addingNote}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {addingNote ? 'Adding...' : 'Add Note'}
+                  {addingNote
+                    ? t('recruiterApplicationDetail.addingNote')
+                    : t('recruiterApplicationDetail.addNote')}
                 </button>
               </div>
             </div>
 
             {/* Notes List */}
             {notes.length === 0 ? (
-              <p className="text-gray-400 text-center py-4">No notes yet.</p>
+              <p className="text-gray-400 text-center py-4">{t('recruiterApplicationDetail.noNotes')}</p>
             ) : (
               <div className="space-y-4">
                 {notes.map((note) => (
                   <div key={note.id} className="border-l-2 border-blue-500 pl-4 py-2">
                     <p className="text-gray-300 whitespace-pre-wrap">{note.content}</p>
                     <p className="text-xs text-gray-500 mt-2">
-                      {new Date(note.created_at).toLocaleString()}
+                      {formatLocalizedDateTime(note.created_at, locale)}
                     </p>
                   </div>
                 ))}
@@ -2453,66 +2653,66 @@ export default function ApplicationDetailPage({
         {/* Sidebar */}
         <div className="space-y-6">
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.quickActions')}</h2>
             <p className="text-sm text-gray-400">
-              Use the simple recruiter flow first. Advanced ATS controls stay below.
+              {t('recruiterApplicationDetail.quickActionsSubtitle')}
             </p>
             <div className="mt-4 grid gap-2">
               <Link
                 href={buildInboxHref(application.applicant_id, recruiterMessageTemplates[0].draft)}
                 className="rounded-lg bg-sky-600 px-4 py-2 text-center text-white hover:bg-sky-700"
               >
-                Open candidate inbox
+                {t('recruiterApplicationDetail.openCandidateInbox')}
               </Link>
               <button
                 onClick={() => handleStageMoveByKey('recruiter_review')}
                 disabled={movingStage}
                 className="rounded-lg bg-amber-600 px-4 py-2 text-white hover:bg-amber-700 disabled:opacity-50"
               >
-                Shortlist candidate
+                {t('recruiterApplicationDetail.shortlistCandidate')}
               </button>
               <button
                 onClick={() => handleStageMoveByKey('interview')}
                 disabled={movingStage}
                 className="rounded-lg bg-purple-600 px-4 py-2 text-white hover:bg-purple-700 disabled:opacity-50"
               >
-                Move to interview
+                {t('recruiterApplicationDetail.moveToInterview')}
               </button>
               <button
                 onClick={() => handleDecision('hired')}
                 disabled={savingDecision}
                 className="rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50"
               >
-                Mark as hired
+                {t('recruiterApplicationDetail.markAsHired')}
               </button>
               <button
                 onClick={() => handleDecision('rejected')}
                 disabled={savingDecision}
                 className="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:opacity-50"
               >
-                Mark as rejected
+                {t('recruiterApplicationDetail.markAsRejected')}
               </button>
             </div>
           </div>
 
           {/* Stage Controls */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Advanced Stage Controls</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.advancedStageControls')}</h2>
             <div className="space-y-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-gray-500">
-                  Current Stage
+                  {t('recruiterApplicationDetail.currentStage')}
                 </p>
                 <div className="mt-2">
                   <StageBadge
-                    label={currentStage?.label || 'Unassigned'}
+                    label={currentStage?.label || t('recruiterApplications.unassigned')}
                     stageType={currentStage?.stageType || 'applied'}
                   />
                 </div>
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-400">
-                  Move to stage
+                  {t('recruiterApplicationDetail.moveToStageLabel')}
                 </label>
                 <select
                   value={selectedStageId}
@@ -2535,7 +2735,7 @@ export default function ApplicationDetailPage({
                 }
                 className="w-full rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
               >
-                {movingStage ? 'Moving...' : 'Move Candidate'}
+                {movingStage ? t('recruiterApplicationDetail.moving') : t('recruiterApplicationDetail.moveCandidate')}
               </button>
               {nextStage && (
                 <button
@@ -2543,29 +2743,33 @@ export default function ApplicationDetailPage({
                   disabled={movingStage}
                   className="w-full rounded-lg bg-gray-700 px-4 py-2 text-gray-100 hover:bg-gray-600 disabled:opacity-50"
                 >
-                  Quick advance to {nextStage.label}
+                  {t('recruiterApplicationDetail.quickAdvance', {
+                    stage: nextStage.label,
+                  })}
                 </button>
               )}
             </div>
           </div>
 
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Final Decision</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.finalDecision')}</h2>
             <div
               className={`rounded-xl border p-3 ${decisionTone.bg} ${decisionTone.text} ${decisionTone.border}`}
             >
-              {formatDecisionLabel(application.decision_status || 'active')}
+              {getLocalizedDecisionLabel(application.decision_status || 'active', t)}
             </div>
             <textarea
               value={decisionReason}
               onChange={(event) => setDecisionReason(event.target.value)}
               rows={3}
-              placeholder="Optional decision note or reason"
+              placeholder={t('recruiterApplicationDetail.optionalDecisionReason')}
               className="mt-4 w-full rounded-lg border border-gray-600 bg-gray-700 px-4 py-3 text-white placeholder-gray-400 focus:border-blue-500 focus:outline-none"
             />
             {application.disposition_reason && (
               <p className="mt-3 text-sm text-gray-400">
-                Current reason: {application.disposition_reason}
+                {t('recruiterApplicationDetail.currentReason', {
+                  reason: application.disposition_reason,
+                })}
               </p>
             )}
             <div className="mt-4 grid gap-2">
@@ -2574,28 +2778,28 @@ export default function ApplicationDetailPage({
                 disabled={savingDecision}
                 className="rounded-lg bg-green-600 px-4 py-2 text-white hover:bg-green-700 disabled:opacity-50"
               >
-                Mark as hired
+                {t('recruiterApplicationDetail.markAsHired')}
               </button>
               <button
                 onClick={() => handleDecision('rejected')}
                 disabled={savingDecision}
                 className="rounded-lg bg-red-600 px-4 py-2 text-white hover:bg-red-700 disabled:opacity-50"
               >
-                Mark as rejected
+                {t('recruiterApplicationDetail.markAsRejected')}
               </button>
               <button
                 onClick={() => handleDecision('active')}
                 disabled={savingDecision}
                 className="rounded-lg bg-gray-700 px-4 py-2 text-gray-100 hover:bg-gray-600 disabled:opacity-50"
               >
-                Reopen decision
+                {t('recruiterApplicationDetail.reopenDecision')}
               </button>
             </div>
           </div>
 
           {/* Rating */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Your Rating</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.yourRating')}</h2>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((star) => (
                 <button
@@ -2622,7 +2826,7 @@ export default function ApplicationDetailPage({
 
           {/* Ranking Score */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Advanced Review Signals</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.advancedReviewSignals')}</h2>
             <div className="text-3xl font-bold text-blue-400 mb-4">
               {application.ranking_score?.toFixed(1) || 0}
             </div>
@@ -2641,7 +2845,7 @@ export default function ApplicationDetailPage({
               <div className="space-y-2 text-sm">
                 {Object.entries(application.ranking_breakdown).map(([key, value]) => (
                   <div key={key} className="flex justify-between text-gray-400">
-                    <span className="capitalize">{key.replace('_', ' ')}</span>
+                    <span>{translateRankingSignalLabel(t, key.replace(/_/g, ' '))}</span>
                     <span className="text-white">{typeof value === 'number' ? value.toFixed(1) : value}</span>
                   </div>
                 ))}
@@ -2651,7 +2855,7 @@ export default function ApplicationDetailPage({
 
           {/* Job Info */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Job Details</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterJobDetail.detailsTitle')}</h2>
             <div className="space-y-2">
               <p className="text-white font-medium">{application.jobs?.title}</p>
               {application.jobs?.company_name && (
@@ -2667,10 +2871,10 @@ export default function ApplicationDetailPage({
                 </p>
               )}
               <Link
-                href={`/dashboard/recruiter/jobs/${application.job_id}`}
+                href={localize(`/dashboard/recruiter/jobs/${application.job_id}`)}
                 className="text-blue-400 hover:text-blue-300 text-sm inline-flex items-center gap-1 mt-2"
               >
-                View Job
+                {t('recruiterApplicationDetail.viewJob')}
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -2680,9 +2884,9 @@ export default function ApplicationDetailPage({
 
           {/* Activity Log */}
           <div className="bg-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Activity</h2>
+            <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterApplicationDetail.activityTitle')}</h2>
             {activities.length === 0 ? (
-              <p className="text-gray-400 text-center py-4">No activity yet.</p>
+              <p className="text-gray-400 text-center py-4">{t('recruiterApplicationDetail.noActivity')}</p>
             ) : (
               <div className="space-y-3">
                 {activities.map((activity) => (
@@ -2691,7 +2895,7 @@ export default function ApplicationDetailPage({
                       {formatActivityAction(activity)}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {new Date(activity.created_at).toLocaleString()}
+                      {formatLocalizedDateTime(activity.created_at, locale)}
                     </p>
                   </div>
                 ))}

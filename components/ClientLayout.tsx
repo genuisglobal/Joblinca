@@ -2,13 +2,16 @@
 
 import { useEffect } from 'react';
 import { LanguageProvider, type Locale } from '@/lib/i18n';
+import LocalePreferencePrompt from '@/components/LocalePreferencePrompt';
 
 export default function ClientLayout({
   children,
   initialLocale,
+  initialHasExplicitLocalePreference,
 }: {
   children: React.ReactNode;
   initialLocale: Locale;
+  initialHasExplicitLocalePreference: boolean;
 }) {
   useEffect(() => {
     if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
@@ -21,6 +24,9 @@ export default function ClientLayout({
   return (
     <LanguageProvider initialLocale={initialLocale}>
       {children}
+      <LocalePreferencePrompt
+        initialHasExplicitPreference={initialHasExplicitLocalePreference}
+      />
     </LanguageProvider>
   );
 }

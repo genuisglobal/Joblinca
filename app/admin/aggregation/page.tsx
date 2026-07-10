@@ -9,6 +9,7 @@ import {
 import RunScrapersButton from './RunScrapersButton';
 import DedupPanel from './DedupPanel';
 import AutoPipelineButton from './AutoPipelineButton';
+import PublishThresholdsPanel from './PublishThresholdsPanel';
 
 type SourceSummary = {
   name: string;
@@ -155,7 +156,19 @@ export default async function AdminAggregationPage() {
             Admin-only view of approved sources, discovered supply, and ingestion activity.
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
+          <Link
+            href="/admin/aggregation/coverage"
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+          >
+            Coverage
+          </Link>
+          <Link
+            href="/admin/aggregation/career-pages"
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+          >
+            Career Pages
+          </Link>
           <Link
             href="/admin/aggregation/sources"
             className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
@@ -225,6 +238,7 @@ export default async function AdminAggregationPage() {
       </div>
 
       <div className="mb-8 space-y-4">
+        <PublishThresholdsPanel />
         <AutoPipelineButton />
         <RunScrapersButton />
         <DedupPanel />

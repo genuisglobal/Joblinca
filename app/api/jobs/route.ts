@@ -11,10 +11,79 @@ import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lif
 import {
   LOCALE_COOKIE_NAME,
   detectContentLanguage,
-  getLocalePreferenceRank,
   normalizeLocale,
   resolveLocalePreference,
 } from '@/lib/i18n/locale';
+
+type JobBrowseFilter =
+  | 'all'
+  | 'job'
+  | 'internship_education'
+  | 'internship_professional'
+  | 'gig';
+
+type JobPostedWithinFilter = '24h' | '3d' | '1w' | '1m' | 'anytime';
+
+interface PublicJobSearchRow {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  salary: number | null;
+  salary_min: number | null;
+  salary_max: number | null;
+  salary_currency: string | null;
+  salary_period: string | null;
+  company_name: string | null;
+  company_logo_url: string | null;
+  work_type: string | null;
+  job_type: string | null;
+  language: string | null;
+  created_at: string;
+  closes_at: string | null;
+  lifecycle_status: string | null;
+  visibility: string | null;
+  published: boolean;
+  approval_status: string | null;
+  apply_method: string | null;
+  external_apply_url: string | null;
+  image_url: string | null;
+  internship_track: string | null;
+  boost_until: string | null;
+  origin_type: string | null;
+  source_attribution_json: Record<string, unknown> | null;
+  relevance_score?: number | null;
+}
+
+interface PublicJobCountsRow {
+  total_count: number | string | null;
+  all_count: number | string | null;
+  job_count: number | string | null;
+  internship_education_count: number | string | null;
+  internship_professional_count: number | string | null;
+  gig_count: number | string | null;
+}
+
+interface JobsApiCounts {
+  all: number;
+  job: number;
+  internship_education: number;
+  internship_professional: number;
+  gig: number;
+}
+
+interface PublicJobsResponsePayload {
+  jobs: PublicJobSearchRow[];
+  total: number;
+  counts: JobsApiCounts;
+}
+
+interface PublicJobFilterOptions {
+  languageFilter: 'en' | 'fr' | null;
+  postedAfterTimestamp: number | null;
+  minimumSalary: number | null;
+  maximumSalary: number | null;
+}
 
 function normalizeOptionalId(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -38,6 +107,273 @@ function isMissingJobLanguageColumnError(error: { message?: string | null } | nu
   return Boolean(error?.message?.includes('column jobs.language does not exist'));
 }
 
+function normalizeBrowseType(value: string | null): JobBrowseFilter {
+  switch (value) {
+    case 'job':
+    case 'internship_education':
+    case 'internship_professional':
+    case 'gig':
+      return value;
+    default:
+      return 'all';
+  }
+}
+
+function normalizeWorkTypeFilter(value: string | null): 'onsite' | 'remote' | 'hybrid' | null {
+  const normalized = value?.trim().toLowerCase() || '';
+
+  switch (normalized) {
+    case 'onsite':
+    case 'remote':
+    case 'hybrid':
+      return normalized;
+    default:
+      return null;
+  }
+}
+
+function normalizePostedWithinFilter(value: string | null): JobPostedWithinFilter {
+  const normalized = value?.trim().toLowerCase() || '';
+
+  switch (normalized) {
+    case '24h':
+    case '3d':
+    case '1w':
+    case '1m':
+      return normalized;
+    default:
+      return 'anytime';
+  }
+}
+
+function normalizeFiniteNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function normalizeSalaryFilter(value: string | null): number | null {
+  const parsed = normalizeFiniteNumber(value);
+
+  if (parsed === null || parsed < 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function normalizeCount(value: unknown): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return Math.max(0, Math.trunc(parsed));
+    }
+  }
+
+  return 0;
+}
+
+function resolvePostedAfterDate(filter: JobPostedWithinFilter): Date | null {
+  const now = Date.now();
+
+  switch (filter) {
+    case '24h':
+      return new Date(now - 24 * 60 * 60 * 1000);
+    case '3d':
+      return new Date(now - 3 * 24 * 60 * 60 * 1000);
+    case '1w':
+      return new Date(now - 7 * 24 * 60 * 60 * 1000);
+    case '1m':
+      return new Date(now - 30 * 24 * 60 * 60 * 1000);
+    default:
+      return null;
+  }
+}
+
+function createEmptyCounts(): JobsApiCounts {
+  return {
+    all: 0,
+    job: 0,
+    internship_education: 0,
+    internship_professional: 0,
+    gig: 0,
+  };
+}
+
+function deriveCountsFromJobs(jobs: PublicJobSearchRow[]): JobsApiCounts {
+  return jobs.reduce<JobsApiCounts>(
+    (counts, job) => {
+      counts.all += 1;
+
+      if (job.job_type === 'internship' && job.internship_track === 'education') {
+        counts.internship_education += 1;
+        return counts;
+      }
+
+      if (job.job_type === 'internship' && job.internship_track === 'professional') {
+        counts.internship_professional += 1;
+        return counts;
+      }
+
+      if (job.job_type === 'gig') {
+        counts.gig += 1;
+        return counts;
+      }
+
+      counts.job += 1;
+      return counts;
+    },
+    createEmptyCounts()
+  );
+}
+
+function getTimestamp(value: string | null | undefined): number {
+  if (!value) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function resolveSalaryBounds(job: Pick<PublicJobSearchRow, 'salary' | 'salary_min' | 'salary_max'>) {
+  const min = normalizeFiniteNumber(job.salary_min);
+  const max = normalizeFiniteNumber(job.salary_max);
+  const legacy = normalizeFiniteNumber(job.salary);
+
+  const lower = min ?? max ?? legacy;
+  const upper = max ?? min ?? legacy;
+
+  if (lower === null || upper === null) {
+    return null;
+  }
+
+  return {
+    min: Math.min(lower, upper),
+    max: Math.max(lower, upper),
+  };
+}
+
+function matchesSalaryFilter(
+  job: Pick<PublicJobSearchRow, 'salary' | 'salary_min' | 'salary_max'>,
+  minimumSalary: number | null,
+  maximumSalary: number | null
+) {
+  if (minimumSalary === null && maximumSalary === null) {
+    return true;
+  }
+
+  const bounds = resolveSalaryBounds(job);
+  if (!bounds) {
+    return false;
+  }
+
+  if (minimumSalary !== null && bounds.max < minimumSalary) {
+    return false;
+  }
+
+  if (maximumSalary !== null && bounds.min > maximumSalary) {
+    return false;
+  }
+
+  return true;
+}
+
+function matchesBrowseType(
+  browseType: JobBrowseFilter,
+  job: Pick<PublicJobSearchRow, 'job_type' | 'internship_track'>
+) {
+  if (browseType === 'all') {
+    return true;
+  }
+
+  if (browseType === 'gig') {
+    return job.job_type === 'gig';
+  }
+
+  if (browseType === 'internship_education') {
+    return job.job_type === 'internship' && job.internship_track === 'education';
+  }
+
+  if (browseType === 'internship_professional') {
+    return job.job_type === 'internship' && job.internship_track === 'professional';
+  }
+
+  return job.job_type !== 'gig' && job.job_type !== 'internship';
+}
+
+function sortPublicJobs(rows: PublicJobSearchRow[]) {
+  return [...rows].sort((left, right) => getTimestamp(right.created_at) - getTimestamp(left.created_at));
+}
+
+function normalizeJobRows(
+  rows: PublicJobSearchRow[],
+  { languageFilter, postedAfterTimestamp, minimumSalary, maximumSalary }: PublicJobFilterOptions
+) {
+  return sortPublicJobs(
+    rows
+      .map((job) => ({
+        ...job,
+        language: resolveJobLanguage(job.language, job.title, job.description),
+      }))
+      .filter((job) => isJobPubliclyListable(job))
+      .filter((job) => !languageFilter || job.language === languageFilter)
+      .filter((job) => !postedAfterTimestamp || getTimestamp(job.created_at) >= postedAfterTimestamp)
+      .filter((job) => matchesSalaryFilter(job, minimumSalary, maximumSalary))
+  );
+}
+
+function sliceJobsForPage(rows: PublicJobSearchRow[], offset: number, limit: number) {
+  return rows.slice(offset, offset + limit);
+}
+
+function selectPublicJobColumns(includeLanguage = true) {
+  return [
+    'id',
+    'title',
+    'description',
+    'location',
+    'salary',
+    'salary_min',
+    'salary_max',
+    'salary_currency',
+    'salary_period',
+    'company_name',
+    'company_logo_url',
+    'work_type',
+    'job_type',
+    includeLanguage ? 'language' : null,
+    'created_at',
+    'closes_at',
+    'lifecycle_status',
+    'visibility',
+    'published',
+    'approval_status',
+    'apply_method',
+    'external_apply_url',
+    'image_url',
+    'internship_track',
+    'boost_until',
+    'origin_type',
+    'source_attribution_json',
+  ]
+    .filter(Boolean)
+    .join(', ');
+}
+
 // Handle GET /api/jobs and POST /api/jobs
 export async function GET(request: NextRequest) {
   const supabase = createServiceSupabaseClient();
@@ -48,74 +384,163 @@ export async function GET(request: NextRequest) {
     acceptLanguage: request.headers.get('accept-language'),
   });
   const languageFilter = normalizeLocale(searchParams.get('language'));
-  const search = searchParams.get('search')?.trim() || '';
+  const search =
+    searchParams.get('title')?.trim() ||
+    searchParams.get('q')?.trim() ||
+    searchParams.get('search')?.trim() ||
+    '';
   const locationFilter = searchParams.get('location')?.trim() || '';
-  const workTypeFilter = searchParams.get('work_type')?.trim() || '';
+  const workTypeFilter = normalizeWorkTypeFilter(
+    searchParams.get('work_type') || (searchParams.get('remote') === '1' ? 'remote' : null)
+  );
   const jobTypeFilter = searchParams.get('job_type')?.trim() || '';
+  const browseType = normalizeBrowseType(searchParams.get('browse_type'));
+  const postedWithinFilter = normalizePostedWithinFilter(searchParams.get('date_posted'));
+  const postedAfterDate = resolvePostedAfterDate(postedWithinFilter);
+  const postedAfterTimestamp = postedAfterDate?.getTime() ?? null;
+  const postedAfterIso = postedAfterDate?.toISOString() ?? null;
+
+  let minimumSalary = normalizeSalaryFilter(searchParams.get('salary_min'));
+  let maximumSalary = normalizeSalaryFilter(searchParams.get('salary_max'));
+
+  if (minimumSalary !== null && maximumSalary !== null && minimumSalary > maximumSalary) {
+    [minimumSalary, maximumSalary] = [maximumSalary, minimumSalary];
+  }
+
+  const publicJobFilters: PublicJobFilterOptions = {
+    languageFilter,
+    postedAfterTimestamp,
+    minimumSalary,
+    maximumSalary,
+  };
 
   // Pagination — default 50, max 200
   const limit = Math.min(Math.max(parseInt(searchParams.get('limit') || '50', 10) || 50, 1), 200);
   const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10) || 0, 0);
 
-  let query = supabase
-    .from('jobs')
-    .select('id, title, description, location, salary, company_name, company_logo_url, work_type, job_type, language, created_at, closes_at, lifecycle_status, visibility, published, approval_status, apply_method, external_apply_url, image_url, internship_track, boost_until', { count: 'exact' })
-    .eq('published', true)
-    .eq('approval_status', 'approved')
-    .eq('visibility', 'public')
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+  let payload: PublicJobsResponsePayload | null = null;
 
-  // Full-text search using Postgres tsvector (falls back to ILIKE)
-  if (search) {
-    const tsQuery = search.split(/\s+/).filter(Boolean).join(' & ');
-    query = query.or(
-      `title.ilike.%${search}%,company_name.ilike.%${search}%,description.ilike.%${search}%`
+  const rpcParams = {
+    p_search: search || null,
+    p_location: locationFilter || null,
+    p_work_type: workTypeFilter || null,
+    p_job_type: jobTypeFilter || null,
+    p_language: languageFilter,
+    p_preferred_language: preferredLocale,
+    p_browse_type: browseType,
+    p_posted_after: postedAfterIso,
+    p_salary_min: minimumSalary,
+    p_salary_max: maximumSalary,
+    p_limit: limit,
+    p_offset: offset,
+  };
+
+  const [jobsRpcResult, countsRpcResult] = await Promise.all([
+    supabase.rpc('search_public_jobs', rpcParams),
+    supabase.rpc('search_public_job_counts', {
+      p_search: search || null,
+      p_location: locationFilter || null,
+      p_work_type: workTypeFilter || null,
+      p_job_type: jobTypeFilter || null,
+      p_language: languageFilter,
+      p_browse_type: browseType,
+      p_posted_after: postedAfterIso,
+      p_salary_min: minimumSalary,
+      p_salary_max: maximumSalary,
+    }),
+  ]);
+
+  const rpcJobsError = jobsRpcResult.error;
+  const rpcCountsError = countsRpcResult.error;
+
+  if (!rpcJobsError && !rpcCountsError) {
+    const jobs = normalizeJobRows(
+      ((jobsRpcResult.data as unknown as PublicJobSearchRow[] | null) || []),
+      publicJobFilters
     );
+    const countRow =
+      ((countsRpcResult.data as unknown as PublicJobCountsRow[] | null) || [])[0] || null;
+
+    payload = {
+      jobs,
+      total: normalizeCount(countRow?.total_count),
+      counts: {
+        all: normalizeCount(countRow?.all_count),
+        job: normalizeCount(countRow?.job_count),
+        internship_education: normalizeCount(countRow?.internship_education_count),
+        internship_professional: normalizeCount(countRow?.internship_professional_count),
+        gig: normalizeCount(countRow?.gig_count),
+      },
+    };
+  } else {
+    let legacyQuery = supabase
+      .from('jobs')
+      .select(selectPublicJobColumns())
+      .eq('published', true)
+      .eq('approval_status', 'approved')
+      .eq('visibility', 'public')
+      .eq('lifecycle_status', 'live')
+      .order('created_at', { ascending: false })
+      .limit(5000);
+
+    if (search) {
+      legacyQuery = legacyQuery.or(
+        `title.ilike.%${search}%,company_name.ilike.%${search}%,description.ilike.%${search}%`
+      );
+    }
+    if (locationFilter) {
+      legacyQuery = legacyQuery.ilike('location', `%${locationFilter}%`);
+    }
+    if (workTypeFilter) {
+      legacyQuery = legacyQuery.eq('work_type', workTypeFilter);
+    }
+    if (jobTypeFilter) {
+      legacyQuery = legacyQuery.eq('job_type', jobTypeFilter);
+    }
+    if (postedAfterIso) {
+      legacyQuery = legacyQuery.gte('created_at', postedAfterIso);
+    }
+
+    const { data: legacyJobs, error: legacyError } = await legacyQuery;
+    if (legacyError) {
+      const errorMessage =
+        rpcJobsError?.message ||
+        rpcCountsError?.message ||
+        legacyError.message;
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    }
+
+    const filteredJobs = normalizeJobRows(
+      ((legacyJobs as unknown as PublicJobSearchRow[] | null) || []),
+      publicJobFilters
+    );
+    const counts = deriveCountsFromJobs(filteredJobs);
+    const browseFilteredJobs = filteredJobs.filter((job) => matchesBrowseType(browseType, job));
+
+    payload = {
+      jobs: sliceJobsForPage(browseFilteredJobs, offset, limit),
+      total: browseFilteredJobs.length,
+      counts,
+    };
+
+    if (
+      (rpcJobsError && !isMissingJobLanguageColumnError(rpcJobsError)) ||
+      (rpcCountsError && !isMissingJobLanguageColumnError(rpcCountsError))
+    ) {
+      console.error('Falling back to legacy public job query', {
+        jobsRpcError: rpcJobsError,
+        countsRpcError: rpcCountsError,
+      });
+    }
   }
-  if (locationFilter) {
-    query = query.ilike('location', `%${locationFilter}%`);
-  }
-  if (workTypeFilter) {
-    query = query.eq('work_type', workTypeFilter);
-  }
-  if (jobTypeFilter) {
-    query = query.eq('job_type', jobTypeFilter);
-  }
 
-  const { data: jobs, error, count } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const now = Date.now();
-  const sortedJobs = (jobs || [])
-    .filter((job) => isJobPubliclyListable(job))
-    .map((job) => ({
-      ...job,
-      language: resolveJobLanguage(job.language, job.title, job.description),
-    }))
-    .filter((job) => !languageFilter || job.language === languageFilter)
-    .sort((left, right) => {
-      // Boosted jobs appear first
-      const leftBoosted = left.boost_until && new Date(left.boost_until).getTime() > now ? 1 : 0;
-      const rightBoosted = right.boost_until && new Date(right.boost_until).getTime() > now ? 1 : 0;
-      if (leftBoosted !== rightBoosted) {
-        return rightBoosted - leftBoosted;
-      }
-
-      const rankDifference =
-        getLocalePreferenceRank(left.language, preferredLocale) -
-        getLocalePreferenceRank(right.language, preferredLocale);
-
-      if (rankDifference !== 0) {
-        return rankDifference;
-      }
-
-      return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
-    });
-
-  const response = NextResponse.json({ jobs: sortedJobs, total: count || 0, limit, offset });
+  const response = NextResponse.json({
+    jobs: payload.jobs,
+    total: payload.total,
+    limit,
+    offset,
+    counts: payload.counts,
+  });
   response.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
   return response;
 }
@@ -195,6 +620,10 @@ export async function POST(request: NextRequest) {
     description,
     location,
     salary,
+    salaryMin,
+    salaryMax,
+    salaryCurrency,
+    salaryPeriod,
     companyName,
     companyLogoUrl,
     workType,
@@ -345,7 +774,14 @@ export async function POST(request: NextRequest) {
     description,
     language,
     location,
-    salary: salary ? Number(salary) : null,
+    salary: salary ? Number(salary) : (salaryMin ? Number(salaryMin) : null),
+    salary_min: salaryMin ? Number(salaryMin) : null,
+    salary_max: salaryMax ? Number(salaryMax) : null,
+    salary_currency: (salaryCurrency || 'XAF').toString().toUpperCase(),
+    salary_period: (() => {
+      const p = (salaryPeriod || 'MONTH').toString().toUpperCase();
+      return ['HOUR', 'DAY', 'WEEK', 'MONTH', 'YEAR'].includes(p) ? p : 'MONTH';
+    })(),
     recruiter_id: assignedRecruiterId,
     published: shouldPublishImmediately,
     approval_status: approvalStatus,

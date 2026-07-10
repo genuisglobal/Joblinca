@@ -3,6 +3,9 @@ import { redirect } from 'next/navigation';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import ApplicationProgressCard from '@/components/applications/ApplicationProgressCard';
 import UpcomingInterviewsPanel from '@/components/applications/UpcomingInterviewsPanel';
+import { getRequestLocale } from '@/lib/i18n/server';
+import { getServerT } from '@/lib/i18n/server-t';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import {
   attachInterviewSlotsToApplications,
   attachInterviewsToApplications,
@@ -12,6 +15,9 @@ import {
 } from '@/lib/applications/dashboard';
 
 export default async function TalentApplicationsPage() {
+  const locale = getRequestLocale();
+  const t = getServerT(locale);
+  const localize = (href: string) => addLocalePrefix(href, locale);
   const supabase = createServerSupabaseClient();
 
   const {
@@ -19,7 +25,11 @@ export default async function TalentApplicationsPage() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect('/auth/login');
+    redirect(
+      `${localize('/auth/login')}?redirect=${encodeURIComponent(
+        localize('/dashboard/talent/applications')
+      )}`
+    );
   }
 
   const [applicationsResult, interviewsResult, slotsResult] = await Promise.all([
@@ -111,16 +121,18 @@ export default async function TalentApplicationsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">My Applications</h1>
+          <h1 className="text-2xl font-bold text-white">
+            {t('talentApplications.title')}
+          </h1>
           <p className="mt-1 text-gray-400">
-            Track educational internships, professional internships, and other opportunities in one ATS view.
+            {t('talentApplications.subtitle')}
           </p>
         </div>
         <Link
-          href="/jobs"
+          href={localize('/jobs')}
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
         >
-          Browse Opportunities
+          {t('talentApplications.browseOpportunities')}
         </Link>
       </div>
 
@@ -139,22 +151,24 @@ export default async function TalentApplicationsPage() {
               d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
             />
           </svg>
-          <h3 className="mb-2 text-xl font-semibold text-white">No applications yet</h3>
+          <h3 className="mb-2 text-xl font-semibold text-white">
+            {t('talentApplications.emptyTitle')}
+          </h3>
           <p className="mb-6 text-gray-400">
-            Start applying to educational or professional internships that match your profile.
+            {t('talentApplications.emptyDescription')}
           </p>
           <Link
-            href="/jobs"
+            href={localize('/jobs')}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-white transition-colors hover:bg-blue-700"
           >
-            Browse Opportunities
+            {t('talentApplications.browseOpportunities')}
           </Link>
         </div>
       ) : (
         <div className="space-y-6">
           <UpcomingInterviewsPanel
             applications={normalizedApplications}
-            emptyMessage="No upcoming interviews across your applications yet."
+            emptyMessage={t('talentApplications.upcoming.empty')}
           />
           <div className="space-y-4">
             {normalizedApplications.map((application) => (

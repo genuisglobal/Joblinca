@@ -247,7 +247,7 @@ export default function AutoPipelineButton() {
           </div>
 
           <p className="text-xs text-gray-500">
-            Thresholds: auto-publish when trust {'>='} 60 and scam {'<'} 30. Jobs below threshold stay in the review queue.
+            Auto-publish uses the trust/scam thresholds configured above. Jobs outside the gate stay in the review queue.
           </p>
         </div>
       )}

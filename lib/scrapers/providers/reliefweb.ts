@@ -14,7 +14,8 @@ import { BaseScraper } from '../base';
 import { deriveCategory } from '@/lib/externalJobs';
 import type { ScrapedJob, ScraperConfig } from '../types';
 
-const API_BASE = 'https://api.reliefweb.int/v1/jobs';
+// v1 was decommissioned (HTTP 410) — v2 accepts the same request/response shape
+const API_BASE = 'https://api.reliefweb.int/v2/jobs';
 const APPNAME = process.env.RELIEFWEB_APPNAME || 'joblinca-cameroon';
 const PAGE_SIZE = 50;
 
@@ -62,6 +63,7 @@ export class ReliefWebScraper extends BaseScraper {
     const allJobs: ScrapedJob[] = [];
 
     for (let page = 0; page < this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const offset = page * PAGE_SIZE;
       const url = `${API_BASE}?appname=${APPNAME}`;
 
@@ -137,6 +139,8 @@ export class ReliefWebScraper extends BaseScraper {
           });
         }
 
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
+
         // Stop if we got fewer than a full page
         if (items.length < PAGE_SIZE) break;
 
@@ -144,7 +148,7 @@ export class ReliefWebScraper extends BaseScraper {
           await this.delay();
         }
       } catch (err) {
-        console.error(`[scraper:reliefweb] Page ${page} error:`, err);
+        this.recordScrapeError(`page ${page}`, err);
         break;
       }
     }

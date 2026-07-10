@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Star, Send } from 'lucide-react';
+import { useTranslation } from '@/lib/i18n';
 
 interface Review {
   id: string;
@@ -20,6 +21,7 @@ interface Stats {
 }
 
 export default function CompanyReviews({ companyId }: { companyId: string }) {
+  const { locale, t } = useTranslation();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -46,7 +48,7 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (rating === 0) {
-      setError('Please select a rating');
+      setError(t('company.selectRating'));
       return;
     }
     setSubmitting(true);
@@ -60,10 +62,9 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || 'Failed to submit review');
+        setError(data.error || t('company.reviewSubmitFailed'));
         return;
       }
-      // Refresh reviews
       setShowForm(false);
       setRating(0);
       setTitle('');
@@ -72,7 +73,7 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
       setReviews(refresh.reviews);
       setStats(refresh.stats);
     } catch {
-      setError('Something went wrong');
+      setError(t('company.somethingWentWrong'));
     } finally {
       setSubmitting(false);
     }
@@ -93,22 +94,24 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
   }
 
   function formatDate(dateString: string) {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', {
       month: 'short',
       year: 'numeric',
     });
   }
 
+  const reviewCountLabel =
+    stats?.count === 1 ? t('company.reviewSingular') : t('company.reviewPlural');
+
   return (
     <div>
-      {/* Stats summary */}
       {stats && stats.count > 0 && (
         <div className="mb-6 flex items-center gap-6">
           <div className="text-center">
             <div className="text-3xl font-bold text-white">{stats.average}</div>
             <StarDisplay value={Math.round(stats.average)} />
             <div className="mt-1 text-xs text-neutral-500">
-              {stats.count} {stats.count === 1 ? 'review' : 'reviews'}
+              {stats.count} {reviewCountLabel}
             </div>
           </div>
           <div className="flex-1 space-y-1">
@@ -132,22 +135,25 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
         </div>
       )}
 
-      {/* Write review button */}
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
           className="mb-6 flex items-center gap-2 rounded-lg border border-neutral-700 bg-neutral-800 px-4 py-2.5 text-sm text-neutral-300 hover:bg-neutral-700 transition-colors"
         >
           <Star className="h-4 w-4" />
-          Write a Review
+          {t('company.writeReview')}
         </button>
       )}
 
-      {/* Review form */}
       {showForm && (
-        <form onSubmit={handleSubmit} className="mb-6 rounded-xl border border-neutral-700 bg-neutral-800/50 p-5 space-y-4">
+        <form
+          onSubmit={handleSubmit}
+          className="mb-6 rounded-xl border border-neutral-700 bg-neutral-800/50 p-5 space-y-4"
+        >
           <div>
-            <label className="block text-sm font-medium text-neutral-300 mb-2">Rating</label>
+            <label className="block text-sm font-medium text-neutral-300 mb-2">
+              {t('company.rating')}
+            </label>
             <div className="flex gap-1">
               {[1, 2, 3, 4, 5].map((s) => (
                 <button
@@ -172,7 +178,7 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
 
           <div>
             <label htmlFor="review-title" className="block text-sm font-medium text-neutral-300 mb-1">
-              Title (optional)
+              {t('company.reviewTitleOptional')}
             </label>
             <input
               id="review-title"
@@ -180,14 +186,14 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none"
-              placeholder="Summarize your experience"
+              placeholder={t('company.reviewTitlePlaceholder')}
               maxLength={120}
             />
           </div>
 
           <div>
             <label htmlFor="review-body" className="block text-sm font-medium text-neutral-300 mb-1">
-              Review
+              {t('company.reviewLabel')}
             </label>
             <textarea
               id="review-body"
@@ -195,7 +201,7 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
               onChange={(e) => setBody(e.target.value)}
               rows={3}
               className="w-full rounded-lg border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none resize-none"
-              placeholder="Share your experience working here..."
+              placeholder={t('company.reviewPlaceholder')}
             />
           </div>
 
@@ -206,7 +212,7 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
               onChange={(e) => setIsCurrentEmployee(e.target.checked)}
               className="rounded border-neutral-600 bg-neutral-700"
             />
-            I currently work here
+            {t('company.currentlyWorkHere')}
           </label>
 
           {error && <p className="text-sm text-red-400">{error}</p>}
@@ -218,22 +224,21 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
               className="flex items-center gap-2 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50 transition-colors"
             >
               <Send className="h-3.5 w-3.5" />
-              {submitting ? 'Submitting...' : 'Submit Review'}
+              {submitting ? t('company.submittingReview') : t('company.submitReview')}
             </button>
             <button
               type="button"
               onClick={() => setShowForm(false)}
               className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-400 hover:bg-neutral-800 transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </form>
       )}
 
-      {/* Reviews list */}
       {reviews.length === 0 && !showForm && (
-        <p className="text-sm text-neutral-500">No reviews yet. Be the first to share your experience.</p>
+        <p className="text-sm text-neutral-500">{t('company.noReviewsYet')}</p>
       )}
 
       <div className="space-y-4">
@@ -252,10 +257,10 @@ export default function CompanyReviews({ companyId }: { companyId: string }) {
               <p className="text-sm text-neutral-300 leading-relaxed">{review.body}</p>
             )}
             <div className="mt-3 flex items-center gap-3 text-xs text-neutral-500">
-              <span>{review.reviewer?.name || 'Anonymous'}</span>
+              <span>{review.reviewer?.name || t('company.anonymous')}</span>
               {review.isCurrentEmployee && (
                 <span className="rounded-full bg-green-500/10 px-2 py-0.5 text-green-400">
-                  Current Employee
+                  {t('company.currentEmployee')}
                 </span>
               )}
             </div>

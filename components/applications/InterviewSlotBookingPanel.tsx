@@ -6,10 +6,11 @@ import type {
   CandidateInterviewRecord,
   CandidateInterviewSlotRecord,
 } from '@/lib/applications/dashboard';
+import { useTranslation } from '@/lib/i18n/context';
 import {
-  formatInterviewDateTimeLabel,
-  getInterviewModeLabel,
-} from '@/lib/interview-scheduling/utils';
+  formatLocalizedDateTime,
+  translateInterviewMode,
+} from '@/lib/i18n/application-presentation';
 
 interface InterviewSlotBookingPanelProps {
   slots: CandidateInterviewSlotRecord[];
@@ -59,6 +60,7 @@ export default function InterviewSlotBookingPanel({
   onBooked,
 }: InterviewSlotBookingPanelProps) {
   const router = useRouter();
+  const { t, locale } = useTranslation();
   const [bookingSlotId, setBookingSlotId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(
     null
@@ -82,7 +84,7 @@ export default function InterviewSlotBookingPanel({
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(payload?.error || 'Failed to book interview slot');
+        throw new Error(payload?.error || t('interviewSlotBooking.bookFailed'));
       }
 
       const slot = normalizeSlot(payload.slot);
@@ -91,8 +93,8 @@ export default function InterviewSlotBookingPanel({
       setMessage({
         type: 'success',
         text: payload.notifications?.delivered
-          ? 'Interview booked and confirmation sent.'
-          : 'Interview booked.',
+          ? t('interviewSlotBooking.bookedWithConfirmation')
+          : t('interviewSlotBooking.booked'),
       });
 
       if (onBooked) {
@@ -103,7 +105,7 @@ export default function InterviewSlotBookingPanel({
     } catch (error) {
       setMessage({
         type: 'error',
-        text: error instanceof Error ? error.message : 'Failed to book interview slot',
+        text: error instanceof Error ? error.message : t('interviewSlotBooking.bookFailed'),
       });
     } finally {
       setBookingSlotId(null);
@@ -115,14 +117,14 @@ export default function InterviewSlotBookingPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-indigo-200/80">
-            Self-schedule
+            {t('interviewSlotBooking.title')}
           </p>
           <p className="mt-2 text-sm text-indigo-100/90">
-            Choose one of the available interview slots below.
+            {t('interviewSlotBooking.description')}
           </p>
         </div>
         <span className="rounded-full border border-indigo-400/30 px-3 py-1 text-xs font-medium text-indigo-100">
-          {availableSlots.length} open
+          {t('interviewSlotBooking.openCount', { count: availableSlots.length })}
         </span>
       </div>
 
@@ -133,11 +135,11 @@ export default function InterviewSlotBookingPanel({
             className="rounded-lg border border-indigo-500/20 bg-gray-900/40 p-3"
           >
             <p className="text-sm font-medium text-white">
-              {formatInterviewDateTimeLabel(slot.scheduledAt, slot.timezone)}
+              {formatLocalizedDateTime(slot.scheduledAt, locale, slot.timezone)}
             </p>
             <p className="mt-1 text-sm text-indigo-100/80">
-              {getInterviewModeLabel(slot.mode)}
-              {slot.location ? ` · ${slot.location}` : ''}
+              {translateInterviewMode(t, slot.mode)}
+              {slot.location ? ` - ${slot.location}` : ''}
             </p>
             {slot.notes && (
               <p className="mt-2 text-sm text-gray-300">{slot.notes}</p>
@@ -148,7 +150,9 @@ export default function InterviewSlotBookingPanel({
               disabled={bookingSlotId === slot.id}
               className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-50"
             >
-              {bookingSlotId === slot.id ? 'Booking...' : 'Book this slot'}
+              {bookingSlotId === slot.id
+                ? t('interviewSlotBooking.booking')
+                : t('interviewSlotBooking.bookThisSlot')}
             </button>
           </div>
         ))}

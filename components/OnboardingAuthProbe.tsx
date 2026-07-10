@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client"; // adjust if needed
 
 export default function OnboardingAuthProbe({
@@ -8,7 +8,7 @@ export default function OnboardingAuthProbe({
 }: {
   role: "job_seeker" | "talent";
 }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [state, setState] = useState<any>({ loading: true });
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export default function OnboardingAuthProbe({
     };
 
     run();
-  }, [role]);
+  }, [role, supabase]);
 
   return (
     <pre className="mt-6 p-4 text-xs bg-black text-green-400 overflow-auto">

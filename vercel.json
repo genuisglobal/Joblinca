@@ -10,7 +10,19 @@
     },
     {
       "path": "/api/cron/refresh-jobs",
-      "schedule": "0 6 * * *"
+      "schedule": "0 6,11,16,21 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-jobs-deep",
+      "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/cron/aggregation-digest",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/pipeline-maintenance",
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/subscription-renewal",

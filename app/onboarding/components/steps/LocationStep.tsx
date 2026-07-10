@@ -5,6 +5,7 @@ import { MapPin } from 'lucide-react';
 import LocationDropdown from '@/components/ui/LocationDropdown';
 import { GENDER_OPTIONS } from '@/lib/onboarding/constants';
 import { Gender } from '@/lib/onboarding/types';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface LocationStepProps {
   residenceLocation: string | null;
@@ -19,6 +20,23 @@ export default function LocationStep({
   onLocationChange,
   onGenderChange,
 }: LocationStepProps) {
+  const { t } = useTranslation();
+
+  const getGenderLabel = (value: string) => {
+    switch (value) {
+      case 'male':
+        return t('onboarding.location.gender.male');
+      case 'female':
+        return t('onboarding.location.gender.female');
+      case 'other':
+        return t('onboarding.location.gender.other');
+      case 'prefer_not_to_say':
+        return t('onboarding.location.gender.preferNotToSay');
+      default:
+        return value;
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -31,10 +49,10 @@ export default function LocationStep({
           <MapPin className="w-8 h-8 text-blue-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          Where are you located?
+          {t('onboarding.location.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          This helps match you with nearby opportunities
+          {t('onboarding.location.subtitle')}
         </p>
       </motion.div>
 
@@ -47,12 +65,12 @@ export default function LocationStep({
           transition={{ delay: 0.1 }}
         >
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            City / Region
+            {t('onboarding.location.cityRegion')}
           </label>
           <LocationDropdown
             value={residenceLocation}
             onChange={onLocationChange}
-            placeholder="Select your city"
+            placeholder={t('onboarding.location.selectCity')}
           />
         </motion.div>
 
@@ -63,7 +81,7 @@ export default function LocationStep({
           transition={{ delay: 0.2 }}
         >
           <label className="block text-sm font-medium text-gray-300 mb-2">
-            Gender <span className="text-gray-500">(optional)</span>
+            {t('onboarding.location.genderLabel')} <span className="text-gray-500">({t('onboarding.optional')})</span>
           </label>
           <div className="grid grid-cols-2 gap-3">
             {GENDER_OPTIONS.map((option) => (
@@ -85,12 +103,12 @@ export default function LocationStep({
                   }
                 `}
               >
-                {option.label}
+                {getGenderLabel(option.value)}
               </button>
             ))}
           </div>
           <p className="mt-2 text-xs text-gray-500">
-            This information is kept private and is not shared with employers
+            {t('onboarding.location.privacyNote')}
           </p>
         </motion.div>
       </div>

@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { GraduationCap, ChevronDown } from 'lucide-react';
 import { FIELDS_OF_STUDY, GRADUATION_YEARS } from '@/lib/onboarding/constants';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface EducationStepProps {
   schoolName: string;
@@ -13,6 +14,43 @@ interface EducationStepProps {
   onFieldOfStudyChange: (value: string) => void;
 }
 
+const FIELD_OF_STUDY_FR: Record<string, string> = {
+  'Computer Science': 'Informatique',
+  'Software Engineering': 'Genie logiciel',
+  'Information Technology': "Technologies de l'information",
+  'Data Science': 'Science des donnees',
+  Cybersecurity: 'Cybersecurite',
+  'Electrical Engineering': 'Genie electrique',
+  'Mechanical Engineering': 'Genie mecanique',
+  'Civil Engineering': 'Genie civil',
+  'Chemical Engineering': 'Genie chimique',
+  'Business Administration': 'Administration des entreprises',
+  Economics: 'Economie',
+  Finance: 'Finance',
+  Accounting: 'Comptabilite',
+  Marketing: 'Marketing',
+  'Human Resources': 'Ressources humaines',
+  Law: 'Droit',
+  Medicine: 'Medecine',
+  Nursing: 'Soins infirmiers',
+  Pharmacy: 'Pharmacie',
+  'Public Health': 'Sante publique',
+  Psychology: 'Psychologie',
+  Sociology: 'Sociologie',
+  Communication: 'Communication',
+  Journalism: 'Journalisme',
+  'Graphic Design': 'Design graphique',
+  Architecture: 'Architecture',
+  Education: 'Education',
+  Mathematics: 'Mathematiques',
+  Physics: 'Physique',
+  Chemistry: 'Chimie',
+  Biology: 'Biologie',
+  Agriculture: 'Agriculture',
+  'Environmental Science': "Sciences de l'environnement",
+  Other: 'Autre',
+};
+
 export default function EducationStep({
   schoolName,
   graduationYear,
@@ -21,6 +59,10 @@ export default function EducationStep({
   onGraduationYearChange,
   onFieldOfStudyChange,
 }: EducationStepProps) {
+  const { t, locale } = useTranslation();
+  const translateField = (field: string) =>
+    locale === 'fr' ? (FIELD_OF_STUDY_FR[field] || field) : field;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -33,10 +75,10 @@ export default function EducationStep({
           <GraduationCap className="w-8 h-8 text-purple-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          Tell us about your education
+          {t('onboarding.education.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          Your academic background helps employers understand your qualifications
+          {t('onboarding.education.subtitle')}
         </p>
       </motion.div>
 
@@ -52,14 +94,14 @@ export default function EducationStep({
             htmlFor="schoolName"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            School / University
+            {t('onboarding.education.school')}
           </label>
           <input
             id="schoolName"
             type="text"
             value={schoolName}
             onChange={(e) => onSchoolNameChange(e.target.value)}
-            placeholder="e.g., University of Buea"
+            placeholder={t('onboarding.education.schoolPlaceholder')}
             className="
               w-full px-4 py-3 bg-gray-800 text-gray-100
               border border-gray-600 rounded-lg
@@ -79,7 +121,7 @@ export default function EducationStep({
             htmlFor="fieldOfStudy"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            Field of Study
+            {t('onboarding.education.field')}
           </label>
           <div className="relative">
             <select
@@ -95,11 +137,11 @@ export default function EducationStep({
               "
             >
               <option value="" className="text-gray-500">
-                Select your field
+                {t('onboarding.education.selectField')}
               </option>
               {FIELDS_OF_STUDY.map((field) => (
                 <option key={field} value={field} className="text-gray-100 bg-gray-800">
-                  {field}
+                  {translateField(field)}
                 </option>
               ))}
             </select>
@@ -119,7 +161,7 @@ export default function EducationStep({
             htmlFor="graduationYear"
             className="block text-sm font-medium text-gray-300 mb-2"
           >
-            Graduation Year
+            {t('onboarding.education.graduationYear')}
           </label>
           <div className="relative">
             <select
@@ -137,7 +179,7 @@ export default function EducationStep({
               "
             >
               <option value="" className="text-gray-500">
-                Select year
+                {t('onboarding.education.selectYear')}
               </option>
               {GRADUATION_YEARS.map((year) => (
                 <option key={year.value} value={year.value} className="text-gray-100 bg-gray-800">
@@ -150,7 +192,7 @@ export default function EducationStep({
             </div>
           </div>
           <p className="mt-1 text-xs text-gray-500">
-            Select expected year if still studying
+            {t('onboarding.education.expectedYearNote')}
           </p>
         </motion.div>
       </div>

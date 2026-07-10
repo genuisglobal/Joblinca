@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import Image from 'next/image';
 import { MessageSquare, Send, ArrowLeft, User } from 'lucide-react';
 
 interface Conversation {
@@ -155,7 +156,14 @@ export default function JobSeekerMessagesPage() {
               >
                 <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gray-600">
                   {conv.partner?.avatar_url ? (
-                    <img src={conv.partner.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover" />
+                    <Image
+                      src={conv.partner.avatar_url}
+                      alt=""
+                      width={40}
+                      height={40}
+                      unoptimized
+                      className="h-10 w-10 rounded-full object-cover"
+                    />
                   ) : (
                     <User className="h-5 w-5 text-gray-400" />
                   )}

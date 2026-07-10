@@ -19,8 +19,15 @@ import {
   DEFAULT_JOB_INTERVIEW_SELF_SCHEDULE_SETTINGS,
   type JobInterviewSelfScheduleSettings,
 } from '@/lib/interview-scheduling/self-schedule';
-import { describeEligibleRoles, getOpportunityTypeLabel } from '@/lib/opportunities';
+import { describeEligibleRoles } from '@/lib/opportunities';
 import { getJobManagementStatus } from '@/lib/jobs/lifecycle';
+import { useTranslation } from '@/lib/i18n/context';
+import { addLocalePrefix } from '@/lib/i18n/locale';
+import {
+  formatLocalizedDate,
+  translateOpportunityLabel,
+} from '@/lib/i18n/application-presentation';
+import { translateEligibleRoleSummary } from '@/lib/i18n/recruiter-presentation';
 
 interface Job {
   id: string;
@@ -145,10 +152,12 @@ export default function RecruiterJobDetailPage({
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const { t, locale } = useTranslation();
+  const localize = useMemo(() => (href: string) => addLocalePrefix(href, locale), [locale]);
   const [loading, setLoading] = useState(true);
   const [job, setJob] = useState<Job | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [pipelineName, setPipelineName] = useState('Structured Hiring');
+  const [pipelineName, setPipelineName] = useState('');
   const [pipelineStages, setPipelineStages] = useState<HiringPipelineStage[]>([]);
   const [savingPipeline, setSavingPipeline] = useState(false);
   const [automationSettings, setAutomationSettings] = useState<JobInterviewAutomationSettings>(
@@ -185,7 +194,11 @@ export default function RecruiterJobDetailPage({
         if (!mounted) return;
 
         if (authError || !user) {
-          router.replace('/auth/login');
+          router.replace(
+            `${localize('/auth/login')}?redirect=${encodeURIComponent(
+              localize(`/dashboard/recruiter/jobs/${params.id}`)
+            )}`
+          );
           return;
         }
 
@@ -200,7 +213,7 @@ export default function RecruiterJobDetailPage({
         if (!mounted) return;
 
         if (jobError || !jobData) {
-          router.replace('/dashboard/recruiter/jobs');
+          router.replace(localize('/dashboard/recruiter/jobs'));
           return;
         }
 
@@ -211,7 +224,7 @@ export default function RecruiterJobDetailPage({
         });
         if (pipelineResponse.ok) {
           const pipelineData = (await pipelineResponse.json()) as HiringPipelineResponse;
-          setPipelineName(pipelineData.pipeline?.name || 'Structured Hiring');
+          setPipelineName(pipelineData.pipeline?.name || t('recruiterJobDetail.defaultPipelineName'));
           setPipelineStages(pipelineData.pipeline?.stages || []);
         }
 
@@ -293,7 +306,7 @@ export default function RecruiterJobDetailPage({
       } catch (err) {
         console.error('Job detail load error:', err);
         if (mounted) {
-          router.replace('/dashboard/recruiter/jobs');
+          router.replace(localize('/dashboard/recruiter/jobs'));
         }
       }
     }
@@ -303,7 +316,7 @@ export default function RecruiterJobDetailPage({
     return () => {
       mounted = false;
     };
-  }, [supabase, router, params.id]);
+  }, [supabase, router, params.id, localize, t]);
 
   useEffect(() => {
     if (!job) {
@@ -321,7 +334,7 @@ export default function RecruiterJobDetailPage({
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-4">
           <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent" />
-          <p className="text-gray-400">Loading job details...</p>
+          <p className="text-gray-400">{t('recruiterJobDetail.loading')}</p>
         </div>
       </div>
     );
@@ -332,12 +345,15 @@ export default function RecruiterJobDetailPage({
   }
 
   const managementStatus = getJobManagementStatus(job);
-  const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
-  const eligibleRoleSummary = describeEligibleRoles(
-    job.eligible_roles,
-    job.job_type,
-    job.internship_track,
-    job.visibility
+  const opportunityLabel = translateOpportunityLabel(t, job.job_type, job.internship_track);
+  const eligibleRoleSummary = translateEligibleRoleSummary(
+    t,
+    describeEligibleRoles(
+      job.eligible_roles,
+      job.job_type,
+      job.internship_track,
+      job.visibility
+    )
   );
   const todayInputValue = new Date().toISOString().split('T')[0];
   const canPutOnHold =
@@ -354,10 +370,10 @@ export default function RecruiterJobDetailPage({
     managementStatus === 'filled' ||
     managementStatus === 'archived';
   const lastReopenedLabel = job.last_reopened_at
-    ? new Date(job.last_reopened_at).toLocaleDateString()
-    : 'Never';
+    ? formatLocalizedDate(job.last_reopened_at, locale) || job.last_reopened_at
+    : t('recruiterJobDetail.never');
   const retentionExpiryLabel = job.retention_expires_at
-    ? new Date(job.retention_expires_at).toLocaleDateString()
+    ? formatLocalizedDate(job.retention_expires_at, locale)
     : null;
 
   const submitLifecycleAction = async (action: LifecycleAction) => {
@@ -369,7 +385,7 @@ export default function RecruiterJobDetailPage({
       if (!lifecycleForm.closesAt) {
         setLifecycleMessage({
           type: 'error',
-          text: 'Set a new future application deadline before reopening or reposting this job.',
+          text: t('recruiterJobDetail.lifecycle.deadlineRequired'),
         });
         return;
       }
@@ -377,21 +393,21 @@ export default function RecruiterJobDetailPage({
 
     if (
       action === 'hold' &&
-      !window.confirm('Put this job on hold and hide it from public listings?')
+      !window.confirm(t('recruiterJobDetail.lifecycle.confirmHold'))
     ) {
       return;
     }
 
     if (
       action === 'fill' &&
-      !window.confirm('Mark this job as filled and stop taking new applications?')
+      !window.confirm(t('recruiterJobDetail.lifecycle.confirmFill'))
     ) {
       return;
     }
 
     if (
       action === 'repost' &&
-      !window.confirm('Create a new reposted listing using this job as the source?')
+      !window.confirm(t('recruiterJobDetail.lifecycle.confirmRepost'))
     ) {
       return;
     }
@@ -419,11 +435,11 @@ export default function RecruiterJobDetailPage({
       const result = await response.json().catch(() => null);
 
       if (!response.ok) {
-        throw new Error(result?.error || 'Failed to update job lifecycle.');
+        throw new Error(result?.error || t('recruiterJobDetail.lifecycle.updateFailed'));
       }
 
       if (action === 'repost' && result?.id) {
-        router.push(`/dashboard/recruiter/jobs/${result.id}?reposted=1`);
+        router.push(`${localize(`/dashboard/recruiter/jobs/${result.id}`)}?reposted=1`);
         return;
       }
 
@@ -435,10 +451,10 @@ export default function RecruiterJobDetailPage({
         type: 'success',
         text:
           action === 'hold'
-            ? 'Job is now on hold.'
+            ? t('recruiterJobDetail.lifecycle.holdSuccess')
             : action === 'fill'
-              ? 'Job marked as filled.'
-              : 'Job updated successfully.',
+              ? t('recruiterJobDetail.lifecycle.fillSuccess')
+              : t('recruiterJobDetail.lifecycle.updateSuccess'),
       });
     } catch (error) {
       setLifecycleMessage({
@@ -446,7 +462,7 @@ export default function RecruiterJobDetailPage({
         text:
           error instanceof Error
             ? error.message
-            : 'Failed to update job lifecycle.',
+            : t('recruiterJobDetail.lifecycle.updateFailed'),
       });
     } finally {
       setLifecycleAction(null);
@@ -472,7 +488,7 @@ export default function RecruiterJobDetailPage({
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => null);
-        throw new Error(errorPayload?.error || 'Failed to save hiring pipeline');
+        throw new Error(errorPayload?.error || t('pipelineEditor.saveFailed'));
       }
 
       const data = (await response.json()) as HiringPipelineResponse;
@@ -521,7 +537,7 @@ export default function RecruiterJobDetailPage({
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => null);
-        throw new Error(errorPayload?.error || 'Failed to save interview automation');
+        throw new Error(errorPayload?.error || t('interviewAutomation.saveFailed'));
       }
 
       const data = (await response.json()) as InterviewAutomationResponse;
@@ -547,7 +563,7 @@ export default function RecruiterJobDetailPage({
 
       if (!response.ok) {
         const errorPayload = await response.json().catch(() => null);
-        throw new Error(errorPayload?.error || 'Failed to save self-schedule settings');
+        throw new Error(errorPayload?.error || t('selfSchedule.saveFailed'));
       }
 
       const data = (await response.json()) as InterviewSelfScheduleResponse;
@@ -566,7 +582,7 @@ export default function RecruiterJobDetailPage({
       <div className="flex items-start justify-between">
         <div>
           <Link
-            href="/dashboard/recruiter/jobs"
+            href={localize('/dashboard/recruiter/jobs')}
             className="text-gray-400 hover:text-white text-sm mb-2 inline-flex items-center gap-1"
           >
             <svg
@@ -582,7 +598,7 @@ export default function RecruiterJobDetailPage({
                 d="M15 19l-7-7 7-7"
               />
             </svg>
-            Back to Jobs
+            {t('recruiterJobDetail.backToJobs')}
           </Link>
           <h1 className="text-2xl font-bold text-white">{job.title}</h1>
           {job.company_name && (
@@ -600,17 +616,17 @@ export default function RecruiterJobDetailPage({
         <div className="flex items-center gap-3">
           <StatusBadge status={managementStatus} />
           <Link
-            href={`/jobs/${job.id}/edit`}
+            href={localize(`/jobs/${job.id}/edit`)}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
-            Edit Job
+            {t('recruiterJobDetail.editJob')}
           </Link>
           <Link
-            href={`/jobs/${job.id}`}
+            href={localize(`/jobs/${job.id}`)}
             className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors"
             target="_blank"
           >
-            Preview
+            {t('recruiterJobDetail.preview')}
           </Link>
         </div>
       </div>
@@ -623,11 +639,9 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <div>
-              <h3 className="font-medium text-red-400">Job Rejected</h3>
+              <h3 className="font-medium text-red-400">{t('recruiterJobDetail.rejectedTitle')}</h3>
               <p className="text-gray-300 mt-1">{job.rejection_reason}</p>
-              <p className="text-sm text-gray-400 mt-2">
-                Please update your job posting and contact support if you have questions.
-              </p>
+              <p className="text-sm text-gray-400 mt-2">{t('recruiterJobDetail.rejectedHelp')}</p>
             </div>
           </div>
         </div>
@@ -640,10 +654,8 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <h3 className="font-medium text-blue-400">Job Submitted</h3>
-              <p className="text-gray-300 mt-1">
-                Your job has been created. It is pending review and will appear on the public jobs page once an admin approves it.
-              </p>
+              <h3 className="font-medium text-blue-400">{t('recruiterJobDetail.submittedTitle')}</h3>
+              <p className="text-gray-300 mt-1">{t('recruiterJobDetail.submittedDescription')}</p>
             </div>
           </div>
         </div>
@@ -656,10 +668,8 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
             <div>
-              <h3 className="font-medium text-blue-400">Job Reposted</h3>
-              <p className="text-gray-300 mt-1">
-                A fresh listing has been created from your previous job. Review the new deadline and lifecycle state below.
-              </p>
+              <h3 className="font-medium text-blue-400">{t('recruiterJobDetail.repostedTitle')}</h3>
+              <p className="text-gray-300 mt-1">{t('recruiterJobDetail.repostedDescription')}</p>
             </div>
           </div>
         </div>
@@ -673,10 +683,8 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <h3 className="font-medium text-yellow-400">Pending Approval</h3>
-              <p className="text-gray-300 mt-1">
-                Your job posting is being reviewed by our team. It will be visible to candidates once approved.
-              </p>
+              <h3 className="font-medium text-yellow-400">{t('recruiterJobDetail.pendingTitle')}</h3>
+              <p className="text-gray-300 mt-1">{t('recruiterJobDetail.pendingDescription')}</p>
             </div>
           </div>
         </div>
@@ -689,10 +697,8 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <h3 className="font-medium text-amber-300">Applications Closed</h3>
-              <p className="text-gray-300 mt-1">
-                This job is no longer taking new applications, but you can keep reviewing candidates or reopen it with a new deadline.
-              </p>
+              <h3 className="font-medium text-amber-300">{t('recruiterJobDetail.closedTitle')}</h3>
+              <p className="text-gray-300 mt-1">{t('recruiterJobDetail.closedDescription')}</p>
             </div>
           </div>
         </div>
@@ -705,10 +711,8 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m5-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <h3 className="font-medium text-slate-200">Job On Hold</h3>
-              <p className="text-gray-300 mt-1">
-                This job is hidden from public listings. Reopen it with a new deadline when hiring resumes.
-              </p>
+              <h3 className="font-medium text-slate-200">{t('recruiterJobDetail.onHoldTitle')}</h3>
+              <p className="text-gray-300 mt-1">{t('recruiterJobDetail.onHoldDescription')}</p>
             </div>
           </div>
         </div>
@@ -721,9 +725,11 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <div>
-              <h3 className="font-medium text-emerald-300">Job Filled</h3>
+              <h3 className="font-medium text-emerald-300">{t('recruiterJobDetail.filledTitle')}</h3>
               <p className="text-gray-300 mt-1">
-                Hiring is complete for this listing. It will stay in retention until it is archived{retentionExpiryLabel ? ` on ${retentionExpiryLabel}` : ''}.
+                {t('recruiterJobDetail.filledDescription', {
+                  retention: retentionExpiryLabel || t('recruiterJobDetail.retentionFallback'),
+                })}
               </p>
             </div>
           </div>
@@ -737,10 +743,8 @@ export default function RecruiterJobDetailPage({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 12h14M5 16h14" />
             </svg>
             <div>
-              <h3 className="font-medium text-stone-200">Job Archived</h3>
-              <p className="text-gray-300 mt-1">
-                This listing is now historical. Repost it to create a new active opening.
-              </p>
+              <h3 className="font-medium text-stone-200">{t('recruiterJobDetail.archivedTitle')}</h3>
+              <p className="text-gray-300 mt-1">{t('recruiterJobDetail.archivedDescription')}</p>
             </div>
           </div>
         </div>
@@ -750,10 +754,8 @@ export default function RecruiterJobDetailPage({
         <div className="bg-gray-800 rounded-xl p-6">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Lifecycle Actions</h2>
-              <p className="text-sm text-gray-400 mt-1">
-                Control whether this job is live, on hold, filled, or reposted as a new listing.
-              </p>
+              <h2 className="text-lg font-semibold text-white">{t('recruiterJobDetail.lifecycle.title')}</h2>
+              <p className="text-sm text-gray-400 mt-1">{t('recruiterJobDetail.lifecycle.subtitle')}</p>
             </div>
             <StatusBadge status={managementStatus} />
           </div>
@@ -773,7 +775,9 @@ export default function RecruiterJobDetailPage({
           {(canReopen || canRepost || canMarkFilled) && (
             <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <label className="block">
-                <span className="text-sm font-medium text-gray-300">Next Application Deadline</span>
+                <span className="text-sm font-medium text-gray-300">
+                  {t('recruiterJobDetail.lifecycle.nextDeadline')}
+                </span>
                 <input
                   type="date"
                   value={lifecycleForm.closesAt}
@@ -789,7 +793,9 @@ export default function RecruiterJobDetailPage({
               </label>
 
               <label className="block">
-                <span className="text-sm font-medium text-gray-300">Target Hire Date</span>
+                <span className="text-sm font-medium text-gray-300">
+                  {t('recruiterJobDetail.lifecycle.targetHireDate')}
+                </span>
                 <input
                   type="date"
                   value={lifecycleForm.targetHireDate}
@@ -814,7 +820,9 @@ export default function RecruiterJobDetailPage({
                 disabled={lifecycleAction !== null}
                 className="px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
               >
-                {lifecycleAction === 'hold' ? 'Putting On Hold...' : 'Put On Hold'}
+                {lifecycleAction === 'hold'
+                  ? t('recruiterJobDetail.lifecycle.holding')
+                  : t('recruiterJobDetail.lifecycle.hold')}
               </button>
             )}
 
@@ -825,7 +833,9 @@ export default function RecruiterJobDetailPage({
                 disabled={lifecycleAction !== null}
                 className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
               >
-                {lifecycleAction === 'fill' ? 'Marking Filled...' : 'Mark Filled'}
+                {lifecycleAction === 'fill'
+                  ? t('recruiterJobDetail.lifecycle.filling')
+                  : t('recruiterJobDetail.lifecycle.fill')}
               </button>
             )}
 
@@ -836,7 +846,9 @@ export default function RecruiterJobDetailPage({
                 disabled={lifecycleAction !== null}
                 className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
               >
-                {lifecycleAction === 'reopen' ? 'Reopening...' : 'Reopen Job'}
+                {lifecycleAction === 'reopen'
+                  ? t('recruiterJobDetail.lifecycle.reopening')
+                  : t('recruiterJobDetail.lifecycle.reopen')}
               </button>
             )}
 
@@ -847,90 +859,94 @@ export default function RecruiterJobDetailPage({
                 disabled={lifecycleAction !== null}
                 className="px-4 py-2 rounded-lg bg-gray-700 text-white hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-60 transition-colors"
               >
-                {lifecycleAction === 'repost' ? 'Reposting...' : 'Repost as New Job'}
+                {lifecycleAction === 'repost'
+                  ? t('recruiterJobDetail.lifecycle.reposting')
+                  : t('recruiterJobDetail.lifecycle.repost')}
               </button>
             )}
           </div>
 
           <p className="mt-3 text-xs text-gray-500">
-            Reopen reuses this listing with a new deadline. Repost creates a new listing and keeps the old one as history.
+            {t('recruiterJobDetail.lifecycle.note')}
           </p>
         </div>
       )}
 
       {/* Job Info */}
       <div className="bg-gray-800 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Job Details</h2>
+        <h2 className="text-lg font-semibold text-white mb-4">{t('recruiterJobDetail.detailsTitle')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
-            <p className="text-sm text-gray-400">Location</p>
-            <p className="text-white">{job.location || 'Not specified'}</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.location')}</p>
+            <p className="text-white">{job.location || t('common.notSpecified')}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Work Type</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.workType')}</p>
             <p className="text-white capitalize">
-              {job.work_type || 'On-site'}
+              {job.work_type || t('common.onSite')}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Salary</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.salary')}</p>
             <p className="text-white">
-              {job.salary ? `${job.salary.toLocaleString()} XAF` : 'Not disclosed'}
+              {job.salary ? `${job.salary.toLocaleString()} XAF` : t('recruiterJobDetail.notDisclosed')}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Opportunity Type</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.opportunityType')}</p>
             <p className="text-white">{opportunityLabel}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Visibility</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.visibility')}</p>
             <p className="text-white capitalize">
-              {job.visibility || 'Public'}
+              {job.visibility || t('recruiterJobDetail.public')}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Posted</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.posted')}</p>
             <p className="text-white">
-              {new Date(job.created_at).toLocaleDateString()}
+              {formatLocalizedDate(job.created_at, locale) || job.created_at}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Eligible Profiles</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.eligibleProfiles')}</p>
             <p className="text-white">{eligibleRoleSummary}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Application Deadline</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.applicationDeadline')}</p>
             <p className="text-white">
-              {job.closes_at ? new Date(job.closes_at).toLocaleDateString() : 'Open until manually closed'}
+              {job.closes_at
+                ? formatLocalizedDate(job.closes_at, locale) || job.closes_at
+                : t('recruiterJobDetail.openUntilClosed')}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Target Hire Date</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.targetHireDate')}</p>
             <p className="text-white">
               {job.target_hire_date
-                ? new Date(job.target_hire_date).toLocaleDateString()
-                : 'Not set'}
+                ? formatLocalizedDate(job.target_hire_date, locale) || job.target_hire_date
+                : t('recruiterJobDetail.notSet')}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Reopened</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.reopened')}</p>
             <p className="text-white">
               {job.reopen_count && job.reopen_count > 0
-                ? `${job.reopen_count} time${job.reopen_count === 1 ? '' : 's'}`
-                : 'Never'}
+                ? t('recruiterJobDetail.reopenedCount', { count: job.reopen_count })
+                : t('recruiterJobDetail.never')}
             </p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Last Reopened</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.lastReopened')}</p>
             <p className="text-white">{lastReopenedLabel}</p>
           </div>
           <div>
-            <p className="text-sm text-gray-400">Retention Ends</p>
-            <p className="text-white">{retentionExpiryLabel || 'Not scheduled'}</p>
+            <p className="text-sm text-gray-400">{t('recruiterJobDetail.retentionEnds')}</p>
+            <p className="text-white">{retentionExpiryLabel || t('recruiterJobDetail.notScheduled')}</p>
           </div>
         </div>
         <div className="mt-6">
-          <p className="text-sm text-gray-400 mb-2">Description</p>
+          <p className="text-sm text-gray-400 mb-2">{t('recruiterJobDetail.description')}</p>
           <p className="text-gray-300 whitespace-pre-wrap">{job.description}</p>
         </div>
       </div>
@@ -940,10 +956,8 @@ export default function RecruiterJobDetailPage({
       {pipelineStages.length > 0 && (
         <div className="bg-gray-800 rounded-xl p-6">
           <div className="mb-4">
-            <h2 className="text-lg font-semibold text-white">Hiring Pipeline</h2>
-            <p className="text-sm text-gray-400 mt-1">
-              Edit stage labels, order, and feedback availability for this job.
-            </p>
+            <h2 className="text-lg font-semibold text-white">{t('recruiterJobDetail.hiringPipeline')}</h2>
+            <p className="text-sm text-gray-400 mt-1">{t('recruiterJobDetail.hiringPipelineSubtitle')}</p>
           </div>
           <PipelineEditor
             pipelineName={pipelineName}
@@ -970,7 +984,7 @@ export default function RecruiterJobDetailPage({
       <div className="bg-gray-800 rounded-xl p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-white">
-            Applications ({applications.length})
+            {t('recruiterJobDetail.applicationsTitle', { count: applications.length })}
           </h2>
         </div>
         <ApplicationsTable

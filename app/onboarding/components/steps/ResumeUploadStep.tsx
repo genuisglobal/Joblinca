@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { FileText } from 'lucide-react';
 import FileUpload from '@/components/ui/FileUpload';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface ResumeUploadStepProps {
   resumeFile: File | null;
@@ -15,6 +16,8 @@ export default function ResumeUploadStep({
   resumeUrl,
   onFileSelect,
 }: ResumeUploadStepProps) {
+  const { t } = useTranslation();
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -27,10 +30,10 @@ export default function ResumeUploadStep({
           <FileText className="w-8 h-8 text-blue-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          Upload your resume
+          {t('onboarding.resume.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          Your CV helps employers understand your experience
+          {t('onboarding.resume.subtitle')}
         </p>
       </motion.div>
 
@@ -45,8 +48,8 @@ export default function ResumeUploadStep({
           onFileSelect={onFileSelect}
           accept=".pdf,.doc,.docx"
           maxSizeMB={5}
-          label="Upload your resume"
-          hint="PDF, DOC, or DOCX up to 5MB"
+          label={t('onboarding.resume.uploadLabel')}
+          hint={t('onboarding.resume.uploadHint')}
         />
       </motion.div>
 
@@ -57,7 +60,7 @@ export default function ResumeUploadStep({
           animate={{ opacity: 1 }}
           className="text-center text-sm text-gray-500"
         >
-          You already have a resume uploaded. Upload a new one to replace it.
+          {t('onboarding.resume.replaceHint')}
         </motion.div>
       )}
 
@@ -69,13 +72,13 @@ export default function ResumeUploadStep({
         className="bg-gray-800/50 rounded-lg p-4 mt-6"
       >
         <h3 className="text-sm font-medium text-gray-300 mb-2">
-          Resume tips:
+          {t('onboarding.resume.tipsTitle')}
         </h3>
         <ul className="text-sm text-gray-500 space-y-1">
-          <li>- Keep it concise (1-2 pages)</li>
-          <li>- Include your contact information</li>
-          <li>- Highlight relevant experience and skills</li>
-          <li>- Use a clean, professional format</li>
+          <li>- {t('onboarding.resume.tip1')}</li>
+          <li>- {t('onboarding.resume.tip2')}</li>
+          <li>- {t('onboarding.resume.tip3')}</li>
+          <li>- {t('onboarding.resume.tip4')}</li>
         </ul>
       </motion.div>
     </div>

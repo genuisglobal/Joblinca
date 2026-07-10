@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useTranslation } from '@/lib/i18n';
+import { addLocalePrefix } from '@/lib/i18n/locale';
 import { Mail, Lock, Phone, ArrowRight, AlertCircle, Briefcase, GraduationCap, Building2, CheckCircle } from 'lucide-react';
 
 type UserRole = 'job_seeker' | 'talent' | 'recruiter';
@@ -18,9 +19,10 @@ function RegisterForm() {
   const registrationOfficerCode = searchParams.get('officer') || '';
   const whatsappSource = (searchParams.get('source') || '').toLowerCase() === 'whatsapp';
   const isWhatsappPhoneLocked = whatsappSource && initialPhone.trim().length > 0;
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   const supabase = createClient();
+  const localizedHref = (href: string) => addLocalePrefix(href, locale);
   // Map legacy "candidate" alias to "job_seeker"
   const normalizedInitialRole: UserRole =
     initialRole === ('candidate' as string) ? 'job_seeker' :
@@ -81,7 +83,7 @@ function RegisterForm() {
 
     try {
       if (isWhatsappPhoneLocked && phone.trim() !== initialPhone.trim()) {
-        setError('Use the same WhatsApp number to create your account.');
+        setError(t("auth.register.whatsappPhoneLocked"));
         return;
       }
 
@@ -127,11 +129,11 @@ function RegisterForm() {
       }
 
       if (role === 'recruiter') {
-        router.push('/dashboard/recruiter');
+        router.push(localizedHref('/dashboard/recruiter'));
       } else if (role === 'talent') {
-        router.push('/dashboard/talent');
+        router.push(localizedHref('/dashboard/talent'));
       } else {
-        router.push('/dashboard');
+        router.push(localizedHref('/dashboard'));
       }
     } catch {
       setError(t("auth.register.unexpectedError"));
@@ -257,7 +259,7 @@ function RegisterForm() {
               </label>
               {isWhatsappPhoneLocked && (
                 <p className="text-xs text-primary-300 mb-2">
-                  This number is locked to match your WhatsApp account.
+                  {t("auth.register.whatsappPhoneLocked")}
                 </p>
               )}
               <div className="relative">
@@ -374,7 +376,7 @@ function RegisterForm() {
               await supabase.auth.signInWithOAuth({
                 provider: 'google',
                 options: {
-                  redirectTo: `${window.location.origin}/auth/callback?role=${role}`,
+                  redirectTo: `${window.location.origin}${localizedHref('/auth/callback')}?role=${role}`,
                 },
               });
             }}
@@ -395,7 +397,7 @@ function RegisterForm() {
           <p className="text-center text-neutral-400">
             {t("auth.register.haveAccount")}{' '}
             <Link
-              href="/auth/login"
+              href={localizedHref('/auth/login')}
               className="text-primary-400 hover:text-primary-300 font-medium transition-colors"
             >
               {t("auth.register.signIn")}
@@ -406,11 +408,11 @@ function RegisterForm() {
         {/* Footer */}
         <p className="text-center text-sm text-neutral-500 mt-8">
           {t("auth.register.agreeTerms")}{' '}
-          <Link href="/terms" className="text-neutral-400 hover:text-white transition-colors">
+          <Link href={localizedHref('/terms')} className="text-neutral-400 hover:text-white transition-colors">
             {t("auth.register.terms")}
           </Link>{' '}
           {t("auth.register.and")}{' '}
-          <Link href="/privacy" className="text-neutral-400 hover:text-white transition-colors">
+          <Link href={localizedHref('/privacy')} className="text-neutral-400 hover:text-white transition-colors">
             {t("auth.register.privacy")}
           </Link>
         </p>

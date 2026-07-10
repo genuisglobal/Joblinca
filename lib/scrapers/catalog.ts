@@ -9,6 +9,8 @@ export interface ScraperSourceCatalogEntry {
   trustTier: number;
   executionKind: ScraperExecutionKind;
   retireLegacyExternalFeed?: boolean;
+  /** Set false to retire a source (dead site, etc.) without deleting its code */
+  enabled?: boolean;
 }
 
 type SourceOption = {
@@ -90,6 +92,20 @@ export const SCRAPER_SOURCE_CATALOG = [
     trustTier: 72,
     executionKind: 'site',
     retireLegacyExternalFeed: false,
+    // Retired 2026-07: kmerjobs.com no longer resolves (NXDOMAIN).
+    // Re-enable if the site comes back.
+    enabled: false,
+  },
+  {
+    // First-party employer pages registered in /admin/aggregation/career-pages;
+    // extraction is LLM-based so adding an employer is config, not code
+    slug: 'careerpages',
+    label: 'Company Career Pages',
+    sourceType: 'html',
+    baseUrl: 'https://joblinca.com/admin/aggregation/career-pages',
+    trustTier: 85,
+    executionKind: 'site',
+    retireLegacyExternalFeed: false,
   },
   {
     slug: FACEBOOK_SCRAPER_SOURCE_SLUG,
@@ -119,9 +135,16 @@ function toOptions(
   }));
 }
 
-export const AUTOMATED_SCRAPER_SOURCE_CATALOG = SCRAPER_SOURCE_CATALOG.filter(
-  (entry) => entry.executionKind === 'site'
-) as ScraperSourceCatalogEntry[];
+// Widen past the `as const` narrowing so optional fields are accessible
+const CATALOG_ENTRIES: readonly ScraperSourceCatalogEntry[] = SCRAPER_SOURCE_CATALOG;
+
+export const ACTIVE_SCRAPER_SOURCE_CATALOG = CATALOG_ENTRIES.filter(
+  (entry) => entry.enabled !== false
+);
+
+export const AUTOMATED_SCRAPER_SOURCE_CATALOG = CATALOG_ENTRIES.filter(
+  (entry) => entry.executionKind === 'site' && entry.enabled !== false
+);
 
 export const AUTOMATED_SCRAPER_SOURCE_SLUGS = toSlugs(
   AUTOMATED_SCRAPER_SOURCE_CATALOG

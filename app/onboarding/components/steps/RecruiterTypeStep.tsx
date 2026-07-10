@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Building2, Users, User, Rocket, Check } from 'lucide-react';
 import { RECRUITER_TYPES } from '@/lib/onboarding/constants';
 import { RecruiterType } from '@/lib/onboarding/types';
+import { useTranslation } from '@/lib/i18n/context';
 
 interface RecruiterTypeStepProps {
   recruiterType: RecruiterType | null;
@@ -23,6 +24,38 @@ export default function RecruiterTypeStep({
   onRecruiterTypeChange,
   error,
 }: RecruiterTypeStepProps) {
+  const { t } = useTranslation();
+
+  const getRecruiterTypeLabel = (value: string) => {
+    switch (value) {
+      case 'company_hr':
+        return t('onboarding.recruiterType.companyHr');
+      case 'agency':
+        return t('onboarding.recruiterType.agency');
+      case 'verified_individual':
+        return t('onboarding.recruiterType.independent');
+      case 'institution':
+        return t('onboarding.recruiterType.institution');
+      default:
+        return value;
+    }
+  };
+
+  const getRecruiterTypeDescription = (value: string) => {
+    switch (value) {
+      case 'company_hr':
+        return t('onboarding.recruiterType.companyHrDescription');
+      case 'agency':
+        return t('onboarding.recruiterType.agencyDescription');
+      case 'verified_individual':
+        return t('onboarding.recruiterType.independentDescription');
+      case 'institution':
+        return t('onboarding.recruiterType.institutionDescription');
+      default:
+        return value;
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -35,10 +68,10 @@ export default function RecruiterTypeStep({
           <Building2 className="w-8 h-8 text-yellow-400" />
         </div>
         <h2 className="text-2xl font-bold text-gray-100">
-          What type of recruiter are you?
+          {t('onboarding.recruiterType.title')}
         </h2>
         <p className="text-gray-400 mt-2">
-          This helps us customize your experience
+          {t('onboarding.recruiterType.subtitle')}
         </p>
       </motion.div>
 
@@ -85,10 +118,10 @@ export default function RecruiterTypeStep({
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <h3 className={`font-medium ${isSelected ? 'text-yellow-400' : 'text-gray-200'}`}>
-                  {type.label}
+                  {getRecruiterTypeLabel(type.value)}
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">
-                  {type.description}
+                  {getRecruiterTypeDescription(type.value)}
                 </p>
               </div>
 
