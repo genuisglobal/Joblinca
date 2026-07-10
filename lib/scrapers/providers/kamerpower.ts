@@ -22,6 +22,7 @@ export class KamerPowerScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 1; page <= this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = page === 1 ? `${BASE_URL}/` : `${BASE_URL}/page/${page}/`;
 
       try {
@@ -85,6 +86,8 @@ export class KamerPowerScraper extends BaseScraper {
             contact_whatsapp: null,
           });
         });
+
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
         // Check if there's a next page
         const hasNext = $('link[rel="next"]').length > 0

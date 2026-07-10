@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const source = (searchParams.get('source') || '').trim();
   const maxPages = Number(searchParams.get('maxPages')) || 2;
+  const earlyStop = searchParams.get('earlyStop') === '1';
 
   if (!source) {
     return NextResponse.json({ error: 'Missing ?source=' }, { status: 400 });
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const result = await runScraper(source, { maxPages });
+    const result = await runScraper(source, { maxPages, earlyStop });
     const ingested = await ingestScrapeResult(result, 'cron');
 
     return NextResponse.json({

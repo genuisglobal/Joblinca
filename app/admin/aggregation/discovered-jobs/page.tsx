@@ -25,6 +25,8 @@ type DiscoveredJobRow = {
   contact_phone: string | null;
 };
 
+const PAGE_SIZE = 50;
+
 const queueLabels: Record<QueueName, string> = {
   review: 'Needs Review',
   suspicious: 'Suspicious',
@@ -57,18 +59,61 @@ function badgeClass(status: string) {
   return 'bg-yellow-900/30 border-yellow-700 text-yellow-300';
 }
 
+function queueAgeDays(discoveredAt: string): number {
+  const t = new Date(discoveredAt).getTime();
+  if (Number.isNaN(t)) return 0;
+  return Math.floor((Date.now() - t) / 86_400_000);
+}
+
+function ageBadge(days: number) {
+  if (days >= 7) return { text: `${days}d in queue`, cls: 'bg-red-900/30 border-red-700 text-red-300' };
+  if (days >= 3) return { text: `${days}d in queue`, cls: 'bg-yellow-900/30 border-yellow-700 text-yellow-300' };
+  return null;
+}
+
+// Supabase's builder generics blow the type-instantiation depth limit when
+// threaded through a generic helper — filter untyped and return the same shape.
+function applyQueueFilter<T>(query: T, queue: QueueName): T {
+  const q = query as any;
+  if (queue === 'review') return q.eq('ingestion_status', 'review_required');
+  if (queue === 'suspicious') return q.eq('verification_status', 'suspicious');
+  if (queue === 'claims') return q.in('claim_status', ['claim_requested', 'claim_under_review']);
+  if (queue === 'published') return q.eq('ingestion_status', 'published');
+  return query;
+}
+
 export default async function AdminDiscoveredJobsPage({
   searchParams,
 }: {
-  searchParams?: { queue?: string };
+  searchParams?: { queue?: string; page?: string };
 }) {
   const queue = normalizeQueue(searchParams?.queue);
+  const pageParam = Number(searchParams?.page);
+  const page = Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : 1;
+  const offset = (page - 1) * PAGE_SIZE;
   const supabase = createServerSupabaseClient();
 
-  let query = supabase
-    .from('discovered_jobs')
-    .select(
-      `
+  // Per-queue counts for the tab chips
+  const countQueues: QueueName[] = ['review', 'suspicious', 'claims', 'published', 'all'];
+  const countResults = await Promise.all(
+    countQueues.map((entry) =>
+      applyQueueFilter(
+        supabase
+          .from('discovered_jobs')
+          .select('id', { count: 'exact', head: true }),
+        entry
+      )
+    )
+  );
+  const queueCounts = Object.fromEntries(
+    countQueues.map((entry, i) => [entry, countResults[i].count ?? 0])
+  ) as Record<QueueName, number>;
+
+  let query = applyQueueFilter(
+    supabase
+      .from('discovered_jobs')
+      .select(
+        `
       id,
       title,
       company_name,
@@ -84,24 +129,19 @@ export default async function AdminDiscoveredJobsPage({
       contact_email,
       contact_phone
       `
-    )
+      ),
+    queue
+  );
+
+  const { data, error } = await query
     .order('discovered_at', { ascending: false })
-    .limit(100);
-
-  if (queue === 'review') {
-    query = query.eq('ingestion_status', 'review_required');
-  } else if (queue === 'suspicious') {
-    query = query.eq('verification_status', 'suspicious');
-  } else if (queue === 'claims') {
-    query = query.in('claim_status', ['claim_requested', 'claim_under_review']);
-  } else if (queue === 'published') {
-    query = query.eq('ingestion_status', 'published');
-  }
-
-  const { data, error } = await query;
+    .range(offset, offset + PAGE_SIZE - 1);
 
   const migrationMissing = isMissingAggregationRelationError(error);
   const rows = (data || []) as DiscoveredJobRow[];
+
+  const totalInQueue = queueCounts[queue];
+  const totalPages = Math.max(1, Math.ceil(totalInQueue / PAGE_SIZE));
 
   // Jobs eligible for bulk publish: trust >= 50, scam < 50, not already published/hidden
   const publishableJobs = rows.filter(
@@ -142,6 +182,9 @@ export default async function AdminDiscoveredJobsPage({
             }`}
           >
             {queueLabels[entry]}
+            <span className={`ml-1.5 ${entry === queue ? 'text-blue-200' : 'text-gray-500'}`}>
+              {queueCounts[entry]}
+            </span>
           </Link>
         ))}
       </div>
@@ -164,7 +207,7 @@ export default async function AdminDiscoveredJobsPage({
       {publishableJobs.length > 0 && (
         <div className="mb-4 flex items-center justify-between rounded-xl border border-gray-700 bg-gray-800/80 p-4">
           <p className="text-sm text-gray-300">
-            {publishableJobs.length} job{publishableJobs.length !== 1 ? 's' : ''} ready to publish
+            {publishableJobs.length} job{publishableJobs.length !== 1 ? 's' : ''} on this page ready to publish
             (trust {'>'}= 50, scam {'<'} 50, not yet published)
           </p>
           <BulkPublishButton jobIds={publishableJobs.map((j) => j.id)} />
@@ -191,7 +234,10 @@ export default async function AdminDiscoveredJobsPage({
                 </td>
               </tr>
             )}
-            {rows.map((row) => (
+            {rows.map((row) => {
+              const ageDays = queueAgeDays(row.discovered_at);
+              const age = !row.native_job_id && queue !== 'published' ? ageBadge(ageDays) : null;
+              return (
               <tr key={row.id} className="border-b border-gray-700/50 hover:bg-gray-700/20">
                 <td className="p-4">
                   <p className="text-white font-medium">{row.title}</p>
@@ -231,6 +277,11 @@ export default async function AdminDiscoveredJobsPage({
                   {row.native_job_id && (
                     <span className="block mt-1 text-xs text-green-400">Published</span>
                   )}
+                  {age && (
+                    <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-xs ${age.cls}`}>
+                      {age.text}
+                    </span>
+                  )}
                 </td>
                 <td className="p-4 text-gray-300 hidden xl:table-cell">
                   <p>Trust: {row.trust_score}</p>
@@ -257,10 +308,45 @@ export default async function AdminDiscoveredJobsPage({
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalInQueue > PAGE_SIZE && (
+        <div className="mt-4 flex items-center justify-between">
+          <p className="text-sm text-gray-400">
+            Showing {offset + 1}–{Math.min(offset + PAGE_SIZE, totalInQueue)} of {totalInQueue}
+          </p>
+          <div className="flex items-center gap-2">
+            {page > 1 ? (
+              <Link
+                href={`/admin/aggregation/discovered-jobs?queue=${queue}&page=${page - 1}`}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg text-sm"
+              >
+                Previous
+              </Link>
+            ) : (
+              <span className="px-4 py-2 bg-gray-800/50 text-gray-600 rounded-lg text-sm">Previous</span>
+            )}
+            <span className="text-sm text-gray-400">
+              Page {page} of {totalPages}
+            </span>
+            {page < totalPages ? (
+              <Link
+                href={`/admin/aggregation/discovered-jobs?queue=${queue}&page=${page + 1}`}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg text-sm"
+              >
+                Next
+              </Link>
+            ) : (
+              <span className="px-4 py-2 bg-gray-800/50 text-gray-600 rounded-lg text-sm">Next</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

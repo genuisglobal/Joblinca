@@ -25,6 +25,7 @@ export class CameroonJobsScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 1; page <= this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = `${BASE_URL}/jobpagination.php?page=${page}`;
 
       try {
@@ -114,6 +115,8 @@ export class CameroonJobsScraper extends BaseScraper {
             contact_whatsapp: null,
           });
         });
+
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
         if (page < this.config.maxPages) {
           await this.delay();

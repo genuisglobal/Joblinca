@@ -147,6 +147,7 @@ export class KmerJobsScraper extends BaseScraper {
     const perPage = 20;
 
     for (let page = 1; page <= this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       let items: WpJobListing[] | null = null;
 
       for (const route of API_ROUTES) {
@@ -182,6 +183,8 @@ export class KmerJobsScraper extends BaseScraper {
         seenIds.add(job.external_id);
         allJobs.push(job);
       }
+
+      if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
       if (items.length < perPage) {
         break;
@@ -250,6 +253,7 @@ export class KmerJobsScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 1; page <= this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = page === 1 ? `${BASE_URL}${JOBS_PATH}` : `${BASE_URL}${JOBS_PATH}?paged=${page}`;
 
       try {
@@ -326,6 +330,8 @@ export class KmerJobsScraper extends BaseScraper {
             contact_whatsapp: contacts.whatsapp,
           });
         });
+
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
         if (page < this.config.maxPages) {
           await this.delay();
