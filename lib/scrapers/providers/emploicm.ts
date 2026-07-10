@@ -34,6 +34,7 @@ export class EmploiCmScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 0; page < this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = `${BASE_URL}${LISTING_PATH}?page=${page}`;
 
       try {
@@ -132,6 +133,8 @@ export class EmploiCmScraper extends BaseScraper {
             contact_whatsapp: cardContacts.whatsapp,
           });
         });
+
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
         // Check for next page
         const hasNext = $('li.pager__item--next a').length > 0

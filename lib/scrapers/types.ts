@@ -45,6 +45,13 @@ export interface ScraperConfig {
   timeoutMs: number;
   /** Whether this scraper is enabled */
   enabled: boolean;
+  /**
+   * Stop paginating once a full page contains only already-seen jobs.
+   * Lets frequent runs use a deep maxPages ceiling without re-fetching
+   * the whole site every time. Requires Supabase env to be configured;
+   * silently degrades to full pagination otherwise.
+   */
+  earlyStop: boolean;
 }
 
 export const DEFAULT_SCRAPER_CONFIG: ScraperConfig = {
@@ -52,4 +59,5 @@ export const DEFAULT_SCRAPER_CONFIG: ScraperConfig = {
   delayMs: 2000,
   timeoutMs: 15000,
   enabled: true,
+  earlyStop: false,
 };

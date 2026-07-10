@@ -62,6 +62,7 @@ export class ReliefWebScraper extends BaseScraper {
     const allJobs: ScrapedJob[] = [];
 
     for (let page = 0; page < this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const offset = page * PAGE_SIZE;
       const url = `${API_BASE}?appname=${APPNAME}`;
 
@@ -136,6 +137,8 @@ export class ReliefWebScraper extends BaseScraper {
             contact_whatsapp: contacts.whatsapp,
           });
         }
+
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
         // Stop if we got fewer than a full page
         if (items.length < PAGE_SIZE) break;

@@ -35,6 +35,10 @@ function decodeHtmlEntities(text: string): string {
 export abstract class BaseScraper {
   readonly source: string;
   protected config: ScraperConfig;
+  /** external_ids already known for this source (loaded when earlyStop is on) */
+  protected seenExternalIds: Set<string> | null = null;
+  /** Pages actually scraped this run (incremented by shouldStopAfterPage) */
+  protected pagesScraped = 0;
 
   constructor(source: string, config?: Partial<ScraperConfig>) {
     this.source = source;
@@ -59,14 +63,26 @@ export abstract class BaseScraper {
       return { source: this.source, jobs: [], errors: ['Scraper disabled'], duration_ms: 0, pages_scraped: 0 };
     }
 
+    if (this.config.earlyStop) {
+      try {
+        const { loadSeenExternalIds } = await import('./seen-store');
+        this.seenExternalIds = await loadSeenExternalIds(this.source);
+      } catch (err) {
+        // Early-stop is an optimization — fall back to full pagination
+        console.error(`[scraper:${this.source}] seen-store unavailable, full pagination:`, err);
+        this.seenExternalIds = null;
+      }
+    }
+
     try {
+      this.pagesScraped = 0;
       const jobs = await this.scrape();
       return {
         source: this.source,
         jobs,
         errors,
         duration_ms: Date.now() - start,
-        pages_scraped: this.config.maxPages,
+        pages_scraped: this.pagesScraped || this.config.maxPages,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -126,6 +142,20 @@ export abstract class BaseScraper {
   /** Rate-limit delay between requests. */
   protected delay(ms?: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms ?? this.config.delayMs));
+  }
+
+  /**
+   * Call once at the end of each successfully scraped page with that page's
+   * jobs. Tracks pages_scraped and returns true when early-stop is on and the
+   * entire page is already known — meaning we've caught up to a previous run
+   * and deeper pages hold nothing new.
+   */
+  protected shouldStopAfterPage(pageJobs: ScrapedJob[]): boolean {
+    this.pagesScraped++;
+    if (!this.config.earlyStop) return false;
+    if (!this.seenExternalIds || this.seenExternalIds.size === 0) return false;
+    if (pageJobs.length === 0) return false;
+    return pageJobs.every((job) => this.seenExternalIds!.has(job.external_id));
   }
 
   /** Generate a deterministic external_id from source + key. */

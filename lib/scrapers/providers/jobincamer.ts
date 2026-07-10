@@ -25,6 +25,7 @@ export class JobInCamerScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 0; page < this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       // Search page with all categories, 0-indexed pagination
       const url = `${BASE_URL}${LISTING_PATH}?combine=&field_job_categorie_target_id=All&page=${page}`;
 
@@ -113,6 +114,8 @@ export class JobInCamerScraper extends BaseScraper {
             contact_whatsapp: cardContacts.whatsapp,
           });
         });
+
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
         if (page < this.config.maxPages - 1) {
           await this.delay();

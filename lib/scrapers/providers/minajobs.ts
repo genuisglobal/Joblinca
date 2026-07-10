@@ -24,6 +24,7 @@ export class MinaJobsScraper extends BaseScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 1; page <= this.config.maxPages; page++) {
+      const pageStartIndex = allJobs.length;
       const url = page === 1
         ? `${BASE_URL}${LISTING_PATH}`
         : `${BASE_URL}${LISTING_PATH}?p=${page}`;
@@ -105,6 +106,8 @@ export class MinaJobsScraper extends BaseScraper {
             contact_whatsapp: null,
           });
         });
+
+        if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
 
         // Check for next page
         const hasNext = $(`.pagination a[href*="p=${page + 1}"]`).length > 0
