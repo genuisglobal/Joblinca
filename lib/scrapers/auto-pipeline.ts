@@ -21,6 +21,7 @@ import { loadPublishThresholds } from '@/lib/aggregation/publish-thresholds';
 import { runAiVettingPass, type AiVettingStats } from '@/lib/aggregation/ai-vetting';
 import { getCompanyReputation, recordCompanyEvent } from '@/lib/aggregation/company-reputation';
 import { runPendingJobsReview, type PendingReviewStats } from '@/lib/jobs/posting-gate';
+import { runDescriptionBackfill, type DescriptionBackfillStats } from './description-backfill';
 
 /** Scraped jobs with no stated deadline stay live this long after last sighting */
 const DEFAULT_JOB_TTL_DAYS = 45;
@@ -67,6 +68,7 @@ export interface AutoPipelineResult {
 }
 
 export interface AutoPipelineMaintenanceResult {
+  description_backfill: DescriptionBackfillStats;
   ai_vetting: AiVettingStats;
   pending_jobs_review: PendingReviewStats;
   auto_publish: {
@@ -184,22 +186,26 @@ export async function runAutoPipelineMaintenance(): Promise<AutoPipelineMaintena
   console.log('[auto-pipeline] Maintenance step 1: Closing stale runs...');
   const staleRunsResult = await closeStaleAggregationRuns(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 2: AI vetting gray-zone jobs...');
+  console.log('[auto-pipeline] Maintenance step 2: Backfilling missing descriptions...');
+  const backfillResult = await runDescriptionBackfill(supabase);
+
+  console.log('[auto-pipeline] Maintenance step 3: AI vetting gray-zone jobs...');
   const vettingResult = await runAiVettingPass(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 3: Auto-publishing trustworthy jobs...');
+  console.log('[auto-pipeline] Maintenance step 4: Auto-publishing trustworthy jobs...');
   const publishResult = await autoPublishDiscoveredJobs(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 4: Cleaning up duplicates...');
+  console.log('[auto-pipeline] Maintenance step 5: Cleaning up duplicates...');
   const dedupResult = await autoCleanDuplicates(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 5: Cleaning up expired jobs...');
+  console.log('[auto-pipeline] Maintenance step 6: Cleaning up expired jobs...');
   const staleResult = await cleanupExpiredJobs(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 6: Reviewing pending recruiter posts...');
+  console.log('[auto-pipeline] Maintenance step 7: Reviewing pending recruiter posts...');
   const pendingReviewResult = await runPendingJobsReview(supabase);
 
   return {
+    description_backfill: backfillResult,
     ai_vetting: vettingResult,
     pending_jobs_review: pendingReviewResult,
     auto_publish: publishResult,
