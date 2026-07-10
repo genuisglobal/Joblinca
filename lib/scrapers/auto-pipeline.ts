@@ -18,6 +18,11 @@ import { findDuplicateJob, findAllDuplicateGroups, hideDuplicateJobs } from '@/l
 import { detectContentLanguage, normalizeLocale } from '@/lib/i18n/locale';
 import { AUTOMATED_SCRAPER_SOURCE_SLUGS } from './catalog';
 import { loadPublishThresholds } from '@/lib/aggregation/publish-thresholds';
+import { runAiVettingPass, type AiVettingStats } from '@/lib/aggregation/ai-vetting';
+import { getCompanyReputation, recordCompanyEvent } from '@/lib/aggregation/company-reputation';
+
+/** Scraped jobs with no stated deadline stay live this long after last sighting */
+const DEFAULT_JOB_TTL_DAYS = 45;
 
 function getSupabase(): SupabaseClient | null {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -38,11 +43,14 @@ export interface AutoPipelineResult {
     duplicates: number;
     suspicious: number;
   };
+  ai_vetting: AiVettingStats;
   auto_publish: {
     eligible: number;
     published: number;
     deduplicated: number;
     skipped_duplicate: number;
+    skipped_company_gate: number;
+    skipped_expired: number;
     errors: number;
   };
   dedup_cleanup: {
@@ -51,16 +59,20 @@ export interface AutoPipelineResult {
   };
   stale_cleanup: {
     expired: number;
+    vanished: number;
   };
   total_duration_ms: number;
 }
 
 export interface AutoPipelineMaintenanceResult {
+  ai_vetting: AiVettingStats;
   auto_publish: {
     eligible: number;
     published: number;
     deduplicated: number;
     skipped_duplicate: number;
+    skipped_company_gate: number;
+    skipped_expired: number;
     errors: number;
   };
   dedup_cleanup: {
@@ -69,6 +81,7 @@ export interface AutoPipelineMaintenanceResult {
   };
   stale_cleanup: {
     expired: number;
+    vanished: number;
   };
   stale_runs: {
     closed: number;
@@ -113,16 +126,20 @@ export async function runAutoPipeline(
     suspicious: ingestionResults.reduce((s, r) => s + r.suspicious, 0),
   };
 
-  // Step 3: Auto-publish trustworthy jobs
-  console.log('[auto-pipeline] Step 3: Auto-publishing trustworthy jobs...');
+  // Step 3: AI-vet gray-zone jobs so borderline cases get judged before publish
+  console.log('[auto-pipeline] Step 3: AI vetting gray-zone jobs...');
+  const vettingResult = await runAiVettingPass(supabase);
+
+  // Step 4: Auto-publish trustworthy jobs
+  console.log('[auto-pipeline] Step 4: Auto-publishing trustworthy jobs...');
   const publishResult = await autoPublishDiscoveredJobs(supabase);
 
-  // Step 4: Deduplicate published jobs
-  console.log('[auto-pipeline] Step 4: Cleaning up duplicates...');
+  // Step 5: Deduplicate published jobs
+  console.log('[auto-pipeline] Step 5: Cleaning up duplicates...');
   const dedupResult = await autoCleanDuplicates(supabase);
 
-  // Step 5: Remove stale/expired jobs
-  console.log('[auto-pipeline] Step 5: Cleaning up expired jobs...');
+  // Step 6: Remove stale/expired jobs
+  console.log('[auto-pipeline] Step 6: Cleaning up expired jobs...');
   const staleResult = await cleanupExpiredJobs(supabase);
 
   const result: AutoPipelineResult = {
@@ -132,6 +149,7 @@ export async function runAutoPipeline(
       duration_ms: scrapeResult.duration_ms,
     },
     ingestion: ingestionSummary,
+    ai_vetting: vettingResult,
     auto_publish: publishResult,
     dedup_cleanup: dedupResult,
     stale_cleanup: staleResult,
@@ -162,16 +180,20 @@ export async function runAutoPipelineMaintenance(): Promise<AutoPipelineMaintena
   console.log('[auto-pipeline] Maintenance step 1: Closing stale runs...');
   const staleRunsResult = await closeStaleAggregationRuns(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 2: Auto-publishing trustworthy jobs...');
+  console.log('[auto-pipeline] Maintenance step 2: AI vetting gray-zone jobs...');
+  const vettingResult = await runAiVettingPass(supabase);
+
+  console.log('[auto-pipeline] Maintenance step 3: Auto-publishing trustworthy jobs...');
   const publishResult = await autoPublishDiscoveredJobs(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 3: Cleaning up duplicates...');
+  console.log('[auto-pipeline] Maintenance step 4: Cleaning up duplicates...');
   const dedupResult = await autoCleanDuplicates(supabase);
 
-  console.log('[auto-pipeline] Maintenance step 4: Cleaning up expired jobs...');
+  console.log('[auto-pipeline] Maintenance step 5: Cleaning up expired jobs...');
   const staleResult = await cleanupExpiredJobs(supabase);
 
   return {
+    ai_vetting: vettingResult,
     auto_publish: publishResult,
     dedup_cleanup: dedupResult,
     stale_cleanup: staleResult,
@@ -223,6 +245,8 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
     published: 0,
     deduplicated: 0,
     skipped_duplicate: 0,
+    skipped_company_gate: 0,
+    skipped_expired: 0,
     errors: 0,
   };
 
@@ -247,6 +271,46 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
     try {
       const nowIso = new Date().toISOString();
 
+      // Deadline already passed — never publish; drop it out of the queue
+      if (dj.expires_at && new Date(dj.expires_at).getTime() < Date.now()) {
+        await supabase
+          .from('discovered_jobs')
+          .update({
+            ingestion_status: 'hidden',
+            hidden_at: nowIso,
+            rejected_reason: 'expired',
+          })
+          .eq('id', dj.id);
+        stats.skipped_expired++;
+        continue;
+      }
+
+      // Company reputation gate: blocked companies are flagged out of the
+      // pipeline; 'watch' companies require a human in the review queue.
+      const reputation = await getCompanyReputation(supabase, dj.company_name);
+      if (reputation?.status === 'blocked') {
+        await supabase
+          .from('discovered_jobs')
+          .update({
+            verification_status: 'suspicious',
+            ingestion_status: 'review_required',
+            scam_score: Math.max(dj.scam_score || 0, 80),
+          })
+          .eq('id', dj.id);
+        stats.skipped_company_gate++;
+        continue;
+      }
+      if (reputation?.status === 'watch') {
+        if (dj.ingestion_status !== 'review_required') {
+          await supabase
+            .from('discovered_jobs')
+            .update({ ingestion_status: 'review_required' })
+            .eq('id', dj.id);
+        }
+        stats.skipped_company_gate++;
+        continue;
+      }
+
       // Check for duplicate in already-published jobs
       const duplicate = await findDuplicateJob(supabase, {
         title: dj.title,
@@ -270,8 +334,9 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
         continue;
       }
 
-      // Skip jobs with no real description — these produce ugly stubs
-      const description = dj.description_raw || dj.description_clean || null;
+      // Skip jobs with no real description — these produce ugly stubs.
+      // Prefer the AI-cleaned text when the vetting pass produced one.
+      const description = dj.description_clean || dj.description_raw || null;
       if (!description || description.length < 30) {
         continue;
       }
@@ -314,7 +379,10 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
             trust_score: dj.trust_score,
             discovered_at: dj.discovered_at,
           },
-          closes_at: dj.expires_at || null,
+          // No stated deadline → default TTL so scraped jobs can't live forever
+          closes_at:
+            dj.expires_at ||
+            new Date(Date.now() + DEFAULT_JOB_TTL_DAYS * 86_400_000).toISOString(),
           recruiter_id: null,
         })
         .select('id')
@@ -336,6 +404,8 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
           verification_status: 'verified',
         })
         .eq('id', dj.id);
+
+      await recordCompanyEvent(supabase, dj.company_name, 'published');
 
       stats.published++;
     } catch (err) {
@@ -373,6 +443,8 @@ async function autoCleanDuplicates(supabase: SupabaseClient) {
 async function cleanupExpiredJobs(supabase: SupabaseClient) {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
+  // Phase 1: jobs whose stated closing date passed more than 7 days ago
+  let expiredCount = 0;
   const { data: expired } = await supabase
     .from('jobs')
     .select('id')
@@ -381,26 +453,69 @@ async function cleanupExpiredJobs(supabase: SupabaseClient) {
     .lt('closes_at', sevenDaysAgo)
     .not('lifecycle_status', 'in', '("removed","archived","filled")');
 
-  if (!expired || expired.length === 0) {
-    return { expired: 0 };
+  if (expired && expired.length > 0) {
+    const expiredIds = expired.map((j) => j.id);
+
+    const { error } = await supabase
+      .from('jobs')
+      .update({
+        lifecycle_status: 'archived',
+        published: false,
+        archived_at: new Date().toISOString(),
+      })
+      .in('id', expiredIds);
+
+    if (error) {
+      console.error('[auto-pipeline] Stale cleanup error:', error.message);
+    } else {
+      expiredCount = expiredIds.length;
+      console.log(`[auto-pipeline] Archived ${expiredIds.length} expired jobs`);
+    }
   }
 
-  const expiredIds = expired.map((j) => j.id);
+  // Phase 2: legacy scraped jobs with NO closing date (published before the
+  // default TTL existed) — archive once the source hasn't listed them for
+  // DEFAULT_JOB_TTL_DAYS. Sources re-list active jobs, so a long absence
+  // means the posting is gone.
+  let vanishedCount = 0;
+  const notSeenCutoff = new Date(
+    Date.now() - DEFAULT_JOB_TTL_DAYS * 86_400_000
+  ).toISOString();
 
-  const { error } = await supabase
-    .from('jobs')
-    .update({
-      lifecycle_status: 'archived',
-      published: false,
-      archived_at: new Date().toISOString(),
-    })
-    .in('id', expiredIds);
+  const { data: vanished } = await supabase
+    .from('discovered_jobs')
+    .select('native_job_id')
+    .not('native_job_id', 'is', null)
+    .lt('last_seen_at', notSeenCutoff)
+    .limit(500);
 
-  if (error) {
-    console.error('[auto-pipeline] Stale cleanup error:', error.message);
-    return { expired: 0 };
+  const vanishedIds = (vanished || [])
+    .map((v) => v.native_job_id as string | null)
+    .filter((id): id is string => Boolean(id));
+
+  if (vanishedIds.length > 0) {
+    const { data: archived, error: vanishErr } = await supabase
+      .from('jobs')
+      .update({
+        lifecycle_status: 'archived',
+        published: false,
+        archived_at: new Date().toISOString(),
+      })
+      .in('id', vanishedIds)
+      .eq('published', true)
+      .eq('origin_type', 'admin_import')
+      .is('closes_at', null)
+      .select('id');
+
+    if (vanishErr) {
+      console.error('[auto-pipeline] Vanished-job cleanup error:', vanishErr.message);
+    } else {
+      vanishedCount = archived?.length ?? 0;
+      if (vanishedCount > 0) {
+        console.log(`[auto-pipeline] Archived ${vanishedCount} vanished no-deadline jobs`);
+      }
+    }
   }
 
-  console.log(`[auto-pipeline] Archived ${expiredIds.length} expired jobs`);
-  return { expired: expiredIds.length };
+  return { expired: expiredCount, vanished: vanishedCount };
 }

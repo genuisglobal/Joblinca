@@ -97,25 +97,40 @@ export function BulkPublishButton({ jobIds }: { jobIds: string[] }) {
   );
 }
 
+const REJECT_REASONS = [
+  { value: 'scam', label: 'Scam / fraud' },
+  { value: 'duplicate', label: 'Duplicate' },
+  { value: 'expired', label: 'Expired' },
+  { value: 'low_quality', label: 'Low quality' },
+  { value: 'other', label: 'Other' },
+] as const;
+
 export function HideButton({ jobId }: { jobId: string }) {
   const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState(false);
   const router = useRouter();
 
-  async function handleHide() {
+  async function handleReject(reason: string) {
+    setChoosing(false);
     setLoading(true);
     try {
       const res = await fetch('/api/admin/aggregation/hide-job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ discoveredJobId: jobId }),
+        body: JSON.stringify({ discoveredJobId: jobId, reason }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json();
         alert(data.error || 'Hide failed');
         return;
       }
-      setDone(true);
+      // Surface when this rejection tipped the company into watch/blocked
+      if (data.company_status === 'blocked' || data.company_status === 'watch') {
+        setDone(`Hidden — company now on ${data.company_status} list`);
+      } else {
+        setDone('Hidden');
+      }
       router.refresh();
     } catch (err) {
       alert(String(err));
@@ -125,12 +140,34 @@ export function HideButton({ jobId }: { jobId: string }) {
   }
 
   if (done) {
-    return <span className="text-xs text-gray-500">Hidden</span>;
+    return <span className="text-xs text-gray-500">{done}</span>;
+  }
+
+  if (choosing) {
+    return (
+      <span className="inline-flex items-center gap-1 flex-wrap">
+        {REJECT_REASONS.map((r) => (
+          <button
+            key={r.value}
+            onClick={() => handleReject(r.value)}
+            className="px-2 py-1 text-xs bg-gray-700 hover:bg-red-700 text-gray-200 rounded transition-colors"
+          >
+            {r.label}
+          </button>
+        ))}
+        <button
+          onClick={() => setChoosing(false)}
+          className="px-2 py-1 text-xs text-gray-500 hover:text-gray-300"
+        >
+          Cancel
+        </button>
+      </span>
+    );
   }
 
   return (
     <button
-      onClick={handleHide}
+      onClick={() => setChoosing(true)}
       disabled={loading}
       className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 disabled:opacity-50 text-white rounded transition-colors"
     >
