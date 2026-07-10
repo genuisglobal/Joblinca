@@ -144,6 +144,7 @@ export default function NewJobPage() {
 
   // ── Draft persistence: a 25-field form must survive refreshes ─────────────
   const JOB_DRAFT_KEY = 'joblinca-job-post-draft';
+  const [showPreview, setShowPreview] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
   const draftHydratedRef = useRef(false);
 
@@ -1457,12 +1458,74 @@ export default function NewJobPage() {
           onOpenAIGenerator={() => setShowAIGenerator(true)}
         />
 
-        <button
-          type="submit"
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
-        >
-          {postingMode === 'recruiter' ? 'Submit for Review' : 'Create Job'}
-        </button>
+        {/* Preview: how the listing will look to seekers */}
+        {showPreview && (
+          <div className="rounded-lg border border-blue-700 bg-gray-800 p-5">
+            <p className="text-xs uppercase tracking-wide text-blue-400 mb-3">
+              Preview — how seekers will see this job
+            </p>
+            <div className="flex items-start gap-3">
+              {companyLogoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={companyLogoUrl}
+                  alt="Company logo"
+                  className="w-12 h-12 rounded object-contain bg-white/10 shrink-0"
+                />
+              )}
+              <div className="min-w-0">
+                <h3 className="text-xl font-semibold text-white">{title || 'Job title'}</h3>
+                <p className="text-gray-400">{companyName || 'Company name'}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-3 text-xs">
+              {location && (
+                <span className="px-2 py-1 rounded-full bg-gray-700 text-gray-300">{location}</span>
+              )}
+              <span className="px-2 py-1 rounded-full bg-gray-700 text-gray-300 capitalize">{workType}</span>
+              <span className="px-2 py-1 rounded-full bg-gray-700 text-gray-300 capitalize">
+                {jobType === 'internship' ? `${internshipTrack || ''} internship`.trim() : jobType}
+              </span>
+              {(salaryMin || salaryMax || salary) && (
+                <span className="px-2 py-1 rounded-full bg-green-900/40 text-green-300">
+                  {salaryMin && salaryMax
+                    ? `${Number(salaryMin).toLocaleString()}–${Number(salaryMax).toLocaleString()}`
+                    : Number(salaryMin || salaryMax || salary).toLocaleString()}{' '}
+                  {salaryCurrency}/{salaryPeriod.toLowerCase()}
+                </span>
+              )}
+              {closesAt && (
+                <span className="px-2 py-1 rounded-full bg-yellow-900/40 text-yellow-300">
+                  Closes {closesAt}
+                </span>
+              )}
+            </div>
+            <div className="mt-4 text-sm text-gray-300 whitespace-pre-wrap border-t border-gray-700 pt-4 max-h-80 overflow-y-auto">
+              {description || 'Job description will appear here.'}
+            </div>
+            {customQuestions.length > 0 && (
+              <p className="mt-3 text-xs text-gray-500">
+                + {customQuestions.length} screening question{customQuestions.length !== 1 ? 's' : ''} during application
+              </p>
+            )}
+          </div>
+        )}
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowPreview((v) => !v)}
+            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors"
+          >
+            {showPreview ? 'Hide Preview' : 'Preview'}
+          </button>
+          <button
+            type="submit"
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
+          >
+            {postingMode === 'recruiter' ? 'Submit for Review' : 'Create Job'}
+          </button>
+        </div>
       </form>
 
       {/* AI Question Generator Modal */}
