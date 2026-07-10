@@ -100,7 +100,7 @@ export class KamerPowerScraper extends BaseScraper {
           await this.delay();
         }
       } catch (err) {
-        console.error(`[scraper:kamerpower] Page ${page} error:`, err);
+        this.recordScrapeError(`page ${page}`, err);
         break;
       }
     }

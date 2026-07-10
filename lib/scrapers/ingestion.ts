@@ -549,8 +549,11 @@ export async function ingestScrapeResult(
     }
   }
 
-  // Finalize run
-  const runStatus = errorCount > 0 && inserted === 0 ? 'failed'
+  // Finalize run. A scraper that hit errors and produced nothing is a FAILED
+  // run — previously it reported "completed" with 0 jobs, which is invisible
+  // to health tracking and the coverage sentinel.
+  const scraperBroke = result.jobs.length === 0 && result.errors.length > 0;
+  const runStatus = scraperBroke || (errorCount > 0 && inserted === 0) ? 'failed'
     : errorCount > 0 ? 'partial'
     : 'completed';
 
@@ -627,8 +630,9 @@ export async function ingestAllResults(
   const ingestionResults: IngestionResult[] = [];
 
   for (const result of results) {
-    if (result.jobs.length === 0 && result.errors.length === 0) continue;
-
+    // Record a run even for empty scrapes — "ran and found nothing" must be
+    // visible to health tracking and the coverage sentinel, otherwise a
+    // quiet source looks like it never ran at all.
     const ingested = await ingestScrapeResult(result, triggerType);
     if (ingested) {
       ingestionResults.push(ingested);

@@ -18,7 +18,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { SCRAPER_SOURCE_CATALOG } from './catalog';
+import { ACTIVE_SCRAPER_SOURCE_CATALOG } from './catalog';
 
 const BASELINE_WINDOW_HOURS = 7 * 24;
 const RECENT_RUN_MAX_AGE_HOURS = 30;
@@ -100,7 +100,7 @@ export async function runCoverageSentinel(
   const { data: dbSources } = await supabase
     .from('aggregation_sources')
     .select('id, slug, name, enabled')
-    .in('slug', SCRAPER_SOURCE_CATALOG.map((s) => s.slug));
+    .in('slug', ACTIVE_SCRAPER_SOURCE_CATALOG.map((s) => s.slug));
 
   const sourcesBySlug = new Map(
     (dbSources || []).map((s) => [s.slug as string, s])
@@ -128,7 +128,7 @@ export async function runCoverageSentinel(
 
   const sources: SourceCoverage[] = [];
 
-  for (const catalogEntry of SCRAPER_SOURCE_CATALOG) {
+  for (const catalogEntry of ACTIVE_SCRAPER_SOURCE_CATALOG) {
     const dbSource = sourcesBySlug.get(catalogEntry.slug);
     const sourceRuns = dbSource ? runsBySource.get(dbSource.id) || [] : [];
     // Exclude stuck 'running' rows from yield judgments

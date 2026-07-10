@@ -14,7 +14,8 @@ import { BaseScraper } from '../base';
 import { deriveCategory } from '@/lib/externalJobs';
 import type { ScrapedJob, ScraperConfig } from '../types';
 
-const API_BASE = 'https://api.reliefweb.int/v1/jobs';
+// v1 was decommissioned (HTTP 410) — v2 accepts the same request/response shape
+const API_BASE = 'https://api.reliefweb.int/v2/jobs';
 const APPNAME = process.env.RELIEFWEB_APPNAME || 'joblinca-cameroon';
 const PAGE_SIZE = 50;
 
@@ -147,7 +148,7 @@ export class ReliefWebScraper extends BaseScraper {
           await this.delay();
         }
       } catch (err) {
-        console.error(`[scraper:reliefweb] Page ${page} error:`, err);
+        this.recordScrapeError(`page ${page}`, err);
         break;
       }
     }

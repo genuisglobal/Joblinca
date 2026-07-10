@@ -145,7 +145,7 @@ export class CareerPagesScraper extends BaseScraper {
 
         await this.delay();
       } catch (err) {
-        console.error(`[scraper:careerpages] ${page.company_name} (${page.url}):`, err);
+        this.recordScrapeError(`${page.company_name} (${page.url})`, err);
         await supabase
           .from('monitored_career_pages')
           .update({
