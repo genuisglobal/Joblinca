@@ -248,7 +248,17 @@ AS $$
   OFFSET (SELECT page_offset FROM normalized_input);
 $$;
 
-COMMENT ON FUNCTION public.search_public_jobs IS
+COMMENT ON FUNCTION public.search_public_jobs(
+  text,
+  text,
+  text,
+  text,
+  text,
+  text,
+  text,
+  integer,
+  integer
+) IS
   'Returns ranked, publicly listable jobs for the /jobs marketplace with browse-type filtering applied server-side.';
 
 CREATE OR REPLACE FUNCTION public.search_public_job_counts(
@@ -344,5 +354,12 @@ AS $$
   CROSS JOIN normalized_input AS input;
 $$;
 
-COMMENT ON FUNCTION public.search_public_job_counts IS
+COMMENT ON FUNCTION public.search_public_job_counts(
+  text,
+  text,
+  text,
+  text,
+  text,
+  text
+) IS
   'Returns exact browse-tab counts and filtered totals for the /jobs marketplace.';

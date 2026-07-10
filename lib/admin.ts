@@ -22,7 +22,6 @@ export {
 } from "./admin-types";
 import type { AdminType } from "./admin-types";
 import { ACTIVE_ADMIN_TYPES } from "./admin-types";
-type ActiveAdminType = "super" | "operations";
 
 /**
  * Result of an admin status check
@@ -110,7 +109,7 @@ export async function checkAdminStatus(): Promise<AdminCheckResult> {
   // Check if this admin type is currently active
   const isAdmin =
     adminType !== null &&
-    ACTIVE_ADMIN_TYPES.includes(adminType as ActiveAdminType);
+    ACTIVE_ADMIN_TYPES.includes(adminType);
 
   return {
     isAdmin,
@@ -208,6 +207,17 @@ export async function isSuperAdmin(): Promise<boolean> {
 export async function isOperationsAdmin(): Promise<boolean> {
   const { adminType } = await checkAdminStatus();
   return adminType === "operations";
+}
+
+/**
+ * Check if user is a content admin.
+ *
+ * Content admins can create Joblinca-owned content, mark jobs as handled,
+ * run job scrapers, and publish vetted scraped jobs.
+ */
+export async function isContentAdmin(): Promise<boolean> {
+  const { adminType } = await checkAdminStatus();
+  return adminType === "content";
 }
 
 // Utility functions (getAdminTypeLabel, isAdminTypeActive, getActiveAdminTypes)

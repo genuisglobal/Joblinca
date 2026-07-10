@@ -1,8 +1,15 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { checkAdminStatus } from '@/lib/admin';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import AdminRecruitingOverview from './AdminRecruitingOverview';
 
 export default async function AdminPage() {
+  const { adminType } = await checkAdminStatus();
+  if (adminType === 'content') {
+    redirect('/admin/content-jobs');
+  }
+
   const supabase = createServerSupabaseClient();
   const ninetyDaysAgo = new Date(Date.now() - 89 * 24 * 60 * 60 * 1000).toISOString();
 

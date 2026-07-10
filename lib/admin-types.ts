@@ -12,6 +12,7 @@
 export type AdminType =
   | "super"
   | "operations"
+  | "content"
   | "support"
   | "recruiter_admin"
   | "ai";
@@ -20,7 +21,7 @@ export type AdminType =
  * Currently active admin types.
  * UPDATE THIS when activating new admin types in the database.
  */
-export const ACTIVE_ADMIN_TYPES: readonly AdminType[] = ["super", "operations"];
+export const ACTIVE_ADMIN_TYPES: readonly AdminType[] = ["super", "operations", "content"];
 
 /**
  * Get a human-readable label for an admin type
@@ -29,6 +30,7 @@ export function getAdminTypeLabel(type: AdminType): string {
   const labels: Record<AdminType, string> = {
     super: "Super Admin",
     operations: "Operations Admin",
+    content: "Content Admin",
     support: "Support Admin",
     recruiter_admin: "Recruiter Admin",
     ai: "AI System",
@@ -40,7 +42,7 @@ export function getAdminTypeLabel(type: AdminType): string {
  * Check if an admin type is currently active in the system
  */
 export function isAdminTypeActive(type: AdminType): boolean {
-  return ACTIVE_ADMIN_TYPES.includes(type as "super" | "operations");
+  return ACTIVE_ADMIN_TYPES.includes(type);
 }
 
 /**

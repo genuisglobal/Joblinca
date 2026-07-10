@@ -19,9 +19,12 @@ import {
 } from '@/lib/opportunities';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import { getRequestBaseUrl } from '@/lib/app-url';
+import { checkAdminStatus } from '@/lib/admin';
+import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { getRequestLocale } from '@/lib/i18n/server';
 import { getServerT } from '@/lib/i18n/server-t';
 import { addLocalePrefix, normalizeLocale, type Locale } from '@/lib/i18n/locale';
+import ContentJobActions from '@/app/admin/content-jobs/ContentJobActions';
 import JobSearchBar from './JobSearchBar';
 
 interface Job {
@@ -53,6 +56,8 @@ interface Job {
     trust_score?: number;
   } | null;
 }
+
+type ContentStatus = 'not_started' | 'in_progress' | 'created' | 'skipped';
 
 interface JobsPageProps {
   searchParams: Promise<{
@@ -301,6 +306,45 @@ function getWorkTypeBadgeClasses(workType: string | null) {
   }
 }
 
+function normalizeContentStatus(value: unknown): ContentStatus {
+  if (
+    value === 'in_progress' ||
+    value === 'created' ||
+    value === 'skipped' ||
+    value === 'not_started'
+  ) {
+    return value;
+  }
+
+  return 'not_started';
+}
+
+function contentStatusLabel(status: ContentStatus) {
+  switch (status) {
+    case 'created':
+      return 'Content created';
+    case 'in_progress':
+      return 'Content in progress';
+    case 'skipped':
+      return 'Content skipped';
+    default:
+      return 'No content yet';
+  }
+}
+
+function contentStatusClassName(status: ContentStatus) {
+  switch (status) {
+    case 'created':
+      return 'border-green-500/30 bg-green-500/10 text-green-300';
+    case 'in_progress':
+      return 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+    case 'skipped':
+      return 'border-neutral-700 bg-neutral-800 text-neutral-300';
+    default:
+      return 'border-yellow-500/30 bg-yellow-500/10 text-yellow-300';
+  }
+}
+
 export default async function JobsPage({ searchParams }: JobsPageProps) {
   noStore();
 
@@ -308,6 +352,8 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   const preferredLocale = getRequestLocale();
   const t = getServerT(preferredLocale);
   const activeFilter = resolveOpportunityBrowseFilter(query.type);
+  const { isAdmin, adminType } = await checkAdminStatus();
+  const canManageContent = isAdmin && ['content', 'operations', 'super'].includes(adminType || '');
   const activeLanguageFilter = normalizeLocale(query.language);
   const searchQuery = (query.title || query.q || query.search || '').trim();
   const locationQuery = (query.location || '').trim();
@@ -438,6 +484,23 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   const filteredJobs = allJobs.filter((job) =>
     matchesOpportunityBrowseFilter(activeFilter, job.job_type, job.internship_track)
   );
+  const contentStatusByJobId = new Map<string, ContentStatus>();
+
+  if (canManageContent && filteredJobs.length > 0) {
+    const supabase = createServerSupabaseClient();
+    const { data: contentRows, error: contentStatusError } = await supabase
+      .from('jobs')
+      .select('id, content_status')
+      .in('id', filteredJobs.map((job) => job.id));
+
+    if (contentStatusError) {
+      console.error('Failed to load public job content statuses', contentStatusError);
+    }
+
+    (contentRows || []).forEach((row: any) => {
+      contentStatusByJobId.set(row.id, normalizeContentStatus(row.content_status));
+    });
+  }
 
   return (
     <main className="min-h-screen bg-neutral-950">
@@ -549,10 +612,12 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                 );
                 const languageBadge = getLanguageBadge(job.language, preferredLocale);
 
+                const jobHref = addLocalePrefix(`/jobs/${job.id}`, preferredLocale);
+                const contentStatus = contentStatusByJobId.get(job.id) || 'not_started';
+
                 return (
-                  <Link
+                  <div
                     key={job.id}
-                    href={addLocalePrefix(`/jobs/${job.id}`, preferredLocale)}
                     className="group block rounded-2xl border border-neutral-800 bg-neutral-900 p-6 transition-all hover:border-primary-600/40 hover:bg-neutral-900/90"
                   >
                     <div className="flex flex-col gap-4 md:flex-row md:items-start">
@@ -615,9 +680,11 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                           )}
                         </div>
 
-                        <h2 className="text-xl font-semibold text-white transition-colors group-hover:text-primary-300">
-                          {job.title}
-                        </h2>
+                        <Link href={jobHref} className="inline-block">
+                          <h2 className="text-xl font-semibold text-white transition-colors hover:text-primary-300">
+                            {job.title}
+                          </h2>
+                        </Link>
                         {job.company_name && (
                           <p className="mt-1 font-medium text-neutral-300">{job.company_name}</p>
                         )}
@@ -649,13 +716,32 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                       </div>
 
                       <div className="flex-shrink-0 md:text-right">
-                        <span className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 font-medium text-white transition-all group-hover:bg-primary-500">
+                        <Link
+                          href={jobHref}
+                          className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 font-medium text-white transition-all hover:bg-primary-500"
+                        >
                           {t('jobs.viewOpportunity')}
                           <ArrowRight className="h-4 w-4" />
-                        </span>
+                        </Link>
                       </div>
                     </div>
-                  </Link>
+
+                    {canManageContent && (
+                      <div className="mt-5 flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-950/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
+                            Content workflow
+                          </p>
+                          <span
+                            className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${contentStatusClassName(contentStatus)}`}
+                          >
+                            {contentStatusLabel(contentStatus)}
+                          </span>
+                        </div>
+                        <ContentJobActions jobId={job.id} currentStatus={contentStatus} />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
