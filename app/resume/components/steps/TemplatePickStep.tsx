@@ -39,6 +39,7 @@ export default function TemplatePickStep({ data, onChange }: TemplatePickStepPro
               template={id}
               selected={data.template === id}
               onClick={() => onChange({ template: id })}
+              data={data}
             />
           </div>
         ))}

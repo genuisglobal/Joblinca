@@ -14,12 +14,35 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
+    // resumeId is a routing hint, not resume content — strip it before storing
+    const { resumeId, ...resumeData } = body;
+
+    if (resumeId && typeof resumeId === 'string') {
+      const { data, error } = await supabase
+        .from('resumes')
+        .update({
+          data: resumeData,
+          pdf_url: resumeData.pdfUrl ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', resumeId)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+
+      if (error || !data) {
+        return NextResponse.json({ error: 'Resume not found' }, { status: 404 });
+      }
+
+      return NextResponse.json({ id: data.id });
+    }
+
     const { data, error } = await supabase
       .from('resumes')
       .insert({
         user_id: user.id,
-        data: body,
-        pdf_url: body.pdfUrl ?? null,
+        data: resumeData,
+        pdf_url: resumeData.pdfUrl ?? null,
       })
       .select()
       .single();

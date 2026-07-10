@@ -8,6 +8,8 @@ interface TemplateThumbnailProps {
   template: Template;
   selected: boolean;
   onClick: () => void;
+  /** When provided, thumbnails render the user's real content instead of placeholder bars */
+  data?: ResumeData;
 }
 
 const META: Record<Template, { label: string; desc: string }> = {
@@ -19,8 +21,55 @@ const META: Record<Template, { label: string; desc: string }> = {
   compact:      { label: 'Compact',      desc: 'Dense, fits more content' },
 };
 
-export default function TemplateThumbnail({ template, selected, onClick }: TemplateThumbnailProps) {
+interface PreviewContent {
+  name: string;
+  title: string;
+  contact: string;
+  summary: string;
+  expRole: string;
+  expCompany: string;
+  expDates: string;
+  expSnippet: string;
+  skills: string[];
+  initials: string;
+}
+
+function buildContent(data?: ResumeData): PreviewContent {
+  const name = data?.fullName?.trim() || 'Alex Morgan';
+  const title = data?.title?.trim() || 'Product Designer';
+  const summary =
+    data?.summary?.trim() ||
+    'Experienced professional delivering measurable results across teams and projects.';
+  const exp = data?.experience?.find((e) => e.role?.trim() || e.company?.trim());
+  const expRole = exp?.role?.trim() || 'Senior Role';
+  const expCompany = exp?.company?.trim() || 'Company Inc.';
+  const endLabel = exp?.current ? 'Present' : exp?.endDate?.trim() || '';
+  const expDates = exp
+    ? [exp.startDate?.trim(), endLabel].filter(Boolean).join(' – ') || '2021 – Present'
+    : '2021 – Present';
+  const expSnippet =
+    exp?.description?.trim().split('\n')[0]?.replace(/^[•\-*]\s*/, '') ||
+    'Led key initiatives and improved outcomes.';
+  const skills = (data?.skills?.length
+    ? data.skills
+    : ['Leadership', 'Strategy', 'Analytics', 'Communication']
+  ).slice(0, 5);
+  const contact =
+    [data?.email?.trim(), data?.location?.trim()].filter(Boolean).join(' · ') ||
+    'you@email.com · City';
+  const initials = name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  return { name, title, contact, summary, expRole, expCompany, expDates, expSnippet, skills, initials };
+}
+
+export default function TemplateThumbnail({ template, selected, onClick, data }: TemplateThumbnailProps) {
   const { label, desc } = META[template];
+  const content = buildContent(data);
   return (
     <button
       type="button"
@@ -32,7 +81,7 @@ export default function TemplateThumbnail({ template, selected, onClick }: Templ
       }`}
     >
       <div className="absolute inset-0 p-2">
-        <Preview template={template} />
+        <Preview template={template} c={content} />
       </div>
 
       <div className="absolute bottom-0 left-0 right-0 bg-gray-900/90 py-2 px-3">
@@ -51,276 +100,215 @@ export default function TemplateThumbnail({ template, selected, onClick }: Templ
   );
 }
 
-function Preview({ template }: { template: Template }) {
+function Preview({ template, c }: { template: Template; c: PreviewContent }) {
   switch (template) {
-    case 'professional': return <ProfessionalPreview />;
-    case 'modern':       return <ModernPreview />;
-    case 'executive':    return <ExecutivePreview />;
-    case 'creative':     return <CreativePreview />;
-    case 'minimal':      return <MinimalPreview />;
-    case 'compact':      return <CompactPreview />;
+    case 'professional': return <ProfessionalPreview c={c} />;
+    case 'modern':       return <ModernPreview c={c} />;
+    case 'executive':    return <ExecutivePreview c={c} />;
+    case 'creative':     return <CreativePreview c={c} />;
+    case 'minimal':      return <MinimalPreview c={c} />;
+    case 'compact':      return <CompactPreview c={c} />;
   }
 }
 
-// ── Professional ────────────────────────────────────────────
-function ProfessionalPreview() {
+// Shared tiny-typography helpers
+const body = 'text-[4px] leading-[6px] text-gray-500';
+const sectionGap = 'mt-1';
+
+function SkillChips({ skills, chipClass }: { skills: string[]; chipClass: string }) {
   return (
-    <div className="w-full h-full bg-white rounded-sm p-2 flex flex-col gap-1.5">
-      <div className="h-3 w-2/3 bg-gray-800 rounded-sm" />
-      <div className="h-1.5 w-1/2 bg-gray-400 rounded-sm" />
-      <div className="h-1 w-3/4 bg-gray-300 rounded-sm" />
+    <div className="flex gap-0.5 flex-wrap overflow-hidden max-h-[16px]">
+      {skills.map((skill) => (
+        <span key={skill} className={`text-[3.5px] leading-[5px] px-0.5 rounded-sm whitespace-nowrap ${chipClass}`}>
+          {skill}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── Professional ────────────────────────────────────────────
+function ProfessionalPreview({ c }: { c: PreviewContent }) {
+  return (
+    <div className="w-full h-full bg-white rounded-sm p-2 flex flex-col text-left overflow-hidden">
+      <p className="text-[7px] leading-[9px] font-bold text-gray-900 truncate">{c.name}</p>
+      <p className="text-[4.5px] leading-[6px] text-gray-500 truncate">{c.title}</p>
+      <p className="text-[3.5px] leading-[5px] text-gray-400 truncate">{c.contact}</p>
       <div className="h-px bg-blue-500 w-full mt-1" />
-      <div className="space-y-1 mt-0.5">
-        <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1.5 w-5/6 bg-gray-200 rounded-sm" />
-      </div>
-      <div className="h-px bg-blue-500 w-full mt-1" />
-      <div className="space-y-1 mt-0.5">
-        <div className="h-2 w-1/3 bg-gray-700 rounded-sm" />
-        <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1.5 w-4/5 bg-gray-200 rounded-sm" />
-        <div className="h-1.5 w-3/5 bg-gray-200 rounded-sm" />
-      </div>
-      <div className="h-px bg-blue-500 w-full mt-1" />
-      <div className="h-2 w-1/4 bg-gray-700 rounded-sm mt-0.5" />
-      <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-      <div className="h-px bg-blue-500 w-full mt-1" />
-      <div className="flex gap-1 mt-0.5 flex-wrap">
-        <div className="h-1.5 w-7 bg-gray-300 rounded-sm" />
-        <div className="h-1.5 w-5 bg-gray-300 rounded-sm" />
-        <div className="h-1.5 w-9 bg-gray-300 rounded-sm" />
-        <div className="h-1.5 w-6 bg-gray-300 rounded-sm" />
-      </div>
+      <p className="text-[4px] leading-[5px] font-semibold text-blue-700 uppercase mt-0.5">Summary</p>
+      <p className={`${body} max-h-[12px] overflow-hidden`}>{c.summary}</p>
+      <div className={`h-px bg-blue-500 w-full ${sectionGap}`} />
+      <p className="text-[4px] leading-[5px] font-semibold text-blue-700 uppercase mt-0.5">Experience</p>
+      <p className="text-[4px] leading-[6px] font-semibold text-gray-700 truncate">{c.expRole} · {c.expCompany}</p>
+      <p className="text-[3.5px] leading-[5px] text-gray-400 truncate">{c.expDates}</p>
+      <p className={`${body} max-h-[12px] overflow-hidden`}>{c.expSnippet}</p>
+      <div className={`h-px bg-blue-500 w-full ${sectionGap}`} />
+      <p className="text-[4px] leading-[5px] font-semibold text-blue-700 uppercase mt-0.5">Skills</p>
+      <SkillChips skills={c.skills} chipClass="bg-gray-200 text-gray-600" />
     </div>
   );
 }
 
 // ── Modern ──────────────────────────────────────────────────
-function ModernPreview() {
+function ModernPreview({ c }: { c: PreviewContent }) {
   return (
-    <div className="w-full h-full bg-white rounded-sm flex overflow-hidden">
-      <div className="w-[32%] bg-gray-800 p-1.5 flex flex-col gap-1">
-        <div className="h-2.5 w-full bg-gray-500 rounded-sm" />
-        <div className="h-1 w-2/3 bg-blue-400 rounded-sm" />
-        <div className="mt-1.5 space-y-0.5">
-          <div className="h-0.5 w-full bg-blue-400" />
-          <div className="h-1 w-full bg-gray-600 rounded-sm" />
-          <div className="h-1 w-5/6 bg-gray-600 rounded-sm" />
-        </div>
-        <div className="mt-1 space-y-0.5">
-          <div className="h-0.5 w-full bg-blue-400" />
-          <div className="h-1 w-full bg-gray-600 rounded-sm" />
-          <div className="h-1 w-4/5 bg-gray-600 rounded-sm" />
-          <div className="h-1 w-3/5 bg-gray-600 rounded-sm" />
-        </div>
-        <div className="mt-1 space-y-0.5">
-          <div className="h-0.5 w-full bg-blue-400" />
-          <div className="h-1 w-2/3 bg-gray-600 rounded-sm" />
+    <div className="w-full h-full bg-white rounded-sm flex overflow-hidden text-left">
+      <div className="w-[34%] bg-gray-800 p-1.5 flex flex-col overflow-hidden">
+        <p className="text-[5px] leading-[7px] font-bold text-white break-words">{c.name}</p>
+        <p className="text-[3.5px] leading-[5px] text-blue-300 break-words">{c.title}</p>
+        <div className="h-0.5 w-full bg-blue-400 mt-1" />
+        <p className="text-[3.5px] leading-[5px] text-gray-300 mt-0.5 break-words max-h-[16px] overflow-hidden">{c.contact}</p>
+        <div className="h-0.5 w-full bg-blue-400 mt-1" />
+        <p className="text-[3.5px] leading-[5px] font-semibold text-white uppercase mt-0.5">Skills</p>
+        <div className="overflow-hidden">
+          {c.skills.slice(0, 4).map((skill) => (
+            <p key={skill} className="text-[3.5px] leading-[5px] text-gray-300 truncate">{skill}</p>
+          ))}
         </div>
       </div>
-      <div className="flex-1 p-1.5 flex flex-col gap-1">
-        <div className="h-px bg-blue-400 w-full" />
-        <div className="space-y-0.5">
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-5/6 bg-gray-200 rounded-sm" />
-        </div>
+      <div className="flex-1 p-1.5 flex flex-col overflow-hidden">
+        <p className="text-[4px] leading-[5px] font-semibold text-blue-600 uppercase">Summary</p>
+        <p className={`${body} max-h-[12px] overflow-hidden`}>{c.summary}</p>
         <div className="h-px bg-blue-400 w-full mt-1" />
-        <div className="space-y-0.5">
-          <div className="h-1.5 w-1/2 bg-gray-700 rounded-sm" />
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-4/5 bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-3/4 bg-gray-200 rounded-sm" />
-        </div>
-        <div className="h-px bg-blue-400 w-full mt-1" />
-        <div className="space-y-0.5">
-          <div className="h-1.5 w-2/5 bg-gray-700 rounded-sm" />
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-        </div>
+        <p className="text-[4px] leading-[5px] font-semibold text-blue-600 uppercase mt-0.5">Experience</p>
+        <p className="text-[4px] leading-[6px] font-semibold text-gray-700 truncate">{c.expRole}</p>
+        <p className="text-[3.5px] leading-[5px] text-gray-400 truncate">{c.expCompany} · {c.expDates}</p>
+        <p className={`${body} max-h-[18px] overflow-hidden`}>{c.expSnippet}</p>
       </div>
     </div>
   );
 }
 
 // ── Executive ───────────────────────────────────────────────
-function ExecutivePreview() {
+function ExecutivePreview({ c }: { c: PreviewContent }) {
   return (
-    <div className="w-full h-full bg-white rounded-sm flex flex-col overflow-hidden">
-      {/* Gold top bar */}
+    <div className="w-full h-full bg-white rounded-sm flex flex-col overflow-hidden font-serif">
       <div className="h-0.5 w-full bg-yellow-500 flex-shrink-0" />
-      {/* Navy header */}
-      <div className="h-[22%] bg-[#17213f] flex flex-col items-center justify-center gap-0.5 flex-shrink-0 px-2">
-        <div className="h-2.5 w-2/3 bg-white/80 rounded-sm" />
-        <div className="h-1.5 w-1/2 bg-blue-200/60 rounded-sm" />
-        <div className="h-1 w-3/4 bg-blue-100/40 rounded-sm" />
+      <div className="bg-[#17213f] flex flex-col items-center justify-center flex-shrink-0 px-2 py-1.5 text-center">
+        <p className="text-[6px] leading-[8px] font-bold text-white truncate w-full">{c.name}</p>
+        <p className="text-[4px] leading-[6px] text-blue-200 truncate w-full">{c.title}</p>
+        <p className="text-[3.5px] leading-[5px] text-blue-100/70 truncate w-full">{c.contact}</p>
       </div>
-      {/* Gold rule */}
       <div className="h-px w-4/5 self-center bg-yellow-500/60 flex-shrink-0" />
-      {/* Body */}
-      <div className="flex-1 p-2 flex flex-col gap-1 overflow-hidden">
+      <div className="flex-1 p-2 flex flex-col overflow-hidden text-left">
         <div className="flex items-center gap-1">
-          <div className="h-1.5 w-1/4 bg-[#17213f] rounded-sm" />
+          <p className="text-[4px] leading-[5px] font-semibold text-[#17213f] uppercase">Profile</p>
           <div className="flex-1 h-px bg-[#17213f]/50" />
         </div>
-        <div className="h-1 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1 w-5/6 bg-gray-200 rounded-sm" />
-        <div className="flex items-center gap-1 mt-0.5">
-          <div className="h-1.5 w-1/4 bg-[#17213f] rounded-sm" />
+        <p className={`${body} max-h-[12px] overflow-hidden`}>{c.summary}</p>
+        <div className="flex items-center gap-1 mt-1">
+          <p className="text-[4px] leading-[5px] font-semibold text-[#17213f] uppercase">Experience</p>
           <div className="flex-1 h-px bg-[#17213f]/50" />
         </div>
-        <div className="flex justify-between">
-          <div className="h-1.5 w-2/5 bg-gray-700 rounded-sm" />
-          <div className="h-1 w-1/4 bg-gray-400 rounded-sm" />
+        <div className="flex justify-between gap-1">
+          <p className="text-[4px] leading-[6px] font-semibold text-gray-700 truncate">{c.expRole}</p>
+          <p className="text-[3.5px] leading-[6px] text-gray-400 whitespace-nowrap">{c.expDates}</p>
         </div>
-        <div className="h-1 w-1/3 bg-[#17213f]/40 rounded-sm" />
-        <div className="h-1 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1 w-4/5 bg-gray-200 rounded-sm" />
-        <div className="flex items-center gap-1 mt-0.5">
-          <div className="h-1.5 w-1/5 bg-[#17213f] rounded-sm" />
+        <p className="text-[3.5px] leading-[5px] text-[#17213f]/70 truncate">{c.expCompany}</p>
+        <p className={`${body} max-h-[12px] overflow-hidden`}>{c.expSnippet}</p>
+        <div className="flex items-center gap-1 mt-1">
+          <p className="text-[4px] leading-[5px] font-semibold text-[#17213f] uppercase">Skills</p>
           <div className="flex-1 h-px bg-[#17213f]/50" />
         </div>
-        <div className="h-1 w-full bg-gray-200 rounded-sm" />
-        <div className="flex gap-1 flex-wrap">
-          <div className="h-1 w-8 bg-gray-300 rounded-sm" />
-          <div className="h-1 w-6 bg-gray-300 rounded-sm" />
-          <div className="h-1 w-10 bg-gray-300 rounded-sm" />
-        </div>
+        <SkillChips skills={c.skills} chipClass="bg-gray-200 text-gray-600" />
       </div>
     </div>
   );
 }
 
 // ── Creative ────────────────────────────────────────────────
-function CreativePreview() {
+function CreativePreview({ c }: { c: PreviewContent }) {
   return (
-    <div className="w-full h-full bg-white rounded-sm flex overflow-hidden">
-      {/* Purple left stripe */}
+    <div className="w-full h-full bg-white rounded-sm flex overflow-hidden text-left">
       <div className="w-1 bg-purple-700 flex-shrink-0" />
-      {/* Light purple sidebar */}
-      <div className="w-[32%] bg-purple-50 p-1.5 flex flex-col items-center gap-1">
-        {/* Avatar circle */}
+      <div className="w-[34%] bg-purple-50 p-1.5 flex flex-col items-center overflow-hidden">
         <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
-          <div className="h-2 w-3 bg-white/80 rounded-sm" />
+          <span className="text-[6px] font-bold text-white">{c.initials}</span>
         </div>
-        <div className="h-1.5 w-4/5 bg-gray-700 rounded-sm" />
-        <div className="h-1 w-3/5 bg-purple-400 rounded-sm" />
-        <div className="mt-1 w-full space-y-0.5">
+        <p className="text-[4.5px] leading-[6px] font-bold text-gray-800 text-center break-words mt-0.5 w-full">{c.name}</p>
+        <p className="text-[3.5px] leading-[5px] text-purple-600 text-center break-words w-full">{c.title}</p>
+        <div className="w-full mt-1">
           <div className="h-0.5 w-full bg-purple-400" />
-          <div className="h-1 w-full bg-gray-400 rounded-sm" />
-          <div className="h-1 w-5/6 bg-gray-400 rounded-sm" />
-        </div>
-        <div className="mt-0.5 w-full space-y-0.5">
-          <div className="h-0.5 w-full bg-purple-400" />
-          <div className="h-1 w-full bg-gray-400 rounded-sm" />
-          <div className="h-1 w-4/5 bg-gray-400 rounded-sm" />
-          <div className="h-1 w-3/5 bg-gray-400 rounded-sm" />
+          <p className="text-[3.5px] leading-[5px] font-semibold text-purple-700 uppercase mt-0.5">Skills</p>
+          <div className="overflow-hidden">
+            {c.skills.slice(0, 4).map((skill) => (
+              <p key={skill} className="text-[3.5px] leading-[5px] text-gray-500 truncate">{skill}</p>
+            ))}
+          </div>
         </div>
       </div>
-      {/* Main content */}
-      <div className="flex-1 p-1.5 flex flex-col gap-1">
-        <div className="h-px bg-purple-500 w-full" />
-        <div className="h-1 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1 w-5/6 bg-gray-200 rounded-sm" />
-        <div className="h-px bg-purple-500 w-full mt-0.5" />
-        <div className="flex justify-between">
-          <div className="h-1.5 w-2/5 bg-gray-700 rounded-sm" />
-        </div>
-        <div className="h-1 w-1/3 bg-purple-300 rounded-sm" />
-        <div className="h-1 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1 w-4/5 bg-gray-200 rounded-sm" />
-        <div className="h-px bg-purple-500 w-full mt-0.5" />
-        <div className="h-1.5 w-2/5 bg-gray-700 rounded-sm" />
-        <div className="h-1 w-1/3 bg-purple-300 rounded-sm" />
-        <div className="h-1 w-full bg-gray-200 rounded-sm" />
+      <div className="flex-1 p-1.5 flex flex-col overflow-hidden">
+        <p className="text-[4px] leading-[5px] font-semibold text-purple-600 uppercase">About</p>
+        <p className={`${body} max-h-[12px] overflow-hidden`}>{c.summary}</p>
+        <div className="h-px bg-purple-500 w-full mt-1" />
+        <p className="text-[4px] leading-[5px] font-semibold text-purple-600 uppercase mt-0.5">Experience</p>
+        <p className="text-[4px] leading-[6px] font-semibold text-gray-700 truncate">{c.expRole}</p>
+        <p className="text-[3.5px] leading-[5px] text-purple-400 truncate">{c.expCompany} · {c.expDates}</p>
+        <p className={`${body} max-h-[18px] overflow-hidden`}>{c.expSnippet}</p>
       </div>
     </div>
   );
 }
 
 // ── Minimal ─────────────────────────────────────────────────
-function MinimalPreview() {
+function MinimalPreview({ c }: { c: PreviewContent }) {
   return (
-    <div className="w-full h-full bg-white rounded-sm p-2 flex flex-col gap-1.5">
-      <div className="h-4 w-2/3 bg-gray-900 rounded-sm" />
-      <div className="h-1.5 w-1/2 bg-gray-400 rounded-sm" />
-      <div className="h-1 w-3/4 bg-gray-300 rounded-sm" />
+    <div className="w-full h-full bg-white rounded-sm p-2 flex flex-col overflow-hidden text-left">
+      <p className="text-[8px] leading-[10px] font-bold text-gray-900 truncate">{c.name}</p>
+      <p className="text-[4.5px] leading-[6px] text-gray-500 truncate">{c.title}</p>
+      <p className="text-[3.5px] leading-[5px] text-gray-400 truncate">{c.contact}</p>
       <div className="h-px bg-gray-300 w-full mt-1" />
-      <div className="mt-0.5">
-        <div className="h-1.5 w-1/4 bg-gray-800 rounded-sm mb-0.5" />
-        <div className="h-px bg-gray-200 w-full mb-0.5" />
-        <div className="h-1 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1 w-5/6 bg-gray-200 rounded-sm mt-0.5" />
+      <p className="text-[4px] leading-[5px] font-semibold text-gray-800 uppercase mt-0.5">Summary</p>
+      <div className="h-px bg-gray-200 w-full" />
+      <p className={`${body} max-h-[12px] overflow-hidden`}>{c.summary}</p>
+      <p className="text-[4px] leading-[5px] font-semibold text-gray-800 uppercase mt-1">Experience</p>
+      <div className="h-px bg-gray-200 w-full" />
+      <div className="flex justify-between gap-1">
+        <p className="text-[4px] leading-[6px] font-semibold text-gray-700 truncate">{c.expRole}</p>
+        <p className="text-[3.5px] leading-[6px] text-gray-400 whitespace-nowrap">{c.expDates}</p>
       </div>
-      <div className="mt-0.5">
-        <div className="h-1.5 w-1/4 bg-gray-800 rounded-sm mb-0.5" />
-        <div className="h-px bg-gray-200 w-full mb-0.5" />
-        <div className="flex justify-between">
-          <div className="h-1.5 w-2/5 bg-gray-700 rounded-sm" />
-          <div className="h-1 w-1/4 bg-gray-300 rounded-sm" />
-        </div>
-        <div className="h-1 w-1/3 bg-gray-400 rounded-sm mt-0.5" />
-        <div className="h-1 w-full bg-gray-200 rounded-sm mt-0.5" />
-        <div className="h-1 w-4/5 bg-gray-200 rounded-sm mt-0.5" />
-      </div>
-      <div className="mt-0.5">
-        <div className="h-1.5 w-1/5 bg-gray-800 rounded-sm mb-0.5" />
-        <div className="h-px bg-gray-200 w-full mb-0.5" />
-        <div className="flex gap-1 flex-wrap">
-          <div className="h-1 w-7 bg-gray-300 rounded-sm" />
-          <div className="h-1 w-5 bg-gray-300 rounded-sm" />
-          <div className="h-1 w-8 bg-gray-300 rounded-sm" />
-          <div className="h-1 w-6 bg-gray-300 rounded-sm" />
-        </div>
-      </div>
+      <p className="text-[3.5px] leading-[5px] text-gray-500 truncate">{c.expCompany}</p>
+      <p className={`${body} max-h-[12px] overflow-hidden`}>{c.expSnippet}</p>
+      <p className="text-[4px] leading-[5px] font-semibold text-gray-800 uppercase mt-1">Skills</p>
+      <div className="h-px bg-gray-200 w-full" />
+      <p className="text-[3.5px] leading-[5px] text-gray-500 truncate">{c.skills.join(' · ')}</p>
     </div>
   );
 }
 
 // ── Compact ─────────────────────────────────────────────────
-function CompactPreview() {
+function CompactPreview({ c }: { c: PreviewContent }) {
   return (
-    <div className="w-full h-full bg-white rounded-sm p-2 flex flex-col gap-1 overflow-hidden">
-      <div className="flex justify-between items-end">
-        <div className="h-3 w-2/5 bg-gray-800 rounded-sm" />
-        <div className="h-1.5 w-1/3 bg-gray-400 rounded-sm" />
+    <div className="w-full h-full bg-white rounded-sm p-2 flex flex-col overflow-hidden text-left">
+      <div className="flex justify-between items-end gap-1">
+        <p className="text-[6px] leading-[8px] font-bold text-gray-900 truncate">{c.name}</p>
+        <p className="text-[3.5px] leading-[6px] text-gray-400 truncate">{c.title}</p>
       </div>
-      <div className="h-1 w-2/3 bg-gray-300 rounded-sm" />
+      <p className="text-[3.5px] leading-[5px] text-gray-400 truncate">{c.contact}</p>
       <div className="h-0.5 w-full bg-red-800 mt-0.5" />
       <div className="flex items-center gap-0.5 mt-0.5">
-        <div className="h-1.5 w-1/4 bg-red-800 rounded-sm" />
+        <p className="text-[4px] leading-[5px] font-semibold text-red-800 uppercase">Summary</p>
         <div className="flex-1 h-px bg-red-800/40" />
       </div>
-      <div className="flex justify-between">
-        <div className="h-1.5 w-2/5 bg-gray-700 rounded-sm" />
-        <div className="h-1 w-1/4 bg-gray-400 rounded-sm" />
-      </div>
-      <div className="h-1 w-1/4 bg-red-700/50 rounded-sm" />
-      <div className="h-1 w-full bg-gray-200 rounded-sm" />
-      <div className="h-1 w-5/6 bg-gray-200 rounded-sm" />
+      <p className={`${body} max-h-[12px] overflow-hidden`}>{c.summary}</p>
       <div className="flex items-center gap-0.5 mt-0.5">
-        <div className="h-1.5 w-1/4 bg-red-800 rounded-sm" />
+        <p className="text-[4px] leading-[5px] font-semibold text-red-800 uppercase">Experience</p>
         <div className="flex-1 h-px bg-red-800/40" />
       </div>
-      <div className="flex justify-between">
-        <div className="h-1.5 w-2/5 bg-gray-700 rounded-sm" />
-        <div className="h-1 w-1/4 bg-gray-400 rounded-sm" />
+      <div className="flex justify-between gap-1">
+        <p className="text-[4px] leading-[6px] font-semibold text-gray-700 truncate">{c.expRole}</p>
+        <p className="text-[3.5px] leading-[6px] text-gray-400 whitespace-nowrap">{c.expDates}</p>
       </div>
-      <div className="h-1 w-1/4 bg-red-700/50 rounded-sm" />
+      <p className="text-[3.5px] leading-[5px] text-red-700/70 truncate">{c.expCompany}</p>
+      <p className={`${body} max-h-[10px] overflow-hidden`}>{c.expSnippet}</p>
       <div className="flex items-center gap-0.5 mt-0.5">
-        <div className="h-1.5 w-1/5 bg-red-800 rounded-sm" />
+        <p className="text-[4px] leading-[5px] font-semibold text-red-800 uppercase">Skills</p>
         <div className="flex-1 h-px bg-red-800/40" />
       </div>
-      {/* Two-column skills */}
-      <div className="grid grid-cols-2 gap-x-2 mt-0.5">
-        <div className="space-y-0.5">
-          <div className="h-1 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1 w-4/5 bg-gray-200 rounded-sm" />
-          <div className="h-1 w-full bg-gray-200 rounded-sm" />
-        </div>
-        <div className="space-y-0.5">
-          <div className="h-1 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1 w-3/5 bg-gray-200 rounded-sm" />
-          <div className="h-1 w-4/5 bg-gray-200 rounded-sm" />
-        </div>
+      <div className="grid grid-cols-2 gap-x-2 overflow-hidden">
+        {c.skills.slice(0, 4).map((skill) => (
+          <p key={skill} className="text-[3.5px] leading-[5px] text-gray-500 truncate">{skill}</p>
+        ))}
       </div>
     </div>
   );
