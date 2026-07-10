@@ -39,6 +39,10 @@ import {
 } from '@/lib/whatsapp-agent/parser';
 import { parseIntentFromFreeText } from '@/lib/whatsapp-agent/intent-nlp';
 import {
+  looksLikeForwardedJobPosting,
+  storeForwardedJobPosting,
+} from '@/lib/whatsapp-agent/job-forward';
+import {
   mergePayload,
   menuMessage,
   timeFilterPrompt,
@@ -1226,6 +1230,37 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     if (menuChoice) {
       await handleMenuChoice(lead, menuChoice, role);
       return { handled: true, reason: 'handled' };
+    }
+
+    // Forwarded job posting? Route it into the discovery pipeline instead of
+    // treating the announcement text as a job-search query. Uses the raw
+    // inbound text — `text` is truncated by sanitizeFreeText.
+    if (looksLikeForwardedJobPosting(inboundText)) {
+      try {
+        const intake = await storeForwardedJobPosting(inboundText, lead.phone_e164);
+        if (intake.stored) {
+          await sendMessage(
+            lead.phone_e164,
+            intake.duplicate
+              ? 'Thanks! We already received this job posting — it is in our verification queue. 🙏'
+              : 'Thanks for forwarding this job! 🙏 Our team will verify it and publish it on Joblinca if it checks out. Reply MENU for options.',
+            lead.linked_user_id
+          );
+          logEvent('info', 'job_forward_intake', {
+            leadId: lead.id,
+            waMessageId: input.message.id,
+            duplicate: intake.duplicate,
+          });
+          return { handled: true, reason: 'handled' };
+        }
+      } catch (forwardErr) {
+        // Fall through to the normal flow — intake must never break the agent
+        logEvent('error', 'job_forward_intake_error', {
+          leadId: lead.id,
+          waMessageId: input.message.id,
+          error: forwardErr instanceof Error ? forwardErr.message : 'unknown_error',
+        });
+      }
     }
 
     const intent = parseIntentFromFreeText(text);
