@@ -212,6 +212,22 @@ export async function middleware(req: NextRequest) {
         NextResponse.redirect(new URL(fallbackPath, req.url))
       );
     }
+
+    if (profile?.admin_type === 'content') {
+      const contentAdminAllowed =
+        internalPathname === '/admin' ||
+        internalPathname.startsWith('/admin/content-jobs') ||
+        internalPathname.startsWith('/admin/jobs') ||
+        internalPathname === '/admin/aggregation' ||
+        internalPathname.startsWith('/admin/aggregation/discovered-jobs');
+
+      if (!contentAdminAllowed) {
+        return copyCookies(
+          res,
+          NextResponse.redirect(new URL(addLocalePrefix('/admin/content-jobs', resolvedLocale), req.url))
+        );
+      }
+    }
   }
 
   // Protect recruiter routes
