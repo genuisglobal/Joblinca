@@ -1,6 +1,7 @@
 'use client';
 
-import { Plus, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
 import type { ResumeData, ExperienceEntry } from '@/lib/resume';
 import { createEmptyExperience } from '@/lib/resume';
 import AIButton from '../AIButton';
@@ -13,6 +14,87 @@ interface ExperienceStepProps {
 const inputClass =
   'mt-1 w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-500';
 const labelClass = 'block text-sm font-medium text-gray-300';
+
+// Renders each line of a multi-line description with its own AI improve
+// button, so users can polish one bullet without rewriting the whole entry.
+function BulletImprover({
+  description,
+  context,
+  onChange,
+}: {
+  description: string;
+  context: string;
+  onChange: (description: string) => void;
+}) {
+  const [improvingLine, setImprovingLine] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const lines = description.split('\n');
+  const bulletIndexes = lines
+    .map((line, i) => ({ line: line.trim(), i }))
+    .filter(({ line }) => line.length > 0)
+    .map(({ i }) => i);
+
+  if (bulletIndexes.length < 2) return null;
+
+  async function improveLine(lineIndex: number) {
+    const raw = lines[lineIndex];
+    // Strip any leading bullet marker before sending, re-add it after
+    const markerMatch = raw.match(/^(\s*(?:[•\-*]\s*)?)/);
+    const marker = markerMatch ? markerMatch[1] : '';
+    const text = raw.slice(marker.length).trim();
+    if (!text) return;
+
+    setImprovingLine(lineIndex);
+    setError(null);
+    try {
+      const res = await fetch('/api/resume/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ field: 'bullet', value: text, context }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (res.ok && typeof result.improved === 'string') {
+        const updated = [...lines];
+        updated[lineIndex] = `${marker}${result.improved.replace(/^[•\-*]\s*/, '')}`;
+        onChange(updated.join('\n'));
+      } else if (res.status === 429) {
+        setError('AI limit reached — try again later.');
+      } else {
+        setError(result.error || 'Improvement failed. Try again.');
+      }
+    } catch {
+      setError('Network error. Try again.');
+    } finally {
+      setImprovingLine(null);
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-1">
+      <p className="text-xs text-gray-500">Improve individual bullets:</p>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {bulletIndexes.map((lineIndex) => (
+        <div key={lineIndex} className="flex items-start gap-2 group">
+          <button
+            type="button"
+            onClick={() => improveLine(lineIndex)}
+            disabled={improvingLine !== null}
+            className="shrink-0 mt-0.5 p-1 text-purple-400 hover:text-purple-300 disabled:opacity-40 transition-colors"
+            title="Improve this bullet with AI"
+          >
+            {improvingLine === lineIndex ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5" />
+            )}
+          </button>
+          <p className="text-xs text-gray-400 leading-relaxed">{lines[lineIndex].trim()}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ExperienceStep({ data, onChange }: ExperienceStepProps) {
   function updateEntry(index: number, updates: Partial<ExperienceEntry>) {
@@ -110,6 +192,7 @@ export default function ExperienceStep({ data, onChange }: ExperienceStepProps) 
               <AIButton
                 field="experience"
                 value={exp.description}
+                context={[exp.role, exp.company].filter(Boolean).join(' at ')}
                 onResult={(improved) => updateEntry(index, { description: improved as string })}
               />
             </div>
@@ -119,6 +202,11 @@ export default function ExperienceStep({ data, onChange }: ExperienceStepProps) 
               rows={4}
               className="w-full px-3 py-2 bg-gray-800 text-gray-100 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-500 resize-y"
               placeholder="Led development of customer-facing features, increasing user engagement by 30%..."
+            />
+            <BulletImprover
+              description={exp.description}
+              context={[exp.role, exp.company].filter(Boolean).join(' at ')}
+              onChange={(description) => updateEntry(index, { description })}
             />
           </div>
         </div>

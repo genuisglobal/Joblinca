@@ -88,6 +88,12 @@ type ContactInfo = {
   location: string;
 };
 
+type SavedBuilderResume = {
+  id: string;
+  data: { fullName?: string; title?: string; template?: string };
+  updated_at: string;
+};
+
 type ApplyFormProps = {
   job: Job;
   applicantRole: string;
@@ -394,6 +400,9 @@ export default function ApplyForm({
   const [boostsActive, setBoostsActive] = useState<number>(0);
   const [boostExpiry, setBoostExpiry] = useState<string | null>(null);
   const [useBoost, setUseBoost] = useState(false);
+  const [savedResumes, setSavedResumes] = useState<SavedBuilderResume[] | null>(null);
+  const [attachingResumeId, setAttachingResumeId] = useState<string | null>(null);
+  const [attachedResumeName, setAttachedResumeName] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -417,6 +426,27 @@ export default function ApplyForm({
       mounted = false;
     };
   }, []);
+
+  // Load CV Builder resumes lazily when the resume step is first opened
+  useEffect(() => {
+    if (currentStep !== 'resume' || savedResumes !== null) return;
+    let mounted = true;
+    fetch('/api/resume/saved')
+      .then(async (response) => {
+        if (!response.ok) return [];
+        const payload = await response.json().catch(() => null);
+        return Array.isArray(payload?.resumes) ? payload.resumes : [];
+      })
+      .then((resumes) => {
+        if (mounted) setSavedResumes(resumes as SavedBuilderResume[]);
+      })
+      .catch(() => {
+        if (mounted) setSavedResumes([]);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [currentStep, savedResumes]);
 
   const currentStepIndex = STEPS.findIndex((s) => s.key === currentStep);
 
@@ -618,6 +648,7 @@ export default function ApplyForm({
       setResumeUrl(urlData.publicUrl || filePath);
 
       setResumeFile(file);
+      setAttachedResumeName(null);
     } catch (err) {
       console.error('Resume upload error:', err);
       setError(err instanceof Error ? err.message : 'Failed to upload resume');
@@ -645,6 +676,28 @@ export default function ApplyForm({
         return;
       }
       handleResumeUpload(file);
+    }
+  };
+
+  // Attach a CV Builder resume: the server renders it to PDF and uploads
+  // it to the same bucket as manual uploads, so downstream flows are identical.
+  const handleAttachSavedResume = async (resumeId: string) => {
+    setAttachingResumeId(resumeId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/resume/saved/${resumeId}/attach`, { method: 'POST' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.path) {
+        throw new Error(data?.error || 'Failed to attach resume. Please try again.');
+      }
+      setResumePath(data.path);
+      setResumeUrl(data.url || data.path);
+      setResumeFile(null);
+      setAttachedResumeName(data.fileName || 'CV Builder resume');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to attach resume');
+    } finally {
+      setAttachingResumeId(null);
     }
   };
 
@@ -1293,12 +1346,14 @@ export default function ApplyForm({
                       </div>
                       <div>
                         <p className="text-white font-medium">
-                          {resumeFile?.name || 'Resume uploaded'}
+                          {resumeFile?.name || attachedResumeName || 'Resume uploaded'}
                         </p>
                         <p className="text-gray-400 text-sm">
                           {resumeFile
                             ? `${(resumeFile.size / 1024).toFixed(1)} KB`
-                            : 'Using existing resume'}
+                            : attachedResumeName
+                              ? 'Generated from your CV Builder resume'
+                              : 'Using existing resume'}
                         </p>
                       </div>
                       <div className="flex items-center justify-center gap-3">
@@ -1325,6 +1380,7 @@ export default function ApplyForm({
                             setResumeUrl(null);
                             setResumeFile(null);
                             setResumePath(null); // clear resume_path too
+                            setAttachedResumeName(null);
                           }}
                           className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
                         >
@@ -1405,6 +1461,52 @@ export default function ApplyForm({
                     </div>
                   )}
                 </div>
+
+                {/* CV Builder resumes */}
+                {savedResumes && savedResumes.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-300 mb-1">
+                      Or use a resume you built with the CV Builder
+                    </p>
+                    <p className="text-xs text-gray-500 mb-3">
+                      We&apos;ll generate a fresh PDF and attach it to this application.
+                    </p>
+                    <div className="space-y-2">
+                      {savedResumes.map((saved) => (
+                        <div
+                          key={saved.id}
+                          className="flex items-center justify-between gap-4 bg-gray-700/50 border border-gray-600 rounded-lg px-4 py-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-white text-sm font-medium truncate">
+                              {saved.data?.fullName || 'Untitled resume'}
+                              {saved.data?.title && (
+                                <span className="text-gray-400 font-normal"> — {saved.data.title}</span>
+                              )}
+                            </p>
+                            <p className="text-xs text-gray-500 capitalize">
+                              {saved.data?.template || 'professional'} template
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleAttachSavedResume(saved.id)}
+                            disabled={attachingResumeId !== null}
+                            className="shrink-0 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white rounded-lg transition-colors"
+                          >
+                            {attachingResumeId === saved.id ? 'Attaching...' : 'Attach'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <Link
+                      href="/resume"
+                      className="mt-2 inline-block text-xs text-blue-400 hover:text-blue-300"
+                    >
+                      Open CV Builder to create or edit resumes
+                    </Link>
+                  </div>
+                )}
 
                 {/* Optional Cover Letter */}
                 <div>

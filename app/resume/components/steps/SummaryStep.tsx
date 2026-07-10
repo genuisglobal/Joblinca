@@ -22,6 +22,7 @@ export default function SummaryStep({ data, onChange }: SummaryStepProps) {
           <AIButton
             field="summary"
             value={data.summary}
+            context={data.title}
             onResult={(improved) => onChange({ summary: improved as string })}
           />
         </div>

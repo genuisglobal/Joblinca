@@ -46,6 +46,9 @@ export interface ResumeData {
   template: 'professional' | 'modern' | 'executive' | 'creative' | 'minimal' | 'compact';
 }
 
+// localStorage key for the in-progress wizard draft (cleared on save)
+export const RESUME_DRAFT_KEY = 'joblinca-resume-draft';
+
 export function createEmptyResume(): ResumeData {
   return {
     fullName: '',
