@@ -39,6 +39,12 @@ export abstract class BaseScraper {
   protected seenExternalIds: Set<string> | null = null;
   /** Pages actually scraped this run (incremented by shouldStopAfterPage) */
   protected pagesScraped = 0;
+  /**
+   * Non-fatal errors providers hit mid-scrape (page fetch failures etc.).
+   * Surfaced in the run result so a broken scraper reports as failed instead
+   * of "completed with 0 jobs" — which is invisible to health tracking.
+   */
+  protected scrapeErrors: string[] = [];
 
   constructor(source: string, config?: Partial<ScraperConfig>) {
     this.source = source;
@@ -76,11 +82,12 @@ export abstract class BaseScraper {
 
     try {
       this.pagesScraped = 0;
+      this.scrapeErrors = [];
       const jobs = await this.scrape();
       return {
         source: this.source,
         jobs,
-        errors,
+        errors: [...errors, ...this.scrapeErrors],
         duration_ms: Date.now() - start,
         pages_scraped: this.pagesScraped || this.config.maxPages,
       };
@@ -142,6 +149,13 @@ export abstract class BaseScraper {
   /** Rate-limit delay between requests. */
   protected delay(ms?: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms ?? this.config.delayMs));
+  }
+
+  /** Record a non-fatal scrape error so the run reports it instead of silently yielding 0 jobs. */
+  protected recordScrapeError(context: string, err: unknown): void {
+    const message = `${context}: ${err instanceof Error ? err.message : String(err)}`;
+    console.error(`[scraper:${this.source}] ${message}`);
+    this.scrapeErrors.push(message);
   }
 
   /**

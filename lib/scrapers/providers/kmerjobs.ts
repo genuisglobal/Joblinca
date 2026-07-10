@@ -337,7 +337,7 @@ export class KmerJobsScraper extends BaseScraper {
           await this.delay();
         }
       } catch (err) {
-        console.error(`[scraper:kmerjobs] HTML fallback page ${page} error:`, err);
+        this.recordScrapeError(`HTML fallback page ${page}`, err);
         break;
       }
     }
