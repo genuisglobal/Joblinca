@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { requireAdmin } from '@/lib/admin';
 import { dispatchJobMatchNotifications } from '@/lib/matching-agent/dispatch';
 import { generateAndPersistApprovedJobImage } from '@/lib/job-image-generator/service';
 import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
+import { notifyRecruiterViaWhatsApp } from '@/lib/jobs/recruiter-notify';
 
 export async function POST(
   request: Request,
@@ -82,6 +84,15 @@ export async function POST(
       } catch (matchError) {
         console.error('Job matching dispatch failed after approval', matchError);
       }
+    }
+
+    // Close the loop: tell the recruiter their job went live (best-effort)
+    if (existingJob.approval_status !== 'approved') {
+      await notifyRecruiterViaWhatsApp(
+        createServiceSupabaseClient(),
+        data.recruiter_id,
+        `✅ Your job "${data.title}" has been approved and is now live on Joblinca!\n${new URL(request.url).origin}/jobs/${jobId}`
+      );
     }
 
     return NextResponse.json({

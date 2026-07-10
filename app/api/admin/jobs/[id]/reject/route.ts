@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { requireAdmin } from '@/lib/admin';
+import { notifyRecruiterViaWhatsApp } from '@/lib/jobs/recruiter-notify';
 
 export async function POST(
   request: Request,
@@ -39,6 +41,13 @@ export async function POST(
       console.error('Error rejecting job:', error);
       return NextResponse.json({ error: 'Failed to reject job' }, { status: 500 });
     }
+
+    // Close the loop: tell the recruiter why it was rejected (best-effort)
+    await notifyRecruiterViaWhatsApp(
+      createServiceSupabaseClient(),
+      data.recruiter_id,
+      `❌ Your job "${data.title}" was not approved.\nReason: ${reason.trim()}\n\nYou can edit and resubmit it from your dashboard.`
+    );
 
     return NextResponse.json({ success: true, job: data });
   } catch (err) {

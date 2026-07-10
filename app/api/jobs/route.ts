@@ -8,6 +8,8 @@ import { persistJobOpportunityMetadata } from '@/lib/opportunities-server';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin';
 import { checkJobForScam } from '@/lib/scam-detection';
 import { isJobPubliclyListable, resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
+import { evaluateFastApproval } from '@/lib/jobs/posting-gate';
+import { sendAdminWhatsAppAlert } from '@/lib/admin-alerts';
 import {
   LOCALE_COOKIE_NAME,
   detectContentLanguage,
@@ -758,8 +760,21 @@ export async function POST(request: NextRequest) {
   const scamResult = checkJobForScam(title, description || '', companyName || null);
   const language = resolveJobLanguage(body.language, title, description);
 
-  const shouldPublishImmediately = isActiveAdmin && !scamResult.isSuspicious;
-  const approvalStatus = isActiveAdmin && !scamResult.isSuspicious ? 'approved' : 'pending';
+  // Fast approval path: clean posts from verified recruiters (or companies
+  // with verified reputation) publish immediately instead of waiting in the
+  // manual queue. Fails closed — errors route back to review.
+  let recruiterFastApproved = false;
+  if (isRecruiter && !isActiveAdmin) {
+    recruiterFastApproved = await evaluateFastApproval(createServiceSupabaseClient(), {
+      recruiterId: assignedRecruiterId,
+      companyName: companyName || null,
+      scamSuspicious: scamResult.isSuspicious,
+    });
+  }
+
+  const shouldPublishImmediately =
+    (isActiveAdmin && !scamResult.isSuspicious) || recruiterFastApproved;
+  const approvalStatus = shouldPublishImmediately ? 'approved' : 'pending';
   const lifecycleStatus = resolveJobLifecycleStatus({
     published: shouldPublishImmediately,
     approval_status: approvalStatus,
@@ -787,7 +802,7 @@ export async function POST(request: NextRequest) {
     approval_status: approvalStatus,
     lifecycle_status: lifecycleStatus,
     scam_score: scamResult.score,
-    approved_at: isActiveAdmin ? new Date().toISOString() : null,
+    approved_at: shouldPublishImmediately ? new Date().toISOString() : null,
     approved_by: isActiveAdmin ? user.id : null,
     posted_by: user.id,
     posted_by_role: isActiveAdmin ? `admin_${profile.admin_type}` : 'recruiter',
@@ -856,8 +871,22 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Tell admins a job is waiting instead of letting the queue rot silently
+  if (approvalStatus === 'pending') {
+    try {
+      await sendAdminWhatsAppAlert(
+        `📋 New job pending approval${scamResult.isSuspicious ? ' (⚠️ flagged by scam check)' : ''}:\n` +
+          `"${title}" — ${companyName || 'no company stated'}\n` +
+          `Review: ${new URL(request.url).origin}/admin/jobs`
+      );
+    } catch (alertError) {
+      console.error('Pending-job admin alert failed (non-fatal)', alertError);
+    }
+  }
+
   return NextResponse.json({
     id: insertedJob.id,
+    autoApproved: shouldPublishImmediately,
     ...(scamResult.isSuspicious && {
       warning: 'This job was flagged for review due to suspicious content. It will be visible once approved by an admin.',
     }),
