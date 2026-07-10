@@ -1,0 +1,25 @@
+name: Intraday Job Scrapes
+
+# Vercel Hobby only allows daily crons, so Vercel runs the 06:00 UTC baseline
+# scrape (see vercel.json) and this workflow triggers the other intraday runs.
+# Uses the same APP_BASE_URL / CRON_SECRET repo secrets as hourly-cron-jobs.yml.
+
+on:
+  schedule:
+    - cron: '0 11,16,21 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh-jobs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call refresh-jobs dispatcher
+        env:
+          APP_BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$APP_BASE_URL"
+          test -n "$CRON_SECRET"
+          curl --fail --show-error --silent --max-time 600 \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$APP_BASE_URL/api/cron/refresh-jobs"
