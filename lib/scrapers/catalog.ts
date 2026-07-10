@@ -92,6 +92,17 @@ export const SCRAPER_SOURCE_CATALOG = [
     retireLegacyExternalFeed: false,
   },
   {
+    // First-party employer pages registered in /admin/aggregation/career-pages;
+    // extraction is LLM-based so adding an employer is config, not code
+    slug: 'careerpages',
+    label: 'Company Career Pages',
+    sourceType: 'html',
+    baseUrl: 'https://joblinca.com/admin/aggregation/career-pages',
+    trustTier: 85,
+    executionKind: 'site',
+    retireLegacyExternalFeed: false,
+  },
+  {
     slug: FACEBOOK_SCRAPER_SOURCE_SLUG,
     label: 'Facebook Groups',
     sourceType: 'manual',
