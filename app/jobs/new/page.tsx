@@ -144,7 +144,8 @@ export default function NewJobPage() {
 
   // ── Draft persistence: a 25-field form must survive refreshes ─────────────
   const JOB_DRAFT_KEY = 'joblinca-job-post-draft';
-  const [showPreview, setShowPreview] = useState(false);
+  const WIZARD_STEPS = ['Basics', 'Details', 'Application', 'Review'] as const;
+  const [wizardStep, setWizardStep] = useState(0);
   const [draftRestored, setDraftRestored] = useState(false);
   const draftHydratedRef = useRef(false);
 
@@ -190,6 +191,9 @@ export default function NewJobPage() {
         if (Array.isArray(f.customQuestions)) {
           setCustomQuestions(f.customQuestions as CustomQuestion[]);
         }
+        if (typeof f.wizardStep === 'number' && f.wizardStep >= 0 && f.wizardStep <= 3) {
+          setWizardStep(Math.floor(f.wizardStep));
+        }
 
         // Restored values must not be clobbered by recruiter profile defaults
         setFieldEdited({
@@ -232,6 +236,7 @@ export default function NewJobPage() {
     applyWhatsapp,
     closesAt,
     customQuestions,
+    wizardStep,
   });
 
   useEffect(() => {
@@ -690,6 +695,68 @@ export default function NewJobPage() {
     }
   }
 
+  /** Returns the apply-method validation error, or null when valid. */
+  function validateApplyMethodFields(): string | null {
+    if (applyMethod === 'external_url' && !externalApplyUrl) {
+      return 'Please provide an external application URL';
+    }
+    if (applyMethod === 'email' && !applyEmail) {
+      return 'Please provide an email address for applications';
+    }
+    if (applyMethod === 'phone' && !applyPhone) {
+      return 'Please provide a phone number for applications';
+    }
+    if (applyMethod === 'whatsapp' && !applyWhatsapp) {
+      return 'Please provide a WhatsApp number for applications';
+    }
+    if (
+      applyMethod === 'multiple' &&
+      !externalApplyUrl.trim() &&
+      !applyEmail.trim() &&
+      !applyPhone.trim() &&
+      !applyWhatsapp.trim()
+    ) {
+      return 'Add at least one application method when using multiple methods.';
+    }
+    return null;
+  }
+
+  function goToWizardStep(nextStep: number) {
+    setError(null);
+    setWizardStep(Math.max(0, Math.min(WIZARD_STEPS.length - 1, nextStep)));
+  }
+
+  function handleWizardNext() {
+    if (wizardStep === 0) {
+      if (!title.trim()) {
+        setError('Add a job title before continuing.');
+        return;
+      }
+      if (!description.trim()) {
+        setError('Add a description before continuing — the AI generator can write one from the title.');
+        return;
+      }
+    }
+    if (wizardStep === 1) {
+      if (jobType === 'internship' && !internshipTrack) {
+        setError('Select whether this internship is educational or professional.');
+        return;
+      }
+      if (salaryMin.trim() && salaryMax.trim() && Number(salaryMin) > Number(salaryMax)) {
+        setError('Salary max must be greater than or equal to salary min.');
+        return;
+      }
+    }
+    if (wizardStep === 2) {
+      const applyError = validateApplyMethodFields();
+      if (applyError) {
+        setError(applyError);
+        return;
+      }
+    }
+    goToWizardStep(wizardStep + 1);
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -699,31 +766,17 @@ export default function NewJobPage() {
       return;
     }
 
-    // Validate apply method fields
-    if (applyMethod === 'external_url' && !externalApplyUrl) {
-      setError('Please provide an external application URL');
+    // The form uses noValidate (steps hide inputs), so required checks are here
+    if (!title.trim() || !description.trim()) {
+      setError(!title.trim() ? 'Job title is required.' : 'Description is required.');
+      setWizardStep(0);
       return;
     }
-    if (applyMethod === 'email' && !applyEmail) {
-      setError('Please provide an email address for applications');
-      return;
-    }
-    if (applyMethod === 'phone' && !applyPhone) {
-      setError('Please provide a phone number for applications');
-      return;
-    }
-    if (applyMethod === 'whatsapp' && !applyWhatsapp) {
-      setError('Please provide a WhatsApp number for applications');
-      return;
-    }
-    if (
-      applyMethod === 'multiple' &&
-      !externalApplyUrl.trim() &&
-      !applyEmail.trim() &&
-      !applyPhone.trim() &&
-      !applyWhatsapp.trim()
-    ) {
-      setError('Add at least one application method when using multiple methods.');
+
+    const applyError = validateApplyMethodFields();
+    if (applyError) {
+      setError(applyError);
+      setWizardStep(2);
       return;
     }
 
@@ -738,6 +791,7 @@ export default function NewJobPage() {
 
     if (jobType === 'internship' && !internshipTrack) {
       setError('Select whether this internship is educational or professional.');
+      setWizardStep(1);
       return;
     }
 
@@ -747,6 +801,7 @@ export default function NewJobPage() {
       Number(salaryMin) > Number(salaryMax)
     ) {
       setError('Salary max must be greater than or equal to salary min.');
+      setWizardStep(1);
       return;
     }
 
@@ -1015,7 +1070,39 @@ export default function NewJobPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
+      <form onSubmit={handleSubmit} noValidate className="space-y-4 bg-gray-700 p-6 rounded-lg shadow-md">
+        {/* Wizard stepper */}
+        <div className="flex items-center gap-2 flex-wrap border-b border-gray-600 pb-4">
+          {WIZARD_STEPS.map((label, i) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => goToWizardStep(i)}
+              className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors ${
+                wizardStep === i
+                  ? 'bg-blue-600 text-white'
+                  : i < wizardStep
+                    ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-900/60'
+                    : 'bg-gray-800 text-gray-400 hover:bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-xs ${
+                  wizardStep === i
+                    ? 'bg-white/20'
+                    : i < wizardStep
+                      ? 'bg-emerald-500/30'
+                      : 'bg-gray-700'
+                }`}
+              >
+                {i < wizardStep ? '✓' : i + 1}
+              </span>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className={wizardStep === 0 ? 'space-y-4' : 'hidden'}>
         <div className="rounded-xl border border-blue-700/50 bg-blue-900/20 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -1064,7 +1151,9 @@ export default function NewJobPage() {
           </div>
         </div>
 
-        <div className="rounded-xl border border-emerald-700/40 bg-emerald-900/20 p-4">
+        </div>
+
+        <div className={`rounded-xl border border-emerald-700/40 bg-emerald-900/20 p-4 ${wizardStep === 3 ? '' : 'hidden'}`}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-base font-semibold text-white">Trust and conversion checklist</h2>
@@ -1095,6 +1184,7 @@ export default function NewJobPage() {
           </div>
         </div>
 
+        <div className={wizardStep === 0 ? 'space-y-4' : 'hidden'}>
         <div>
           <label className="block text-sm font-medium text-gray-300">Upload Job Description (PDF/DOCX/TXT)</label>
           <input
@@ -1171,6 +1261,9 @@ export default function NewJobPage() {
             </div>
           )}
         </div>
+        </div>
+
+        <div className={wizardStep === 1 ? 'space-y-4' : 'hidden'}>
         <div>
           <label className="block text-sm font-medium text-gray-300">Location</label>
           <input
@@ -1277,6 +1370,9 @@ export default function NewJobPage() {
             Native Joblinca apply is recommended here so eligibility checks, ATS stages, and matching stay structured for this {internshipPreset.label.toLowerCase()}.
           </div>
         )}
+        </div>
+
+        <div className={wizardStep === 0 ? 'space-y-4' : 'hidden'}>
         <div>
           <div className="flex items-center justify-between mb-1">
             <label className="block text-sm font-medium text-gray-300">{opportunityLabel} Description</label>
@@ -1317,6 +1413,9 @@ export default function NewJobPage() {
           </p>
         </div>
 
+        </div>
+
+        <div className={wizardStep === 2 ? 'space-y-4' : 'hidden'}>
         {/* Application Method Section */}
         <div className="border-t border-gray-600 pt-4 mt-4">
           <h3 className="text-lg font-medium text-gray-200 mb-4">Application Method</h3>
@@ -1457,9 +1556,10 @@ export default function NewJobPage() {
           onChange={setCustomQuestions}
           onOpenAIGenerator={() => setShowAIGenerator(true)}
         />
+        </div>
 
         {/* Preview: how the listing will look to seekers */}
-        {showPreview && (
+        {wizardStep === 3 && (
           <div className="rounded-lg border border-blue-700 bg-gray-800 p-5">
             <p className="text-xs uppercase tracking-wide text-blue-400 mb-3">
               Preview — how seekers will see this job
@@ -1511,20 +1611,32 @@ export default function NewJobPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-3">
+        {/* Wizard navigation */}
+        <div className="flex items-center justify-between border-t border-gray-600 pt-4">
           <button
             type="button"
-            onClick={() => setShowPreview((v) => !v)}
-            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-500 transition-colors"
+            onClick={() => goToWizardStep(wizardStep - 1)}
+            disabled={wizardStep === 0}
+            className="px-4 py-2 rounded text-gray-300 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
-            {showPreview ? 'Hide Preview' : 'Preview'}
+            ← Back
           </button>
-          <button
-            type="submit"
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
-          >
-            {postingMode === 'recruiter' ? 'Submit for Review' : 'Create Job'}
-          </button>
+          {wizardStep < WIZARD_STEPS.length - 1 ? (
+            <button
+              type="button"
+              onClick={handleWizardNext}
+              className="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 transition-colors"
+            >
+              Next: {WIZARD_STEPS[wizardStep + 1]} →
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="bg-green-600 text-white px-5 py-2 rounded hover:bg-green-700 transition-colors"
+            >
+              {postingMode === 'recruiter' ? 'Submit for Review' : 'Create Job'}
+            </button>
+          )}
         </div>
       </form>
 

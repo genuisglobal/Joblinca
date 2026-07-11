@@ -17,7 +17,8 @@ export type WaConversationState =
   | 'recruiter.awaiting_location'
   | 'recruiter.awaiting_salary'
   | 'recruiter.awaiting_description'
-  | 'recruiter.awaiting_application_method';
+  | 'recruiter.awaiting_application_method'
+  | 'recruiter.awaiting_publish_confirmation';
 
 export interface JobSearchDraft {
   searchType?: 'job' | 'internship' | null;

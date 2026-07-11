@@ -730,6 +730,43 @@ async function handleRecruiterFlow(
     return true;
   }
 
+  if (lead.conversation_state === 'recruiter.awaiting_publish_confirmation') {
+    const reply = text.trim().toLowerCase();
+    const confirmedDraft = payload.recruiterDraft;
+
+    if (['yes', 'oui', 'y', 'ok', 'confirm', 'confirmer'].includes(reply)) {
+      if (
+        !confirmedDraft?.jobTitle ||
+        !confirmedDraft.location ||
+        !confirmedDraft.salary ||
+        !confirmedDraft.description ||
+        !confirmedDraft.applicationMethod
+      ) {
+        await sendMessage(lead.phone_e164, 'The draft expired. Reply MENU to restart recruiter posting.', lead.linked_user_id);
+        await sendMenuAndSetState(lead);
+        return true;
+      }
+      return createRecruiterJobFromDraft(lead, confirmedDraft as ConfirmedRecruiterDraft);
+    }
+
+    if (['no', 'non', 'n', 'cancel', 'annuler', 'menu'].includes(reply)) {
+      await updateLeadState(lead.id, 'menu', 'recruiter', mergePayload({}, {}));
+      await sendMessage(
+        lead.phone_e164,
+        'Job posting cancelled — nothing was published. Reply MENU for options.',
+        lead.linked_user_id
+      );
+      return true;
+    }
+
+    await sendMessage(
+      lead.phone_e164,
+      'Reply YES to submit this job for publication, or NO to cancel.',
+      lead.linked_user_id
+    );
+    return true;
+  }
+
   if (lead.conversation_state !== 'recruiter.awaiting_application_method') {
     return false;
   }
@@ -750,6 +787,38 @@ async function handleRecruiterFlow(
     return true;
   }
 
+  // Confirm before creating anything — recruiters used to publish blind
+  // straight off their 5th answer with no chance to review
+  const briefPreview =
+    draft.description.length > 200 ? `${draft.description.slice(0, 200)}…` : draft.description;
+  await updateLeadState(lead.id, 'recruiter.awaiting_publish_confirmation', 'recruiter', nextPayload);
+  await sendMessage(
+    lead.phone_e164,
+    `Please confirm your job posting:\n\n` +
+      `📌 ${draft.jobTitle}\n` +
+      `📍 ${draft.location}\n` +
+      `💰 ${draft.salary}\n` +
+      `📮 Apply via: ${draft.applicationMethod}\n\n` +
+      `📝 ${briefPreview}\n\n` +
+      `AI will expand the brief into a full description before review.\n` +
+      `Reply YES to submit, or NO to cancel.`,
+    lead.linked_user_id
+  );
+  return true;
+}
+
+type ConfirmedRecruiterDraft = {
+  jobTitle: string;
+  location: string;
+  salary: string;
+  description: string;
+  applicationMethod: string;
+};
+
+async function createRecruiterJobFromDraft(
+  lead: WaLeadRow,
+  draft: ConfirmedRecruiterDraft
+): Promise<boolean> {
   const recruiterProfile = await agentDb
     .from('recruiters')
     .select('id, company_name')
