@@ -83,15 +83,18 @@ create policy "Admin manage recruiters" on public.recruiters
 -- ============================================================================
 
 -- Transactions
-create policy if not exists "User read own transactions" on public.transactions
+drop policy if exists "User read own transactions" on public.transactions;
+create policy "User read own transactions" on public.transactions
   for select
   using (auth.uid() = user_id);
 
-create policy if not exists "User insert own transaction" on public.transactions
+drop policy if exists "User insert own transaction" on public.transactions;
+create policy "User insert own transaction" on public.transactions
   for insert
   with check (auth.uid() = user_id);
 
-create policy if not exists "Admin manage transactions" on public.transactions
+drop policy if exists "Admin manage transactions" on public.transactions;
+create policy "Admin manage transactions" on public.transactions
   for all
   using (
     exists (
@@ -101,15 +104,18 @@ create policy if not exists "Admin manage transactions" on public.transactions
   );
 
 -- Subscriptions
-create policy if not exists "User read own subscriptions" on public.subscriptions
+drop policy if exists "User read own subscriptions" on public.subscriptions;
+create policy "User read own subscriptions" on public.subscriptions
   for select
   using (auth.uid() = user_id);
 
-create policy if not exists "User manage own subscriptions" on public.subscriptions
+drop policy if exists "User manage own subscriptions" on public.subscriptions;
+create policy "User manage own subscriptions" on public.subscriptions
   for all
   using (auth.uid() = user_id);
 
-create policy if not exists "Admin manage subscriptions" on public.subscriptions
+drop policy if exists "Admin manage subscriptions" on public.subscriptions;
+create policy "Admin manage subscriptions" on public.subscriptions
   for all
   using (
     exists (
@@ -126,11 +132,13 @@ create policy if not exists "Admin manage subscriptions" on public.subscriptions
 -- ============================================================================
 
 -- Verifications
-create policy if not exists "User manage own verifications" on public.verifications
+drop policy if exists "User manage own verifications" on public.verifications;
+create policy "User manage own verifications" on public.verifications
   for all
   using (auth.uid() = user_id);
 
-create policy if not exists "Verification officers read all verifications" on public.verifications
+drop policy if exists "Verification officers read all verifications" on public.verifications;
+create policy "Verification officers read all verifications" on public.verifications
   for select
   using (
     exists (
@@ -140,11 +148,13 @@ create policy if not exists "Verification officers read all verifications" on pu
   );
 
 -- Vetting requests
-create policy if not exists "Recruiter manage own vetting requests" on public.vetting_requests
+drop policy if exists "Recruiter manage own vetting requests" on public.vetting_requests;
+create policy "Recruiter manage own vetting requests" on public.vetting_requests
   for all
   using (auth.uid() = recruiter_id);
 
-create policy if not exists "Vetting officers read all vetting requests" on public.vetting_requests
+drop policy if exists "Vetting officers read all vetting requests" on public.vetting_requests;
+create policy "Vetting officers read all vetting requests" on public.vetting_requests
   for select
   using (
     exists (
@@ -154,7 +164,8 @@ create policy if not exists "Vetting officers read all vetting requests" on publ
   );
 
 -- Vetting results
-create policy if not exists "Vetting officers manage vetting results" on public.vetting_results
+drop policy if exists "Vetting officers manage vetting results" on public.vetting_results;
+create policy "Vetting officers manage vetting results" on public.vetting_results
   for all
   using (
     exists (
@@ -163,7 +174,8 @@ create policy if not exists "Vetting officers manage vetting results" on public.
     )
   );
 
-create policy if not exists "Recruiter read vetting results for own jobs" on public.vetting_results
+drop policy if exists "Recruiter read vetting results for own jobs" on public.vetting_results;
+create policy "Recruiter read vetting results for own jobs" on public.vetting_results
   for select
   using (
     exists (
@@ -182,7 +194,8 @@ create policy if not exists "Recruiter read vetting results for own jobs" on pub
 -- ============================================================================
 
 -- Tests
-create policy if not exists "Admin manage tests" on public.tests
+drop policy if exists "Admin manage tests" on public.tests;
+create policy "Admin manage tests" on public.tests
   for all
   using (
     exists (
@@ -192,16 +205,19 @@ create policy if not exists "Admin manage tests" on public.tests
   );
 
 -- Test attempts
-create policy if not exists "Candidate manage own test attempts" on public.test_attempts
+drop policy if exists "Candidate manage own test attempts" on public.test_attempts;
+create policy "Candidate manage own test attempts" on public.test_attempts
   for all
   using (auth.uid() = candidate_id);
 
 -- Certifications
-create policy if not exists "Candidate read own certifications" on public.certifications
+drop policy if exists "Candidate read own certifications" on public.certifications;
+create policy "Candidate read own certifications" on public.certifications
   for select
   using (auth.uid() = candidate_id);
 
-create policy if not exists "Admin manage certifications" on public.certifications
+drop policy if exists "Admin manage certifications" on public.certifications;
+create policy "Admin manage certifications" on public.certifications
   for all
   using (
     exists (
@@ -217,25 +233,30 @@ create policy if not exists "Admin manage certifications" on public.certificatio
 -- ============================================================================
 
 -- WhatsApp logs
-create policy if not exists "User read own whatsapp logs" on public.whatsapp_logs
+drop policy if exists "User read own whatsapp logs" on public.whatsapp_logs;
+create policy "User read own whatsapp logs" on public.whatsapp_logs
   for select
   using (auth.uid() = user_id);
 
-create policy if not exists "System insert whatsapp logs" on public.whatsapp_logs
+drop policy if exists "System insert whatsapp logs" on public.whatsapp_logs;
+create policy "System insert whatsapp logs" on public.whatsapp_logs
   for insert
   with check (true);
 
 -- SMS logs
-create policy if not exists "User read own sms logs" on public.sms_logs
+drop policy if exists "User read own sms logs" on public.sms_logs;
+create policy "User read own sms logs" on public.sms_logs
   for select
   using (auth.uid() = user_id);
 
-create policy if not exists "System insert sms logs" on public.sms_logs
+drop policy if exists "System insert sms logs" on public.sms_logs;
+create policy "System insert sms logs" on public.sms_logs
   for insert
   with check (true);
 
 -- Admin actions
-create policy if not exists "Admin read admin actions" on public.admin_actions
+drop policy if exists "Admin read admin actions" on public.admin_actions;
+create policy "Admin read admin actions" on public.admin_actions
   for select
   using (
     exists (

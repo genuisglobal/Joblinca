@@ -41,14 +41,16 @@ create table if not exists public.external_jobs (
 alter table public.external_jobs enable row level security;
 
 -- Allow any authenticated or anonymous user to read external jobs.
-create policy if not exists "Read external jobs" on public.external_jobs
+drop policy if exists "Read external jobs" on public.external_jobs;
+create policy "Read external jobs" on public.external_jobs
   for select
   using (true);
 
 -- Allow administrators to perform any action on external jobs (e.g. insert,
 -- update or delete).  This relies on the profiles table containing a
 -- role column with the value 'admin' for administrators.
-create policy if not exists "Admin manage external jobs" on public.external_jobs
+drop policy if exists "Admin manage external jobs" on public.external_jobs;
+create policy "Admin manage external jobs" on public.external_jobs
   for all
   using (
     exists (
