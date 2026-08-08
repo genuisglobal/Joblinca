@@ -5,6 +5,19 @@
  * vice versa. Keep terms specific — generic single words (e.g. bare
  * "bonne", "aide") are deliberately excluded because they collide with
  * unrelated French vocabulary ("bonne ambiance", "aide comptable").
+ *
+ * Terms are stored unaccented. normalize() strips diacritics from both the
+ * query and the term, and the SQL side compares through immutable_unaccent(),
+ * so "menagere" here still matches a job titled "Aide Ménagère".
+ *
+ * Two invariants, both enforced by tests/search-synonyms.test.js:
+ *   1. No term may appear in more than one group. expandSearchSynonyms returns
+ *      the first matching group, so a shared term would make the winner depend
+ *      on array order.
+ *   2. Matching is whole-term, so a term that is a common French or English
+ *      word on its own ("chef", "agent", "commercial", "conducteur") must not
+ *      be listed bare — it would fire on "chef de projet", "agent de change",
+ *      "conducteur de travaux". Qualify it instead ("chef cuisinier").
  */
 
 interface SynonymGroup {
@@ -41,6 +54,285 @@ const SYNONYM_GROUPS: SynonymGroup[] = [
       "garde d'enfants",
       'nounou',
     ],
+  },
+  {
+    id: 'driver-delivery',
+    terms: [
+      'driver',
+      'chauffeur',
+      'taxi driver',
+      'truck driver',
+      'delivery driver',
+      'dispatch rider',
+      'courier',
+      'chauffeur de taxi',
+      'chauffeur poids lourd',
+      'chauffeur livreur',
+      'livreur',
+      'coursier',
+      'moto taxi',
+      'motocycliste',
+    ],
+  },
+  {
+    id: 'security-guard',
+    terms: [
+      'security guard',
+      'security officer',
+      'watchman',
+      'night watchman',
+      'gardien',
+      'gardien de nuit',
+      'vigile',
+      'agent de securite',
+      'veilleur de nuit',
+    ],
+  },
+  {
+    id: 'sales-retail',
+    terms: [
+      'salesperson',
+      'sales representative',
+      'sales agent',
+      'shop assistant',
+      'shopkeeper',
+      'cashier',
+      'agent commercial',
+      'attache commercial',
+      'representant commercial',
+      'commercial terrain',
+      'vendeur',
+      'vendeuse',
+      'caissier',
+      'caissiere',
+    ],
+  },
+  {
+    id: 'teacher-trainer',
+    terms: [
+      'teacher',
+      'tutor',
+      'lecturer',
+      'instructor',
+      'enseignant',
+      'enseignante',
+      'professeur',
+      'instituteur',
+      'institutrice',
+      'repetiteur',
+      'formateur',
+      'formatrice',
+    ],
+  },
+  {
+    id: 'accounting-finance',
+    terms: [
+      'accountant',
+      'bookkeeper',
+      'accounting clerk',
+      'comptable',
+      'aide comptable',
+      'chef comptable',
+      'expert comptable',
+      'agent comptable',
+    ],
+  },
+  {
+    id: 'secretary-admin',
+    terms: [
+      'secretary',
+      'receptionist',
+      'administrative assistant',
+      'office assistant',
+      'front desk officer',
+      'secretaire',
+      'secretaire de direction',
+      'receptionniste',
+      'assistant administratif',
+      'assistante administrative',
+      "hotesse d'accueil",
+      "agent d'accueil",
+    ],
+  },
+  {
+    id: 'cook-kitchen',
+    terms: [
+      'cook',
+      'chef cuisinier',
+      'chef de cuisine',
+      'kitchen assistant',
+      'baker',
+      'pastry chef',
+      'cuisinier',
+      'cuisiniere',
+      'aide cuisinier',
+      'commis de cuisine',
+      'patissier',
+      'patissiere',
+      'boulanger',
+      'boulangere',
+    ],
+  },
+  {
+    id: 'waiter-bar',
+    terms: [
+      'waiter',
+      'waitress',
+      'barman',
+      'barmaid',
+      'bartender',
+      'serveur',
+      'serveuse',
+      'garcon de salle',
+    ],
+  },
+  {
+    id: 'nursing-care',
+    terms: [
+      'nurse',
+      'nursing assistant',
+      'caregiver',
+      'midwife',
+      'infirmier',
+      'infirmiere',
+      'aide soignant',
+      'aide soignante',
+      'sage femme',
+      'auxiliaire de vie',
+    ],
+  },
+  {
+    id: 'construction-mason',
+    terms: [
+      'mason',
+      'bricklayer',
+      'construction worker',
+      'builder',
+      'macon',
+      'ouvrier btp',
+      'ouvrier de chantier',
+      'manoeuvre',
+      'coffreur',
+      'ferrailleur',
+      'chef de chantier',
+    ],
+  },
+  {
+    id: 'electrician',
+    terms: [
+      'electrician',
+      'electrical technician',
+      'electricien',
+      'electricien batiment',
+      'technicien electricien',
+    ],
+  },
+  {
+    id: 'plumber',
+    terms: ['plumber', 'plumbing technician', 'plombier', 'plombier sanitaire'],
+  },
+  {
+    id: 'mechanic',
+    terms: [
+      'mechanic',
+      'auto mechanic',
+      'vehicle technician',
+      'mecanicien',
+      'mecanicien auto',
+      'garagiste',
+      'tolier',
+    ],
+  },
+  {
+    id: 'welder',
+    terms: ['welder', 'welding technician', 'soudeur', 'soudeur industriel'],
+  },
+  {
+    id: 'tailor-fashion',
+    terms: [
+      'tailor',
+      'seamstress',
+      'dressmaker',
+      'couturier',
+      'couturiere',
+      'tailleur',
+      'styliste modeliste',
+    ],
+  },
+  {
+    id: 'hairdresser-beauty',
+    terms: [
+      'hairdresser',
+      'hair stylist',
+      'barber',
+      'beautician',
+      'coiffeur',
+      'coiffeuse',
+      'barbier',
+      'estheticienne',
+      'tresseuse',
+    ],
+  },
+  {
+    id: 'agriculture',
+    terms: [
+      'farmer',
+      'farm worker',
+      'agronomist',
+      'agricultural technician',
+      'agriculteur',
+      'ouvrier agricole',
+      'agronome',
+      'planteur',
+      'technicien agricole',
+    ],
+  },
+  {
+    id: 'software-it',
+    terms: [
+      'software developer',
+      'software engineer',
+      'programmer',
+      'web developer',
+      'backend developer',
+      'frontend developer',
+      'developpeur',
+      'developpeuse',
+      'programmeur',
+      'informaticien',
+      'ingenieur logiciel',
+    ],
+  },
+  {
+    id: 'warehouse-logistics',
+    terms: [
+      'warehouse worker',
+      'storekeeper',
+      'stock controller',
+      'logistics assistant',
+      'magasinier',
+      'manutentionnaire',
+      'agent logistique',
+      'gestionnaire de stock',
+    ],
+  },
+  {
+    id: 'call-center',
+    terms: [
+      'call center agent',
+      'call centre agent',
+      'customer service agent',
+      'customer support',
+      'telemarketer',
+      'teleconseiller',
+      'teleconseillere',
+      "agent centre d'appel",
+      'service client',
+    ],
+  },
+  {
+    id: 'translation',
+    terms: ['translator', 'interpreter', 'traducteur', 'traductrice', 'interprete'],
   },
 ];
 
@@ -99,3 +391,7 @@ export function expandSearchSynonyms(query: string): string[] {
 
   return [];
 }
+
+/** Exposed for tests that assert the cross-group invariants. */
+export const __SYNONYM_GROUPS_FOR_TESTS: ReadonlyArray<{ id: string; terms: readonly string[] }> =
+  SYNONYM_GROUPS;
