@@ -19,6 +19,12 @@ yarn-error.log*
 # Vercel local settings
 .vercel/
 
+# Claude Code local settings (DO NOT COMMIT)
+# The permission allowlist stores whole shell commands verbatim, so any command
+# typed with an inline credential is persisted here in plain text.
+.claude/settings.local.json
+.claude/*.local.json
+
 # OS files
 .DS_Store
 Thumbs.db
