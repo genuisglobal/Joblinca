@@ -209,8 +209,8 @@ create policy "Self profile update" on public.profiles
 create policy "Own recruiter select" on public.recruiters
   for select using (auth.uid() = id or auth.role() = 'authenticated');
 create policy "Own recruiter modify" on public.recruiters
-  for insert with check (auth.uid() = id)
-  using (auth.uid() = id);
+  for all using (auth.uid() = id)
+  with check (auth.uid() = id);
 
 -- Jobs: recruiters can insert and manage their own; public can select published
 create policy "Published jobs are public" on public.jobs

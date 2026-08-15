@@ -16,6 +16,7 @@ import {
   normalizeLocale,
   resolveLocalePreference,
 } from '@/lib/i18n/locale';
+import { expandSearchSynonyms } from '@/lib/search/synonyms';
 
 type JobBrowseFilter =
   | 'all'
@@ -342,6 +343,17 @@ function sliceJobsForPage(rows: PublicJobSearchRow[], offset: number, limit: num
   return rows.slice(offset, offset + limit);
 }
 
+/**
+ * PostgREST separates `or=(...)` branches on commas and ends a branch at the
+ * closing paren, so an unquoted value containing either character silently
+ * truncates or corrupts the filter. Wrapping the value in double quotes makes
+ * those characters literal; backslashes and quotes are escaped so they cannot
+ * close the quoted section early.
+ */
+function quoteOrFilterValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 function selectPublicJobColumns(includeLanguage = true) {
   return [
     'id',
@@ -391,6 +403,7 @@ export async function GET(request: NextRequest) {
     searchParams.get('q')?.trim() ||
     searchParams.get('search')?.trim() ||
     '';
+  const synonymTerms = search ? expandSearchSynonyms(search) : [];
   const locationFilter = searchParams.get('location')?.trim() || '';
   const workTypeFilter = normalizeWorkTypeFilter(
     searchParams.get('work_type') || (searchParams.get('remote') === '1' ? 'remote' : null)
@@ -435,6 +448,7 @@ export async function GET(request: NextRequest) {
     p_salary_max: maximumSalary,
     p_limit: limit,
     p_offset: offset,
+    p_search_terms: synonymTerms.length > 0 ? synonymTerms : null,
   };
 
   const [jobsRpcResult, countsRpcResult] = await Promise.all([
@@ -449,6 +463,7 @@ export async function GET(request: NextRequest) {
       p_posted_after: postedAfterIso,
       p_salary_min: minimumSalary,
       p_salary_max: maximumSalary,
+      p_search_terms: synonymTerms.length > 0 ? synonymTerms : null,
     }),
   ]);
 
@@ -486,9 +501,16 @@ export async function GET(request: NextRequest) {
       .limit(5000);
 
     if (search) {
-      legacyQuery = legacyQuery.or(
-        `title.ilike.%${search}%,company_name.ilike.%${search}%,description.ilike.%${search}%`
-      );
+      const searchTerms = [search, ...synonymTerms];
+      const orClauses = searchTerms.flatMap((term) => {
+        const pattern = quoteOrFilterValue(`%${term}%`);
+        return [
+          `title.ilike.${pattern}`,
+          `company_name.ilike.${pattern}`,
+          `description.ilike.${pattern}`,
+        ];
+      });
+      legacyQuery = legacyQuery.or(orClauses.join(','));
     }
     if (locationFilter) {
       legacyQuery = legacyQuery.ilike('location', `%${locationFilter}%`);

@@ -30,3 +30,7 @@ yarn-error.log*
 Thumbs.db
 .vercel
 nul
+
+# Supabase CLI local state
+supabase/.branches/
+supabase/.temp/
