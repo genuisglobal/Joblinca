@@ -21,6 +21,15 @@ function loadModule(relativePath) {
         getUserSubscription: async () => ({ isActive: false }),
       };
     }
+    // state-machine.ts pulls in i18n for its localized prompts. This file only
+    // exercises mergePayload/isMenuRootState, so a passthrough is enough --
+    // the prompt wording itself is covered by wa-prompts-locale.test.js.
+    if (id === '@/lib/i18n/server-t') {
+      return { getServerT: () => (key) => key };
+    }
+    if (id === '@/lib/i18n/locale') {
+      return { DEFAULT_LOCALE: 'en' };
+    }
     return require(id);
   };
   const fn = new Function('require', 'module', 'exports', transpiled);

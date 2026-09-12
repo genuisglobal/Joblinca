@@ -2162,6 +2162,30 @@ const fr: Record<string, string> = {
   "localePrompt.note":
     "You can change this later from the language toggle. / Vous pourrez la modifier plus tard avec le bouton de langue.",
   "localePrompt.saving": "Enregistrement de votre preference...",
+
+  // ---------------------------------------------------------------------------
+  // WhatsApp agent
+  // ---------------------------------------------------------------------------
+  "wa.label.jobs": "des emplois",
+  "wa.label.internships": "des stages",
+  "wa.menu.title": "Bienvenue sur l'agent IA WhatsApp de JobLinca.",
+  "wa.menu.instruction": "Répondez avec un numéro :",
+  "wa.menu.findJob": "1) Trouver un emploi",
+  "wa.menu.postJob": "2) Publier une offre",
+  "wa.menu.findInternship": "3) Trouver un stage",
+  "wa.menu.createAccount": "4) Créer un compte",
+  "wa.timeFilter.title": "Choisissez une période :",
+  "wa.timeFilter.day": "1) Dernières 24 heures",
+  "wa.timeFilter.week": "2) Dernière semaine",
+  "wa.timeFilter.month": "3) Dernier mois",
+  "wa.locationScope.intro": "Parfait. Cherchons {label}.",
+  "wa.locationScope.choose": "Choisissez la zone :",
+  "wa.locationScope.nationwide": "1) Tout le pays",
+  "wa.locationScope.town": "2) Une ville précise",
+  "wa.roleMode.question": "Que souhaitez-vous :",
+  "wa.roleMode.all": "1) Tous {label}",
+  "wa.roleMode.specific": "2) Un poste précis",
+
 };
 
 export default fr;
