@@ -56,7 +56,10 @@ const CATEGORY_TABS = [
   { key: 'remote.cat.security', value: 'Security' },
   { key: 'remote.cat.operations', value: 'Operations' },
   { key: 'remote.cat.internships', value: 'Internships & Entry Level' },
+  { key: 'remote.cat.aiTraining', value: 'AI Training & Data Work' },
 ];
+
+const AI_TRAINING_CATEGORY = 'AI Training & Data Work';
 
 const SOURCE_VALUES = [
   { value: 'remotive', label: 'Remotive' },
@@ -85,7 +88,13 @@ function formatDate(
   });
 }
 
+/** Brand names that don't title-case cleanly from their slug (e.g. hyphenated or all-caps). */
+const SOURCE_LABEL_OVERRIDES: Record<string, string> = {
+  'telus-digital-ai': 'TELUS Digital',
+};
+
 function sourceLabel(source: string) {
+  if (SOURCE_LABEL_OVERRIDES[source]) return SOURCE_LABEL_OVERRIDES[source];
   return source.charAt(0).toUpperCase() + source.slice(1);
 }
 
@@ -195,6 +204,16 @@ export default function RemoteJobsPage() {
             </p>
           </div>
         </div>
+
+        {activeCategory === AI_TRAINING_CATEGORY && (
+          <div className="mt-3 flex items-start gap-3 p-4 bg-amber-500/5 border border-amber-500/20 rounded-xl">
+            <Info className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-neutral-400">
+              <span className="text-amber-300 font-medium">{t("remote.aiTraining.noteTitle")}</span>{' '}
+              {t("remote.aiTraining.noteBody")}
+            </p>
+          </div>
+        )}
       </section>
 
       {/* Search & Filters - Sticky on mobile */}

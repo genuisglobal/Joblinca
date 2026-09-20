@@ -725,6 +725,9 @@ const en: Record<string, string> = {
   "remote.cat.security": "Security",
   "remote.cat.operations": "Operations",
   "remote.cat.internships": "Internships & Entry Level",
+  "remote.cat.aiTraining": "AI Training & Data Work",
+  "remote.aiTraining.noteTitle": "About AI training & data work:",
+  "remote.aiTraining.noteBody": "These are worker platforms, not single job postings — you sign up once and get matched to ongoing tasks (data labeling, AI model training, annotation). Each has been checked for Cameroon/Africa eligibility. Note: PayPal is largely unavailable in Cameroon, so most workers get paid via Payoneer or AirTM — check each platform's payout options before signing up.",
 
   // ---------------------------------------------------------------------------
   // Learn More – Job Seekers

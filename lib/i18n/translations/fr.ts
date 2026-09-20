@@ -724,6 +724,9 @@ const fr: Record<string, string> = {
   "remote.cat.security": "S\u00e9curit\u00e9",
   "remote.cat.operations": "Op\u00e9rations",
   "remote.cat.internships": "Stages & D\u00e9butants",
+  "remote.cat.aiTraining": "Entra\u00eenement IA & annotation",
+  "remote.aiTraining.noteTitle": "\u00c0 propos de l'entra\u00eenement IA & de l'annotation de donn\u00e9es\u00a0:",
+  "remote.aiTraining.noteBody": "Ce sont des plateformes de travailleurs, pas des offres d'emploi individuelles \u2014 vous vous inscrivez une fois et \u00eates affect\u00e9 \u00e0 des t\u00e2ches r\u00e9currentes (annotation de donn\u00e9es, entra\u00eenement de mod\u00e8les IA). Chacune a \u00e9t\u00e9 v\u00e9rifi\u00e9e pour l'\u00e9ligibilit\u00e9 Cameroun/Afrique. \u00c0 noter\u00a0: PayPal est largement indisponible au Cameroun, la plupart des travailleurs sont donc pay\u00e9s via Payoneer ou AirTM \u2014 v\u00e9rifiez les options de paiement de chaque plateforme avant de vous inscrire.",
 
   // ---------------------------------------------------------------------------
   // Learn More \u2013 Job Seekers
