@@ -97,6 +97,15 @@ export const SCRAPER_SOURCE_CATALOG = [
     enabled: false,
   },
   {
+    slug: 'africarrieres',
+    label: 'Africarrieres',
+    sourceType: 'html',
+    baseUrl: 'https://africarrieres.com',
+    trustTier: 70,
+    executionKind: 'site',
+    retireLegacyExternalFeed: false,
+  },
+  {
     // First-party employer pages registered in /admin/aggregation/career-pages;
     // extraction is LLM-based so adding an employer is config, not code
     slug: 'careerpages',
