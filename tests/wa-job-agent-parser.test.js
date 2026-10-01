@@ -84,6 +84,17 @@ function run() {
   assert.equal(parser.isCreateAccountIntent('create account'), true);
   assert.equal(parser.looksLikeJobIntent('hello there'), false);
   console.log('ok - intent detection');
+
+  assert.equal(parser.isOptOutCommand('STOP'), true);
+  assert.equal(parser.isOptOutCommand(' unsubscribe '), true);
+  assert.equal(parser.isOptOutCommand('Arrêt'), true);
+  assert.equal(parser.isOptOutCommand('désabonner'), true);
+  // "no"/"non" answer questions; they must never unsubscribe anyone.
+  assert.equal(parser.isOptOutCommand('no'), false);
+  assert.equal(parser.isOptOutCommand('NON'), false);
+  assert.equal(parser.isOptOutCommand('n'), false);
+  assert.equal(parser.isOptOutCommand('stop sending me jobs'), false);
+  console.log('ok - opt-out keywords');
 }
 
 try {

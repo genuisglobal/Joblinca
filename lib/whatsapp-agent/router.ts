@@ -33,6 +33,7 @@ import {
   isGreeting,
   isHelpMenu,
   isNextCommand,
+  isOptOutCommand,
   looksLikeInternshipIntent,
   looksLikeJobIntent,
   extractLocationHint,
@@ -1240,7 +1241,6 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
   try {
     let lead = await loadLead(input);
     const text = sanitizeFreeText(inboundText);
-    const lower = text.toLowerCase();
     const role = lead.linked_user_id ? await getProfileRole(lead.linked_user_id) : null;
 
     if (lead.conversation_state.startsWith('talent.')) {
@@ -1256,7 +1256,7 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       });
     }
 
-    if (['stop', 'unsubscribe', 'no', 'non'].includes(lower)) {
+    if (isOptOutCommand(text)) {
       return { handled: false, reason: 'delegated' };
     }
 

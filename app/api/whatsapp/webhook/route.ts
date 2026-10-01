@@ -28,6 +28,7 @@ import {
 import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
 import { handleWhatsAppJobAgentInbound } from '@/lib/whatsapp-agent/router';
+import { isOptOutCommand } from '@/lib/whatsapp-agent/parser';
 import { handleDailyDrillReply } from '@/lib/skillup/drill-inbound';
 import { maskPII } from '@/lib/pii-mask';
 
@@ -221,7 +222,7 @@ async function routeInboundMessage(
   }
 
   // Opt-out keywords (STOP is required by Meta policy)
-  if (['stop', 'unsubscribe', 'non', 'no'].includes(lower)) {
+  if (textBody && isOptOutCommand(textBody)) {
     await setOptIn(phone, false);
     await sendWhatsappMessage(
       phone,

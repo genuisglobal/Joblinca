@@ -60,6 +60,18 @@ export function isHelpMenu(input: string): boolean {
   return ['help', 'menu', 'aide'].includes(value);
 }
 
+/**
+ * Explicit opt-out words only. A bare "no"/"non" must never land here: it is
+ * the answer to half the questions the agent asks, and treating it as STOP
+ * used to unsubscribe recruiters who declined a job-post confirmation.
+ */
+export function isOptOutCommand(input: string): boolean {
+  const value = normalize(input)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+  return ['stop', 'unsubscribe', 'arret', 'desabonner'].includes(value);
+}
+
 export function isNextCommand(input: string): boolean {
   return normalize(input) === 'next';
 }
