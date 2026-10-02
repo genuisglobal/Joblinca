@@ -1,12 +1,21 @@
 const assert = require('node:assert/strict');
-const { loadTs, serviceClientStub } = require('./helpers/load-ts');
+const { loadTs } = require('./helpers/load-ts');
 
 /**
  * Drive the real router entry point with the agent and the menu flow's
  * collaborators stubbed, and check who answers under each WA_AGENT_MODE.
  */
-function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state = 'idle', pausedUntil = null, admins = [] } = {}) {
-  const calls = { sent: [], agentRuns: [], locks: 0, released: 0, stateUpdates: [], alerts: [], pauses: [] };
+function loadRouter({
+  agentOutcome = { ok: true, reply: 'AGENT REPLY' },
+  state = 'idle',
+  pausedUntil = null,
+  admins = [],
+  transcript = 'any driver jobs in Douala?',
+  eligible = (l, text) => !/^stop$/i.test(text.trim()),
+  linkedUserId = null,
+  role = null,
+} = {}) {
+  const calls = { sent: [], agentRuns: [], agentTexts: [], locks: 0, released: 0, stateUpdates: [], alerts: [], pauses: [], downloads: 0 };
   const lead = {
     id: 'lead-1',
     phone_e164: '+237670000001',
@@ -23,7 +32,13 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
   };
 
   const router = loadTs('lib/whatsapp-agent/router.ts', {
-    '@/lib/supabase/service': serviceClientStub,
+    // Only profile-name lookups reach the database in these paths; answer "none".
+    '@/lib/supabase/service': {
+      createServiceSupabaseClient: () => {
+        const chain = { select: () => chain, eq: () => chain, maybeSingle: async () => ({ data: null, error: null }) };
+        return { from: () => chain };
+      },
+    },
     '@/lib/whatsapp': { toE164: (v) => (v.startsWith('+') ? v : `+${v}`) },
     '@/lib/messaging/whatsapp': {
       sendWhatsappMessage: async (to, text) => calls.sent.push(text),
@@ -34,8 +49,8 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
     '@/lib/jobs/lifecycle': { resolveJobLifecycleStatus: () => 'on_hold' },
     '@/lib/whatsapp-agent/leads': {
       getOrCreateWaLead: async () => ({ ...lead }),
-      syncLeadUserLink: async (l) => l,
-      resolveWebsiteUserByPhone: async () => null,
+      syncLeadUserLink: async (l, id) => ({ ...l, linked_user_id: id, has_website_account: Boolean(id) }),
+      resolveWebsiteUserByPhone: async () => linkedUserId,
       updateLeadState: async (...args) => calls.stateUpdates.push(args),
       setLeadLanguage: async () => {},
       saveLastSearch: async () => {},
@@ -44,7 +59,7 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
       incrementApplyCounter: async () => {},
       storePendingApply: async () => {},
       clearPendingApply: async () => {},
-      getProfileRole: async () => null,
+      getProfileRole: async () => role,
       isLeadPaused: (l) => Boolean(l.agent_paused_until) && new Date(l.agent_paused_until).getTime() > Date.now(),
       setLeadPause: async (...args) => calls.pauses.push(args),
       findWaLeadByPhone: async (phone) => (phone === lead.phone_e164 ? { ...lead } : null),
@@ -83,9 +98,21 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
       DAILY_AGENT_TURN_CAP: 40,
       countRecentAgentTurns: async () => 0,
       // Mirrors the real rule that matters here: STOP is never the agent's.
-      isAgentEligible: (l, text) => !/^stop$/i.test(text.trim()),
+      isAgentEligible: eligible,
+      defaultMediaDeps: {
+        download: async () => {
+          calls.downloads += 1;
+          return { buffer: new ArrayBuffer(4), mimeType: 'audio/ogg', size: 4 };
+        },
+        transcribe: async () => transcript,
+        storeResume: async () => ({ status: 'stored', resumeUrl: 'https://x/cv.pdf' }),
+        recordTranscript: async () => {},
+        registerUrl: () => 'https://joblinca.com/auth/register',
+        profileUrl: 'https://joblinca.com/dashboard/job-seeker/profile',
+      },
       runAgentForLead: async (params) => {
         calls.agentRuns.push(params.route);
+        calls.agentTexts.push(params.inboundText);
         return agentOutcome;
       },
     },
@@ -202,6 +229,52 @@ async function main() {
     assert.ok(!notAdmin.calls.sent.some((m) => m.includes('JobLinca team')), 'non-admins cannot relay');
     console.log('ok - admin REPLY relays and extends pause, RESUME hands back, non-admins ignored');
   });
+
+  // ── media ───────────────────────────────────────────────────────────────
+  const voice = (from = '237670000001') => ({
+    message: { id: 'wamid.v', from, timestamp: '1760000000', type: 'audio', audio: { id: 'media-1', mime_type: 'audio/ogg' } },
+    textBody: null,
+    conversationId: 'conv-1',
+    conversationUserId: null,
+    waPhone: `+${from}`,
+  });
+  const cv = {
+    ...voice(),
+    message: { id: 'wamid.d', from: '237670000001', timestamp: '1760000000', type: 'document', document: { id: 'media-2', mime_type: 'application/pdf', filename: 'cv.pdf' } },
+  };
+
+  await withMode({ WA_AGENT_MODE: 'off' }, async () => {
+    const { router, calls } = loadRouter();
+    const result = await router.handleWhatsAppJobAgentInbound(voice());
+    assert.equal(result.reason, 'not_text');
+    assert.equal(calls.downloads, 0);
+    assert.deepEqual(calls.sent, []);
+  });
+  await withMode({ WA_AGENT_MODE: 'shadow' }, async () => {
+    const { router, calls } = loadRouter();
+    assert.equal((await router.handleWhatsAppJobAgentInbound(voice())).reason, 'not_text', 'shadow never pays for transcription');
+    assert.equal(calls.downloads, 0);
+  });
+  console.log('ok - media untouched when the agent is off or in shadow');
+
+  await withMode({ WA_AGENT_MODE: 'on', WA_AGENT_ALLOWLIST: '+237670000001' }, async () => {
+    const { router, calls } = loadRouter();
+    await router.handleWhatsAppJobAgentInbound(voice());
+    assert.deepEqual(calls.agentTexts, ['any driver jobs in Douala?'], 'agent answers the transcript');
+    assert.deepEqual(calls.sent, ['AGENT REPLY']);
+
+    const doc = loadRouter({ linkedUserId: 'u1', role: 'job_seeker' });
+    await doc.router.handleWhatsAppJobAgentInbound(cv);
+    assert.deepEqual(doc.calls.agentRuns, [], 'CVs are handled without the model');
+    assert.match(doc.calls.sent[0], /^✅ CV saved/);
+
+    // A spoken exact command still goes to its deterministic handler.
+    const spoken = loadRouter({ transcript: 'APPLY JL-001002', eligible: () => false });
+    await spoken.router.handleWhatsAppJobAgentInbound(voice());
+    assert.deepEqual(spoken.calls.agentRuns, []);
+    assert.match(spoken.calls.sent[0], /^Job not found/, 'menu flow saw the transcript as text');
+  });
+  console.log('ok - live: voice notes become text, CVs saved, spoken commands stay deterministic');
 
   await withMode({ WA_AGENT_MODE: 'shadow' }, async () => {
     const { router, calls } = loadRouter();

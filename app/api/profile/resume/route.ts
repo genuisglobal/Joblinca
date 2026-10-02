@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
-import { validateUploadedFile, validateFileBuffer } from '@/lib/file-validation';
+import { RESUME_MAX_BYTES, storeResumeForUser } from '@/lib/profile/store-resume';
 
 // POST: Upload resume file
 export async function POST(request: NextRequest) {
@@ -45,106 +45,56 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Validate file size (max 5MB)
-  const maxSize = 5 * 1024 * 1024;
-  if (file.size > maxSize) {
+  // Reject before reading the body into memory.
+  if (file.size > RESUME_MAX_BYTES) {
     return NextResponse.json(
       { error: 'Resume file is too large. Maximum size is 5MB.' },
       { status: 400 }
     );
   }
 
-  // Validate file type
-  const allowedTypes = [
-    'application/pdf',
-    'application/msword',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  ];
-  if (!allowedTypes.includes(file.type)) {
-    return NextResponse.json(
-      { error: 'Invalid file format. Please upload a PDF or Word document (.doc, .docx).' },
-      { status: 400 }
-    );
-  }
-
-  // Validate extension against whitelist (not just MIME)
-  const fileCheck = validateUploadedFile(file, 'resume');
-  if (!fileCheck.valid) {
-    return NextResponse.json({ error: fileCheck.error }, { status: 400 });
-  }
-
   try {
-    const ext = fileCheck.ext;
-    const filePath = `resumes/${user.id}/resume-${Date.now()}.${ext}`;
-
-    const serviceClient = createServiceSupabaseClient();
-
-    const buffer = await file.arrayBuffer();
-
-    // Validate magic bytes match declared MIME type
-    const bufferCheck = validateFileBuffer(buffer, file.type);
-    if (!bufferCheck.valid) {
-      return NextResponse.json({ error: bufferCheck.error }, { status: 400 });
-    }
-
-    const { error: uploadError } = await serviceClient.storage
-      .from('resumes')
-      .upload(filePath, buffer, {
-        contentType: file.type,
-        upsert: true,
-      });
-
-    if (uploadError) {
-      console.error('Resume upload error:', uploadError);
-      return NextResponse.json(
-        { error: 'Failed to upload resume. Please try again.' },
-        { status: 500 }
-      );
-    }
-
-    // Get public URL
-    const { data: urlData } = serviceClient.storage.from('resumes').getPublicUrl(filePath);
-    const resumeUrl = urlData.publicUrl;
-
-    // Update the appropriate profile table
-    if (profile.role === 'job_seeker') {
-      const { error: updateError } = await serviceClient
-        .from('job_seeker_profiles')
-        .update({
-          resume_url: resumeUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-
-      if (updateError) {
-        console.error('Job seeker profile update error:', updateError);
-        return NextResponse.json(
-          { error: 'Failed to update profile with new resume.' },
-          { status: 500 }
-        );
-      }
-    } else if (profile.role === 'talent') {
-      const { error: updateError } = await serviceClient
-        .from('talent_profiles')
-        .update({
-          resume_url: resumeUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', user.id);
-
-      if (updateError) {
-        console.error('Talent profile update error:', updateError);
-        return NextResponse.json(
-          { error: 'Failed to update profile with new resume.' },
-          { status: 500 }
-        );
-      }
-    }
-
-    return NextResponse.json({
-      message: 'Resume uploaded successfully',
-      resumeUrl,
+    const result = await storeResumeForUser(createServiceSupabaseClient(), {
+      userId: user.id,
+      role: profile.role,
+      buffer: await file.arrayBuffer(),
+      mimeType: file.type,
+      filename: file.name,
     });
+
+    switch (result.status) {
+      case 'stored':
+        return NextResponse.json({
+          message: 'Resume uploaded successfully',
+          resumeUrl: result.resumeUrl,
+        });
+      case 'too_large':
+        return NextResponse.json(
+          { error: 'Resume file is too large. Maximum size is 5MB.' },
+          { status: 400 }
+        );
+      case 'bad_type':
+        return NextResponse.json(
+          { error: 'Invalid file format. Please upload a PDF or Word document (.doc, .docx).' },
+          { status: 400 }
+        );
+      case 'bad_content':
+        return NextResponse.json(
+          { error: 'File content does not match its declared type. Upload rejected.' },
+          { status: 400 }
+        );
+      case 'not_seeker':
+        return NextResponse.json(
+          { error: 'Only job seekers and talents can upload resumes.' },
+          { status: 403 }
+        );
+      default:
+        console.error('Resume upload error:', result.message);
+        return NextResponse.json(
+          { error: 'Failed to upload resume. Please try again.' },
+          { status: 500 }
+        );
+    }
   } catch (err) {
     console.error('Resume upload error:', err);
     return NextResponse.json(

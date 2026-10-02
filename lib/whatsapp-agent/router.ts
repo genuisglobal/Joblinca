@@ -75,6 +75,7 @@ import {
   getWaLimitContext,
 } from '@/lib/whatsapp-agent/limits';
 import { decideAgentRoute } from '@/lib/whatsapp-agent/agent-config';
+import { handleInboundMedia, inboundMediaKind } from '@/lib/whatsapp-agent/agent/media';
 import {
   checkRecruiterPostingAccess,
   createJobFromWhatsappDraft,
@@ -84,6 +85,7 @@ import { isAdminAlertRecipient, sendAdminWhatsAppAlert } from '@/lib/admin-alert
 import { acquireLeadLock } from '@/lib/whatsapp-agent/agent/lock';
 import {
   DAILY_AGENT_TURN_CAP,
+  defaultMediaDeps,
   countRecentAgentTurns,
   isAgentEligible,
   runAgentForLead,
@@ -1320,15 +1322,16 @@ async function handleAdminCommand(adminPhone: string, command: AdminCommand): Pr
  *             would-be reply is logged to wa_agent_turns for comparison
  */
 export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): Promise<InboundAgentResult> {
-  const inboundText = getInboundText(input.message, input.textBody);
-  if (!inboundText) {
+  const typedText = getInboundText(input.message, input.textBody);
+  const mediaKind = typedText ? null : inboundMediaKind(input.message);
+  if (!typedText && !mediaKind) {
     return { handled: false, reason: 'not_text' };
   }
 
   const senderPhone = toE164(input.waPhone || input.message.from);
 
   // Admin handoff commands work in every mode, so a handoff can always be closed.
-  const adminCommand = parseAdminCommand(inboundText);
+  const adminCommand = typedText ? parseAdminCommand(typedText) : null;
   if (adminCommand && isAdminAlertRecipient(senderPhone)) {
     try {
       await handleAdminCommand(senderPhone, adminCommand);
@@ -1345,6 +1348,11 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
   if (route === 'off') {
     return handleLegacyInbound(input);
   }
+  // Voice notes, CVs and photos are only understood by the live agent; for
+  // everyone else media stays unhandled, as it always was.
+  if (!typedText && route !== 'live') {
+    return { handled: false, reason: 'not_text' };
+  }
 
   let lead: WaLeadRow;
   try {
@@ -1357,13 +1365,12 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     return handleLegacyInbound(input);
   }
 
-  const text = sanitizeFreeText(inboundText, 1000);
-
   // A person has this conversation: stay silent, but pass the message on so
   // the team sees follow-ups without opening anything. STOP still works.
-  if (isLeadPaused(lead) && !isOptOutCommand(text)) {
+  const pausedPreview = typedText ? sanitizeFreeText(typedText, 700) : `[${mediaKind}]`;
+  if (isLeadPaused(lead) && !(typedText && isOptOutCommand(typedText))) {
     await sendAdminWhatsAppAlert(
-      [`💬 ${lead.phone_e164}: ${text.slice(0, 700)}`, `REPLY ${lead.phone_e164} <message> · RESUME ${lead.phone_e164}`].join('\n')
+      [`💬 ${lead.phone_e164}: ${pausedPreview}`, `REPLY ${lead.phone_e164} <message> · RESUME ${lead.phone_e164}`].join('\n')
     ).catch(() => undefined);
     logEvent('info', 'paused_lead_message_forwarded', { leadId: lead.id });
     return { handled: true, reason: 'handled' };
@@ -1371,6 +1378,25 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
 
   const displayName = await getProfileDisplayName(lead.linked_user_id);
   const role = lead.linked_user_id ? await getProfileRole(lead.linked_user_id) : null;
+
+  let inboundText: string;
+  if (typedText) {
+    inboundText = typedText;
+  } else {
+    const media = await handleInboundMedia({ message: input.message, lead, role, deps: defaultMediaDeps });
+    if (media.kind === 'ignore') return { handled: false, reason: 'not_text' };
+    if (media.kind === 'reply') {
+      logEvent('info', 'agent_media_handled', { leadId: lead.id, event: media.event });
+      await sendMessage(lead.phone_e164, media.reply, lead.linked_user_id);
+      return { handled: true, reason: 'handled' };
+    }
+    inboundText = media.text;
+    // From here on a transcribed voice note is just a message: the menu flow
+    // and exact commands see the transcript as its text.
+    input = { ...input, textBody: media.text };
+  }
+
+  const text = sanitizeFreeText(inboundText, 1000);
   const eligible =
     isAgentEligible(lead, text, role) && (await countRecentAgentTurns(lead.id)) < DAILY_AGENT_TURN_CAP;
   const turnParams = {

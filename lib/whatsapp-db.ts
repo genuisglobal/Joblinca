@@ -118,6 +118,22 @@ export async function setOptIn(waPhone: string, optedIn: boolean): Promise<void>
  *
  * Returns the persisted log row, or null if it was a duplicate.
  */
+/**
+ * Replace a logged inbound message's text, e.g. "[audio]" with the voice
+ * note's transcript, so conversation history reads the way it was meant.
+ * Best-effort: a failure only costs the agent some context later.
+ */
+export async function updateInboundMessageText(waMessageId: string, message: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from('whatsapp_logs')
+    .update({ message })
+    .eq('wa_message_id', waMessageId)
+    .eq('direction', 'inbound');
+  if (error) {
+    console.warn('[whatsapp-db] could not update inbound message text', { error: error.message });
+  }
+}
+
 export async function saveInboundMessage(
   msg: WAInboundMessage,
   textBody: string | null,

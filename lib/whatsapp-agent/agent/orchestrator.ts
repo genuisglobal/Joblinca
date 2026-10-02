@@ -22,6 +22,11 @@ import {
   type WaLeadRow,
 } from '@/lib/whatsapp-agent/leads';
 import { submitJobReportAsService } from '@/lib/jobs/report-job';
+import { downloadWhatsappMedia } from '@/lib/whatsapp-media';
+import { transcribeAudio } from '@/lib/ai/transcribe';
+import { storeResumeForUser } from '@/lib/profile/store-resume';
+import { updateInboundMessageText } from '@/lib/whatsapp-db';
+import type { MediaDeps } from './media';
 import {
   checkRecruiterPostingAccess,
   createJobFromWhatsappDraft,
@@ -158,6 +163,15 @@ async function listSeekerPlans() {
     durationDays: p.duration_days,
   }));
 }
+
+export const defaultMediaDeps: MediaDeps = {
+  download: (mediaId, maxBytes) => downloadWhatsappMedia(mediaId, { maxBytes }),
+  transcribe: (audio, mimeType) => transcribeAudio(audio, mimeType),
+  storeResume: (params) => storeResumeForUser(createServiceSupabaseClient(), params),
+  recordTranscript: updateInboundMessageText,
+  registerUrl: (phone) => buildRegisterUrl(phone, 'job_seeker'),
+  profileUrl: `${APP_URL}/dashboard/job-seeker/profile`,
+};
 
 function readMemory(lead: WaLeadRow): AgentStatePayload {
   return mergePayload(lead.state_payload, {}).agent || {};
