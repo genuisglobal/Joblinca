@@ -16,9 +16,13 @@ import {
   saveLastSearch,
   setLastSearchOffset,
   setLeadLanguage,
+  setLeadPause,
+  storePendingApply,
   updateLeadState,
   type WaLeadRow,
 } from '@/lib/whatsapp-agent/leads';
+import { submitJobReportAsService } from '@/lib/jobs/report-job';
+import { sendAdminWhatsAppAlert } from '@/lib/admin-alerts';
 import { getWaLimitContext } from '@/lib/whatsapp-agent/limits';
 import { detectLanguage } from '@/lib/whatsapp-agent/language';
 import {
@@ -56,8 +60,11 @@ const JOB_COLUMNS =
  */
 export function isAgentEligible(lead: Pick<WaLeadRow, 'conversation_state'>, text: string): boolean {
   if (isOptOutCommand(text)) return false;
-  if (parseDetailsCommand(text).isDetails) return false;
-  if (parseApplyCommand(text).isApply) return false;
+  // Only commands that name a job ID are deterministic. "apply to the 2nd
+  // one" / "info on the cashier job" parse as commands without an ID, which
+  // the menu flow can only answer with "Use APPLY <JobID>".
+  if (parseDetailsCommand(text).publicId) return false;
+  if (parseApplyCommand(text).publicId) return false;
   if (isNextCommand(text)) return false;
   if (isRecruiterState(lead.conversation_state)) return false;
   if (lead.conversation_state === 'menu' && parseMenuChoice(text)) return false;
@@ -104,7 +111,34 @@ export const defaultAgentDeps: AgentToolDeps = {
     createWhatsappSelfSignupInvite(createServiceSupabaseClient(), { ...input, baseUrl: APP_URL }),
   buildRegisterUrl,
   menuMessage: (language) => menuMessage(language),
+  storePendingApply,
+  submitReport: (params) => submitJobReportAsService(createServiceSupabaseClient(), params),
+  listSeekerPlans,
+  pauseLead: (leadId, untilIso, reason) => setLeadPause(leadId, untilIso, reason),
+  alertAdmins: (message) => sendAdminWhatsAppAlert(message),
+  links: {
+    subscribe: `${APP_URL}/pricing?role=job_seeker`,
+    profile: `${APP_URL}/dashboard/job-seeker/profile`,
+    cvBuilder: `${APP_URL}/resume`,
+    login: `${APP_URL}/auth/login`,
+    forgotPassword: `${APP_URL}/auth/forgot-password`,
+  },
 };
+
+async function listSeekerPlans() {
+  const { data } = await createServiceSupabaseClient()
+    .from('pricing_plans')
+    .select('name, amount_xaf, duration_days, plan_type')
+    .eq('is_active', true)
+    .eq('role', 'job_seeker')
+    .eq('plan_type', 'subscription')
+    .order('sort_order', { ascending: true });
+  return ((data || []) as Array<{ name: string; amount_xaf: number; duration_days: number | null }>).map((p) => ({
+    name: p.name,
+    amountXaf: p.amount_xaf,
+    durationDays: p.duration_days,
+  }));
+}
 
 function readMemory(lead: WaLeadRow): AgentStatePayload {
   return mergePayload(lead.state_payload, {}).agent || {};
@@ -123,7 +157,8 @@ export async function runAgentForLead(params: {
   waMessageId: string | null;
   inboundAtIso: string;
   route: 'live' | 'shadow';
-  firstName: string | null;
+  /** Profile full name, when they have an account. */
+  displayName: string | null;
   deps?: AgentToolDeps;
 }): Promise<AgentTurnOutcome> {
   const { lead, route } = params;
@@ -154,7 +189,8 @@ export async function runAgentForLead(params: {
         memory: readMemory(lead),
         language,
         subscribed: limits.subscribed,
-        firstName: params.firstName,
+        firstName: params.displayName ? params.displayName.split(/\s+/)[0] || null : null,
+        displayName: params.displayName ?? lead.display_name ?? null,
         dryRun,
         deps: params.deps ?? defaultAgentDeps,
         allowedLinkOrigins: [APP_URL, 'https://joblinca.com', 'https://www.joblinca.com'],

@@ -67,6 +67,8 @@ export interface AgentStatePayload {
     recency: '24h' | '7d' | '30d';
   } | null;
   signupDraft?: AgentSignupDraft | null;
+  /** Job ID the agent asked "apply to this one?" about; a yes applies it. */
+  proposedApply?: string | null;
 }
 
 export interface WaStatePayload {

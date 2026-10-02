@@ -72,6 +72,29 @@ export function isOptOutCommand(input: string): boolean {
   return ['stop', 'unsubscribe', 'arret', 'desabonner'].includes(value);
 }
 
+export type AdminCommand =
+  | { type: 'reply'; phone: string; message: string }
+  | { type: 'resume'; phone: string };
+
+/**
+ * Handoff commands an admin sends to the business number:
+ *   REPLY +237670000001 Hello, I can help with that
+ *   RESUME +237670000001
+ * The phone must be one unbroken run of digits (optional +) so it cannot be
+ * confused with the start of the message. Callers must also check the sender
+ * is an admin.
+ */
+export function parseAdminCommand(input: string): AdminCommand | null {
+  const match = input.trim().match(/^(reply|resume)\s+(\+?\d{8,15})(?:\s+([\s\S]*))?$/i);
+  if (!match) return null;
+  const phone = `+${match[2].replace(/^\+/, '')}`;
+  if (match[1].toLowerCase() === 'resume') {
+    return match[3]?.trim() ? null : { type: 'resume', phone };
+  }
+  const message = (match[3] || '').trim();
+  return message ? { type: 'reply', phone, message } : null;
+}
+
 export function isNextCommand(input: string): boolean {
   return normalize(input) === 'next';
 }

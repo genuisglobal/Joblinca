@@ -27,7 +27,12 @@ import type {
 } from '@/lib/whatsapp-agent/state-machine';
 import type { AgentSearchQuery, AgentSearchResult, RankedSearchFn, WidenStep } from './search';
 import type { WhatsappSelfSignupResult } from '@/lib/field-registration/service';
-import { evaluateViewBatch, FREE_MONTHLY_VIEW_LIMIT } from '@/lib/whatsapp-agent/limits';
+import type { ReportReason, SubmitReportResult } from '@/lib/jobs/report-job';
+import {
+  evaluateViewBatch,
+  FREE_MONTHLY_APPLY_LIMIT,
+  FREE_MONTHLY_VIEW_LIMIT,
+} from '@/lib/whatsapp-agent/limits';
 
 export const SEARCH_PAGE_SIZE = 10;
 export const NO_ACCOUNT_PREVIEW_LIMIT = 3;
@@ -54,7 +59,31 @@ export interface AgentToolDeps {
   }) => Promise<WhatsappSelfSignupResult>;
   buildRegisterUrl: (phone: string, role: 'job_seeker' | 'recruiter') => string;
   menuMessage: (language: AgentLanguage) => string;
+  storePendingApply: (leadId: string, jobId: string, jobPublicId: string) => Promise<void>;
+  submitReport: (params: {
+    jobId: string;
+    reporterId: string;
+    reason: ReportReason;
+    description: string | null;
+  }) => Promise<SubmitReportResult>;
+  listSeekerPlans: () => Promise<Array<{ name: string; amountXaf: number; durationDays: number | null }>>;
+  pauseLead: (leadId: string, untilIso: string, reason: string) => Promise<void>;
+  alertAdmins: (message: string) => Promise<{ configured: boolean; sent: number }>;
+  /** Absolute URLs on our own site, attached by tools (never typed by the model). */
+  links: {
+    subscribe: string;
+    profile: string;
+    cvBuilder: string;
+    login: string;
+    forgotPassword: string;
+  };
 }
+
+/** Work the router does after sending the reply, with its existing handlers. */
+export type AgentFollowUp = { type: 'apply'; publicId: string };
+
+/** How long the bot stays quiet after a handoff, unless an admin resumes it. */
+export const HANDOFF_PAUSE_MS = 24 * 60 * 60 * 1000;
 
 export interface AgentToolContext {
   lead: WaLeadRow;
@@ -70,6 +99,10 @@ export interface AgentToolContext {
   attachments: string[];
   /** Set by show_menu: hand the conversation back to the numbered menu. */
   nextState: WaConversationState | null;
+  /** Set by apply_to_job; never set in dry runs. */
+  followUp: AgentFollowUp | null;
+  /** For handoff alerts. */
+  displayName?: string | null;
 }
 
 export interface ToolResult {
@@ -263,6 +296,21 @@ const prepareSignupArgs = z.object({
 const websiteSignupArgs = z.object({ role: z.enum(['job_seeker', 'recruiter']).nullish() });
 
 const noArgs = z.object({}).passthrough();
+
+const faqArgs = z.object({
+  topic: z.enum(['plans_and_prices', 'free_limits', 'how_to_apply', 'cv_upload', 'login_help', 'job_safety', 'about']),
+});
+
+const reportArgs = z.object({
+  ref: z.string().trim().min(1).max(80),
+  reason: z.enum(['scam', 'misleading', 'duplicate', 'offensive', 'wrong_info', 'other']),
+  details: z.string().trim().max(500).nullish(),
+});
+
+const handoffArgs = z.object({
+  reason: z.enum(['asked_for_human', 'scam_or_safety', 'payment_or_account', 'complaint', 'bot_stuck', 'other']),
+  summary: z.string().trim().min(1).max(600),
+});
 
 interface ToolSpec {
   definition: AiToolDefinition;
@@ -487,7 +535,257 @@ const TOOLS: ToolSpec[] = [
       return { ok: true, data: { status: 'menu_attached' } };
     },
   },
+  {
+    definition: {
+      name: 'apply_to_job',
+      description:
+        'Apply to a job for them. ref works like job_details. Call it when they ask to apply ("apply to the 2nd one") or say yes after you offered. The application itself is submitted right after your reply, with the existing limits and any screening questions.',
+      parameters: {
+        type: 'object',
+        properties: { ref: { type: 'string' } },
+        required: ['ref'],
+        additionalProperties: false,
+      },
+    },
+    schema: jobDetailsArgs,
+    run: async (ctx, args: z.infer<typeof jobDetailsArgs>) => {
+      const job = await resolveJobRef(ctx, args.ref);
+      if (!job) {
+        return { ok: false, data: { error: 'job_not_found', note: 'Ask which job they mean.' } };
+      }
+      const publicId = job.public_id || job.id;
+
+      if (!ctx.lead.linked_user_id) {
+        if (!ctx.dryRun) await ctx.deps.storePendingApply(ctx.lead.id, job.id, publicId);
+        return {
+          ok: true,
+          data: {
+            status: 'needs_account',
+            ref: publicId,
+            note: `Applying needs a free account. Offer to create one here (prepare_signup); once it is ready they reply APPLY ${publicId}. We saved this job for them.`,
+          },
+        };
+      }
+
+      // Applying uses up one of the free monthly applications, so it must be
+      // what they asked for: either this message asks to apply, or it is a
+      // yes to the job we offered last turn.
+      const asked = APPLY_INTENT.test(ctx.inboundText);
+      const confirmedOffer = isAffirmative(ctx.inboundText) && ctx.memory.proposedApply === publicId;
+      if (!asked && !confirmedOffer) {
+        ctx.memory.proposedApply = publicId;
+        return {
+          ok: true,
+          data: {
+            status: 'needs_confirmation',
+            ref: publicId,
+            title: job.title,
+            company: job.company_name,
+            note: 'Ask them to confirm with YES before applying.',
+          },
+        };
+      }
+
+      ctx.memory.proposedApply = null;
+      if (!ctx.dryRun) ctx.followUp = { type: 'apply', publicId };
+      return {
+        ok: true,
+        data: {
+          status: 'submitting',
+          ref: publicId,
+          free_applications_per_month: ctx.subscribed ? 'unlimited' : FREE_MONTHLY_APPLY_LIMIT,
+          note: 'Submission happens right after your reply and its result arrives as a separate message. Reply with one short line like "Applying now..." -- do not claim it succeeded.',
+        },
+      };
+    },
+  },
+  {
+    definition: {
+      name: 'faq',
+      description:
+        'Facts about JobLinca for questions you would otherwise guess at. Answer from the returned facts only; any links are attached automatically.',
+      parameters: {
+        type: 'object',
+        properties: {
+          topic: {
+            type: 'string',
+            enum: ['plans_and_prices', 'free_limits', 'how_to_apply', 'cv_upload', 'login_help', 'job_safety', 'about'],
+          },
+        },
+        required: ['topic'],
+        additionalProperties: false,
+      },
+    },
+    schema: faqArgs,
+    run: async (ctx, args: z.infer<typeof faqArgs>) => {
+      const { links } = ctx.deps;
+      switch (args.topic) {
+        case 'plans_and_prices': {
+          const plans = await ctx.deps.listSeekerPlans();
+          ctx.attachments.push(links.subscribe);
+          return {
+            ok: true,
+            data: {
+              plans: plans.map((p) => ({ name: p.name, price_xaf: p.amountXaf, days: p.durationDays })),
+              what_you_get: 'Unlimited job views and applications through WhatsApp and the website.',
+              payment: 'Paid on the website (link attached).',
+            },
+          };
+        }
+        case 'free_limits':
+          return {
+            ok: true,
+            data: {
+              without_account: `${NO_ACCOUNT_PREVIEW_LIMIT} job previews per month`,
+              free_account: `${FREE_MONTHLY_VIEW_LIMIT} job views and ${FREE_MONTHLY_APPLY_LIMIT} applications per month, reset monthly`,
+              subscribed: 'unlimited',
+            },
+          };
+        case 'how_to_apply':
+          return {
+            ok: true,
+            data: {
+              steps: 'Find a job here, then reply APPLY with its ID (e.g. APPLY JL-001042), or ask me to apply to one from the list.',
+              notes: [
+                'Some employers ask a few screening questions here on WhatsApp after you apply.',
+                'Some jobs are applied for on the employer\'s own site, by email or by phone; the job details say so.',
+                'A free account is needed to apply.',
+              ],
+            },
+          };
+        case 'cv_upload':
+          ctx.attachments.push(`${links.profile}\n${links.cvBuilder}`);
+          return {
+            ok: true,
+            data: {
+              how: 'Upload a CV on your profile page on the website, or build one with the free CV builder. Both links are attached. CVs cannot be uploaded in this chat yet.',
+            },
+          };
+        case 'login_help':
+          ctx.attachments.push(`${links.login}\n${links.forgotPassword}`);
+          return {
+            ok: true,
+            data: {
+              how: 'Log in on the website with your email and password. Forgot it? Use the reset link (attached). Your WhatsApp number links automatically when it matches the phone on your profile.',
+            },
+          };
+        case 'job_safety':
+          return {
+            ok: true,
+            data: {
+              rules: [
+                'Never pay money to get a job, an interview or training a recruiter demands.',
+                'Be careful with jobs that ask for money transfers, ID documents up front, or meetings in private places.',
+                'If a job looks suspicious, tell me and I will report it (report_job).',
+              ],
+            },
+          };
+        default:
+          return {
+            ok: true,
+            data: {
+              about: 'JobLinca is a job platform for Cameroon: jobs and internships from employers and trusted sources, searchable on the website and here on WhatsApp, in English and French.',
+            },
+          };
+      }
+    },
+  },
+  {
+    definition: {
+      name: 'report_job',
+      description:
+        'Report a job as a scam, misleading, duplicate, offensive or wrong. Needs an account. Ask what is wrong if they have not said.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ref: { type: 'string' },
+          reason: { type: 'string', enum: ['scam', 'misleading', 'duplicate', 'offensive', 'wrong_info', 'other'] },
+          details: { type: 'string', description: 'Their own words about what is wrong.' },
+        },
+        required: ['ref', 'reason'],
+        additionalProperties: false,
+      },
+    },
+    schema: reportArgs,
+    run: async (ctx, args: z.infer<typeof reportArgs>) => {
+      if (!ctx.lead.linked_user_id) {
+        return {
+          ok: false,
+          data: {
+            error: 'needs_account',
+            note: 'Reports need an account so we can follow up. Offer signup, or handoff_to_human if it is urgent (e.g. they were asked for money).',
+          },
+        };
+      }
+      const job = await resolveJobRef(ctx, args.ref);
+      if (!job) return { ok: false, data: { error: 'job_not_found' } };
+      if (ctx.dryRun) return { ok: true, data: { status: 'dry_run' } };
+
+      const result = await ctx.deps.submitReport({
+        jobId: job.id,
+        reporterId: ctx.lead.linked_user_id,
+        reason: args.reason,
+        description: args.details ? `[via WhatsApp] ${args.details}` : '[via WhatsApp]',
+      });
+      if (result.status === 'reported') {
+        return { ok: true, data: { status: 'reported', ref: job.public_id, note: 'Thank them; our team reviews every report.' } };
+      }
+      return { ok: false, data: { error: result.status } };
+    },
+  },
+  {
+    definition: {
+      name: 'handoff_to_human',
+      description:
+        'Bring in a JobLinca team member. Use when they ask for a person, are upset, report being scammed or asked for money, have a payment or account problem you cannot solve, or you are going in circles. The bot then stays quiet in this chat until the team replies.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reason: { type: 'string', enum: ['asked_for_human', 'scam_or_safety', 'payment_or_account', 'complaint', 'bot_stuck', 'other'] },
+          summary: { type: 'string', description: 'One or two sentences for the team: who they are and what they need.' },
+        },
+        required: ['reason', 'summary'],
+        additionalProperties: false,
+      },
+    },
+    schema: handoffArgs,
+    run: async (ctx, args: z.infer<typeof handoffArgs>) => {
+      if (ctx.dryRun) return { ok: true, data: { status: 'dry_run' } };
+
+      const phone = ctx.lead.phone_e164;
+      const alert = await ctx.deps.alertAdmins(
+        [
+          `🙋 WhatsApp handoff (${args.reason})`,
+          `${ctx.displayName || 'Unknown'} · ${phone}${ctx.lead.linked_user_id ? ' · has account' : ' · no account'}`,
+          '',
+          args.summary.slice(0, 500),
+          '',
+          `Reply to them: REPLY ${phone} <your message>`,
+          `Hand back to the bot: RESUME ${phone}`,
+          `Or chat directly: https://wa.me/${phone.replace(/\D/g, '')}`,
+        ].join('\n')
+      );
+      if (!alert.configured || alert.sent === 0) {
+        // Nobody would see it -- don't silence the bot for a handoff that went nowhere.
+        return {
+          ok: false,
+          data: { error: 'team_unreachable', note: 'Apologise that no one is available right now and help as best you can.' },
+        };
+      }
+
+      await ctx.deps.pauseLead(ctx.lead.id, new Date(Date.now() + HANDOFF_PAUSE_MS).toISOString(), args.reason);
+      return {
+        ok: true,
+        data: {
+          status: 'handed_off',
+          note: 'Tell them a JobLinca team member will reply in this chat, usually within a few hours during the day. Do not promise an exact time.',
+        },
+      };
+    },
+  },
 ];
+
+const APPLY_INTENT = /\b(apply|applying|postuler|postule|candidater|candidature)\b/i;
 
 export const AGENT_TOOL_DEFINITIONS: AiToolDefinition[] = TOOLS.map((tool) => tool.definition);
 

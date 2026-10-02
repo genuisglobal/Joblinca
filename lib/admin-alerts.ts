@@ -25,6 +25,16 @@ function getRecipients(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Whether a phone is one of the admin alert recipients. Used to accept admin
+ * commands (REPLY / RESUME) sent to the business number; inbound numbers are
+ * trustworthy because the webhook verifies Meta's signature.
+ */
+export function isAdminAlertRecipient(phone: string): boolean {
+  const digits = phone.replace(/\D/g, '');
+  return digits.length > 0 && getRecipients().some((r) => r.replace(/\D/g, '') === digits);
+}
+
 export async function sendAdminWhatsAppAlert(message: string): Promise<AdminAlertResult> {
   const recipients = getRecipients();
 

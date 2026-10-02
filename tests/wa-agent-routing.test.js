@@ -5,8 +5,8 @@ const { loadTs, serviceClientStub } = require('./helpers/load-ts');
  * Drive the real router entry point with the agent and the menu flow's
  * collaborators stubbed, and check who answers under each WA_AGENT_MODE.
  */
-function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state = 'idle' } = {}) {
-  const calls = { sent: [], agentRuns: [], locks: 0, released: 0, stateUpdates: [] };
+function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state = 'idle', pausedUntil = null, admins = [] } = {}) {
+  const calls = { sent: [], agentRuns: [], locks: 0, released: 0, stateUpdates: [], alerts: [], pauses: [] };
   const lead = {
     id: 'lead-1',
     phone_e164: '+237670000001',
@@ -18,6 +18,8 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
     applies_month_count: 0,
     last_search_offset: 0,
     language: null,
+    agent_paused_until: pausedUntil,
+    handoff_reason: null,
   };
 
   const router = loadTs('lib/whatsapp-agent/router.ts', {
@@ -25,6 +27,7 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
     '@/lib/whatsapp': { toE164: (v) => (v.startsWith('+') ? v : `+${v}`) },
     '@/lib/messaging/whatsapp': {
       sendWhatsappMessage: async (to, text) => calls.sent.push(text),
+      sentTo: null,
       sendWhatsappQuickReplies: async () => {},
     },
     '@/lib/whatsapp-screening/service': { handleWhatsAppScreeningInbound: async () => ({ handled: false }) },
@@ -42,6 +45,16 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
       storePendingApply: async () => {},
       clearPendingApply: async () => {},
       getProfileRole: async () => null,
+      isLeadPaused: (l) => Boolean(l.agent_paused_until) && new Date(l.agent_paused_until).getTime() > Date.now(),
+      setLeadPause: async (...args) => calls.pauses.push(args),
+      findWaLeadByPhone: async (phone) => (phone === lead.phone_e164 ? { ...lead } : null),
+    },
+    '@/lib/admin-alerts': {
+      isAdminAlertRecipient: (phone) => admins.includes(phone),
+      sendAdminWhatsAppAlert: async (message) => {
+        calls.alerts.push(message);
+        return { configured: true, sent: 1, failed: 0 };
+      },
     },
     '@/lib/whatsapp-agent/ai-intent': {
       resolveInboundIntent: async () => ({ intent: 'unknown', language: 'en', detectedLanguage: null, source: 'deterministic' }),
@@ -50,7 +63,7 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
       looksLikeForwardedJobPosting: () => false,
       storeForwardedJobPosting: async () => ({ stored: false }),
     },
-    '@/lib/whatsapp-agent/job-search': {},
+    '@/lib/whatsapp-agent/job-search': { getJobByPublicId: async () => null },
     '@/lib/whatsapp-agent/ai-screening-policy': {},
     '@/lib/whatsapp-agent/limits': {
       FREE_MONTHLY_APPLY_LIMIT: 4,
@@ -69,7 +82,8 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
     '@/lib/whatsapp-agent/agent/orchestrator': {
       DAILY_AGENT_TURN_CAP: 40,
       countRecentAgentTurns: async () => 0,
-      isAgentEligible: () => true,
+      // Mirrors the real rule that matters here: STOP is never the agent's.
+      isAgentEligible: (l, text) => !/^stop$/i.test(text.trim()),
       runAgentForLead: async (params) => {
         calls.agentRuns.push(params.route);
         return agentOutcome;
@@ -80,13 +94,13 @@ function loadRouter({ agentOutcome = { ok: true, reply: 'AGENT REPLY' }, state =
   return { router, calls };
 }
 
-function inbound(text) {
+function inbound(text, from = '237670000001') {
   return {
-    message: { id: 'wamid.1', from: '237670000001', timestamp: '1760000000', type: 'text', text: { body: text } },
+    message: { id: 'wamid.1', from, timestamp: '1760000000', type: 'text', text: { body: text } },
     textBody: text,
     conversationId: 'conv-1',
     conversationUserId: null,
-    waPhone: '+237670000001',
+    waPhone: `+${from}`,
   };
 }
 
@@ -141,6 +155,52 @@ async function main() {
     await router.handleWhatsAppJobAgentInbound(inbound('hi'));
     assert.deepEqual(calls.agentRuns, [], 'not allowlisted, 0% rollout');
     console.log('ok - on: leads outside the cohort keep the menu flow');
+  });
+
+  await withMode({ WA_AGENT_MODE: 'on', WA_AGENT_ALLOWLIST: '+237670000001' }, async () => {
+    const { router, calls } = loadRouter({
+      agentOutcome: { ok: true, reply: 'Applying now...', followUp: { type: 'apply', publicId: 'JL-001002' } },
+    });
+    await router.handleWhatsAppJobAgentInbound(inbound('apply to the 2nd one'));
+    assert.equal(calls.sent[0], 'Applying now...');
+    assert.match(calls.sent[1], /^Job not found/, 'the existing APPLY handler ran after the reply');
+    console.log('ok - apply follow-up runs the existing APPLY handler after the agent reply');
+  });
+
+  await withMode({ WA_AGENT_MODE: 'on', WA_AGENT_ALLOWLIST: '+237670000001' }, async () => {
+    const future = new Date(Date.now() + 3600000).toISOString();
+    const { router, calls } = loadRouter({ pausedUntil: future });
+    const result = await router.handleWhatsAppJobAgentInbound(inbound('hello? anyone there?'));
+    assert.equal(result.handled, true);
+    assert.deepEqual(calls.sent, [], 'bot is silent while a human has the chat');
+    assert.deepEqual(calls.agentRuns, []);
+    assert.match(calls.alerts[0], /^💬 \+237670000001: hello\? anyone there\?/);
+    assert.match(calls.alerts[0], /REPLY \+237670000001/);
+
+    const stop = loadRouter({ pausedUntil: future });
+    const stopResult = await stop.router.handleWhatsAppJobAgentInbound(inbound('STOP'));
+    assert.equal(stopResult.reason, 'delegated', 'STOP still reaches the opt-out handler');
+    console.log('ok - paused lead: silent, forwarded to admins, STOP still works');
+  });
+
+  await withMode({ WA_AGENT_MODE: 'off' }, async () => {
+    const admin = '237699000000';
+    const { router, calls } = loadRouter({ admins: ['+237699000000'] });
+    await router.handleWhatsAppJobAgentInbound(inbound('REPLY +237670000001 Hi Ada, I can help with that.', admin));
+    assert.equal(calls.sent[0], '👤 JobLinca team: Hi Ada, I can help with that.');
+    assert.match(calls.sent[1], /^✓ Sent to \+237670000001/);
+    assert.equal(calls.pauses.length, 1, 'reply extends the pause');
+
+    const resume = loadRouter({ admins: ['+237699000000'] });
+    await resume.router.handleWhatsAppJobAgentInbound(inbound('RESUME +237670000001', admin));
+    assert.deepEqual(resume.calls.pauses[0].slice(1), [null, null]);
+    assert.match(resume.calls.sent[0], /back with the JobLinca assistant/);
+    assert.match(resume.calls.sent[1], /is back with the bot/);
+
+    const notAdmin = loadRouter({ admins: ['+237699000000'] });
+    await notAdmin.router.handleWhatsAppJobAgentInbound(inbound('REPLY +237670000001 you have won', '237655555555'));
+    assert.ok(!notAdmin.calls.sent.some((m) => m.includes('JobLinca team')), 'non-admins cannot relay');
+    console.log('ok - admin REPLY relays and extends pause, RESUME hands back, non-admins ignored');
   });
 
   await withMode({ WA_AGENT_MODE: 'shadow' }, async () => {

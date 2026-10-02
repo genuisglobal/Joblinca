@@ -95,6 +95,15 @@ function run() {
   assert.equal(parser.isOptOutCommand('n'), false);
   assert.equal(parser.isOptOutCommand('stop sending me jobs'), false);
   console.log('ok - opt-out keywords');
+
+  assert.deepEqual(parser.parseAdminCommand('REPLY +237670000001 Hello there'), { type: 'reply', phone: '+237670000001', message: 'Hello there' });
+  assert.deepEqual(parser.parseAdminCommand('reply 237670000001 multi\nline'), { type: 'reply', phone: '+237670000001', message: 'multi\nline' });
+  assert.deepEqual(parser.parseAdminCommand('RESUME +237670000001'), { type: 'resume', phone: '+237670000001' });
+  assert.equal(parser.parseAdminCommand('REPLY +237670000001'), null, 'reply needs a message');
+  assert.equal(parser.parseAdminCommand('RESUME +237670000001 now'), null);
+  assert.equal(parser.parseAdminCommand('REPLY 6 70 00 00 01 hi'), null, 'spaced phone is ambiguous');
+  assert.equal(parser.parseAdminCommand('please reply +237670000001 hi'), null);
+  console.log('ok - admin command parsing');
 }
 
 try {

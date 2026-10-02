@@ -38,7 +38,16 @@ function makeLead(extra = {}) {
   };
 }
 
-function makeCtx({ lead = makeLead(), dryRun = false, subscribed = false, inboundText = 'hi', jobs = [], memory = {} } = {}) {
+function makeCtx({
+  lead = makeLead(),
+  dryRun = false,
+  subscribed = false,
+  inboundText = 'hi',
+  jobs = [],
+  memory = {},
+  reportResult = { status: 'reported' },
+  alertResult = { configured: true, sent: 1 },
+} = {}) {
   const writes = [];
   const deps = {
     searchWithWidening: async (query) => ({ jobs, query, widened: [] }),
@@ -54,6 +63,24 @@ function makeCtx({ lead = makeLead(), dryRun = false, subscribed = false, inboun
     },
     buildRegisterUrl: (phone, role) => `https://joblinca.com/auth/register?role=${role}`,
     menuMessage: () => 'MENU TEXT',
+    storePendingApply: async (...args) => writes.push(['storePendingApply', ...args]),
+    submitReport: async (params) => {
+      writes.push(['submitReport', params]);
+      return reportResult;
+    },
+    listSeekerPlans: async () => [{ name: 'Seeker Monthly', amountXaf: 2000, durationDays: 30 }],
+    pauseLead: async (...args) => writes.push(['pauseLead', ...args]),
+    alertAdmins: async (message) => {
+      writes.push(['alertAdmins', message]);
+      return alertResult;
+    },
+    links: {
+      subscribe: 'https://joblinca.com/pricing?role=job_seeker',
+      profile: 'https://joblinca.com/dashboard/job-seeker/profile',
+      cvBuilder: 'https://joblinca.com/resume',
+      login: 'https://joblinca.com/auth/login',
+      forgotPassword: 'https://joblinca.com/auth/forgot-password',
+    },
   };
   const ctx = {
     lead,
@@ -65,6 +92,8 @@ function makeCtx({ lead = makeLead(), dryRun = false, subscribed = false, inboun
     memory: { ...memory },
     attachments: [],
     nextState: null,
+    followUp: null,
+    displayName: 'Ada Nkem',
   };
   return { ctx, writes };
 }
@@ -221,7 +250,114 @@ async function main() {
   }
 }
 
+async function phase2() {
+  const listed = {
+    lastResults: [
+      { n: 1, id: 'id-1', publicId: 'JL-1001', title: 'Cashier 1' },
+      { n: 2, id: 'id-2', publicId: 'JL-1002', title: 'Cashier 2' },
+    ],
+  };
+  const jobs = [job(1), job(2)];
+  const withAccount = () => makeLead({ linked_user_id: 'u1' });
+
+  // ── apply_to_job ──────────────────────────────────────────────────────────
+  {
+    const { ctx, writes } = makeCtx({ jobs, memory: listed, inboundText: 'what about the second one?', lead: withAccount() });
+    const offer = await run(ctx, 'apply_to_job', { ref: '2' });
+    assert.equal(offer.data.status, 'needs_confirmation', 'not asked to apply -> ask first');
+    assert.equal(ctx.memory.proposedApply, 'JL-1002');
+    assert.equal(ctx.followUp, null);
+
+    ctx.inboundText = 'yes';
+    const yes = await run(ctx, 'apply_to_job', { ref: '2' });
+    assert.equal(yes.data.status, 'submitting');
+    assert.deepEqual(ctx.followUp, { type: 'apply', publicId: 'JL-1002' });
+    assert.equal(ctx.memory.proposedApply, null);
+    assert.deepEqual(writes, [], 'the tool itself never writes; the router applies');
+  }
+  {
+    const { ctx } = makeCtx({ jobs, memory: { ...listed, proposedApply: 'JL-1002' }, inboundText: 'yes', lead: withAccount() });
+    const stray = await run(ctx, 'apply_to_job', { ref: '1' });
+    assert.equal(stray.data.status, 'needs_confirmation', 'a yes to a different offer is not consent');
+  }
+  {
+    const { ctx } = makeCtx({ jobs, memory: listed, inboundText: 'please apply to the 1st one', lead: withAccount() });
+    assert.equal((await run(ctx, 'apply_to_job', { ref: '1' })).data.status, 'submitting', 'explicit request applies directly');
+    const dry = makeCtx({ jobs, memory: listed, inboundText: 'postuler au 1', lead: withAccount(), dryRun: true });
+    await run(dry.ctx, 'apply_to_job', { ref: '1' });
+    assert.equal(dry.ctx.followUp, null, 'shadow never applies');
+  }
+  {
+    const { ctx, writes } = makeCtx({ jobs, memory: listed, inboundText: 'apply to 2' });
+    const result = await run(ctx, 'apply_to_job', { ref: '2' });
+    assert.equal(result.data.status, 'needs_account');
+    assert.deepEqual(writes[0], ['storePendingApply', 'lead-1', 'id-2', 'JL-1002'], 'job saved for after signup');
+    assert.equal(ctx.followUp, null);
+  }
+  console.log('ok - apply_to_job: explicit ask or a yes to that exact offer; no account -> saved for later');
+
+  // ── faq ───────────────────────────────────────────────────────────────────
+  {
+    const { ctx } = makeCtx();
+    const plans = await run(ctx, 'faq', { topic: 'plans_and_prices' });
+    assert.deepEqual(plans.data.plans, [{ name: 'Seeker Monthly', price_xaf: 2000, days: 30 }]);
+    assert.equal(ctx.attachments[0], 'https://joblinca.com/pricing?role=job_seeker');
+    const limits = await run(ctx, 'faq', { topic: 'free_limits' });
+    assert.match(limits.data.free_account, /10 job views and 4 applications/);
+    await run(ctx, 'faq', { topic: 'cv_upload' });
+    assert.equal(ctx.attachments.at(-1), 'https://joblinca.com/dashboard/job-seeker/profile\nhttps://joblinca.com/resume');
+    assert.equal((await run(ctx, 'faq', { topic: 'salary_negotiation' })).data.error, 'invalid_arguments');
+  }
+  console.log('ok - faq answers from live plans and real limits, links attached');
+
+  // ── report_job ────────────────────────────────────────────────────────────
+  {
+    const anon = makeCtx({ jobs, memory: listed });
+    assert.equal((await run(anon.ctx, 'report_job', { ref: '1', reason: 'scam' })).data.error, 'needs_account');
+
+    const { ctx, writes } = makeCtx({ jobs, memory: listed, lead: withAccount() });
+    const ok = await run(ctx, 'report_job', { ref: '1', reason: 'scam', details: 'asked me to pay 10,000 for training' });
+    assert.equal(ok.data.status, 'reported');
+    assert.deepEqual(writes[0][1], {
+      jobId: 'id-1',
+      reporterId: 'u1',
+      reason: 'scam',
+      description: '[via WhatsApp] asked me to pay 10,000 for training',
+    });
+
+    const dup = makeCtx({ jobs, memory: listed, lead: withAccount(), reportResult: { status: 'duplicate' } });
+    assert.equal((await run(dup.ctx, 'report_job', { ref: '1', reason: 'scam' })).data.error, 'duplicate');
+  }
+  console.log('ok - report_job needs an account and goes through the shared report path');
+
+  // ── handoff_to_human ──────────────────────────────────────────────────────
+  {
+    const { ctx, writes } = makeCtx();
+    const result = await run(ctx, 'handoff_to_human', { reason: 'scam_or_safety', summary: 'Was asked to pay a recruiter.' });
+    assert.equal(result.data.status, 'handed_off');
+    const alert = writes.find((w) => w[0] === 'alertAdmins')[1];
+    assert.ok(alert.includes('Ada Nkem · +237670000001 · no account'), alert);
+    assert.ok(alert.includes('REPLY +237670000001 <your message>'));
+    assert.ok(alert.includes('RESUME +237670000001'));
+    const pause = writes.find((w) => w[0] === 'pauseLead');
+    assert.equal(pause[1], 'lead-1');
+    const hours = (new Date(pause[2]).getTime() - Date.now()) / 3600000;
+    assert.ok(hours > 23.9 && hours <= 24, 'paused for 24h');
+
+    const nobody = makeCtx({ alertResult: { configured: false, sent: 0 } });
+    const unreachable = await run(nobody.ctx, 'handoff_to_human', { reason: 'asked_for_human', summary: 'x' });
+    assert.equal(unreachable.data.error, 'team_unreachable');
+    assert.ok(!nobody.writes.some((w) => w[0] === 'pauseLead'), 'no pause when no admin was told');
+
+    const dry = makeCtx({ dryRun: true });
+    await run(dry.ctx, 'handoff_to_human', { reason: 'asked_for_human', summary: 'x' });
+    assert.deepEqual(dry.writes, []);
+  }
+  console.log('ok - handoff alerts admins with REPLY/RESUME, pauses 24h, never pauses into the void');
+}
+
 main()
+  .then(phase2)
   .then(() => console.log('All wa-agent tools tests passed.'))
   .catch((error) => {
     console.error('Test failure:', error instanceof Error ? error.stack : error);

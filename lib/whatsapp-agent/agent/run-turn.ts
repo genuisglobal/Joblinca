@@ -19,6 +19,7 @@ import {
   AGENT_TOOL_DEFINITIONS,
   executeTool,
   type AgentLanguage,
+  type AgentFollowUp,
   type AgentToolContext,
   type AgentToolDeps,
 } from './tools';
@@ -39,6 +40,8 @@ export interface AgentTurnInput {
   language: AgentLanguage;
   subscribed: boolean;
   firstName: string | null;
+  /** Full name for handoff alerts, when known. */
+  displayName?: string | null;
   dryRun: boolean;
   deps: AgentToolDeps;
   /** Origins whose links may appear in model-written text. */
@@ -53,6 +56,8 @@ export type AgentTurnOutcome =
       reply: string;
       memory: AgentStatePayload;
       nextState: WaConversationState;
+      /** Work for the router after it sends `reply` (e.g. submit an application). */
+      followUp: AgentFollowUp | null;
       toolCalls: AgentToolCallRecord[];
       model: string | null;
       promptTokens: number;
@@ -103,6 +108,8 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnOutc
     memory: { ...input.memory },
     attachments: [],
     nextState: null,
+    followUp: null,
+    displayName: input.displayName ?? null,
   };
 
   const messages: AiToolLoopMessage[] = [
@@ -165,6 +172,7 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnOutc
         reply,
         memory: ctx.memory,
         nextState: ctx.nextState ?? 'agent',
+        followUp: ctx.followUp,
         toolCalls,
         model,
         promptTokens,

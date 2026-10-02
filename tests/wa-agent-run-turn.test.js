@@ -157,6 +157,8 @@ async function main() {
   assert.equal(eligible('recruiter.awaiting_salary', '150000'), false);
   assert.equal(eligible('agent', 'APPLY JL-1001'), false);
   assert.equal(eligible('agent', 'DETAILS JL-1001'), false);
+  assert.equal(eligible('agent', 'apply to the 2nd one'), true, 'apply without an ID is the agent\'s');
+  assert.equal(eligible('agent', 'info on the cashier job'), true);
   assert.equal(eligible('agent', 'NEXT'), false);
   assert.equal(eligible('agent', 'STOP'), false);
   console.log('ok - eligibility keeps commands, recruiter forms and menu digits deterministic');

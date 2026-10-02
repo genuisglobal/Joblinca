@@ -20,6 +20,9 @@ import {
   clearPendingApply,
   getProfileRole,
   setLeadLanguage,
+  setLeadPause,
+  isLeadPaused,
+  findWaLeadByPhone,
   type WaLeadRow,
 } from '@/lib/whatsapp-agent/leads';
 import {
@@ -34,6 +37,8 @@ import {
   isHelpMenu,
   isNextCommand,
   isOptOutCommand,
+  parseAdminCommand,
+  type AdminCommand,
   looksLikeInternshipIntent,
   looksLikeJobIntent,
   extractLocationHint,
@@ -73,6 +78,7 @@ import {
 import { getUserSubscription } from '@/lib/subscriptions';
 import { callAiText, isAiConfigured } from '@/lib/ai/client';
 import { decideAgentRoute } from '@/lib/whatsapp-agent/agent-config';
+import { isAdminAlertRecipient, sendAdminWhatsAppAlert } from '@/lib/admin-alerts';
 import { acquireLeadLock } from '@/lib/whatsapp-agent/agent/lock';
 import {
   DAILY_AGENT_TURN_CAP,
@@ -1450,9 +1456,47 @@ function inboundTimestampIso(message: WAInboundMessage): string {
     : new Date().toISOString();
 }
 
-async function getFirstName(userId: string | null): Promise<string | null> {
-  const name = await getProfileDisplayName(userId);
-  return name ? name.split(/\s+/)[0] || null : null;
+const HANDOFF_EXTEND_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * REPLY / RESUME from an admin phone. Lets the team run a handoff entirely
+ * from WhatsApp: replies are relayed from the business number, so the user
+ * stays in one thread and everything lands in whatsapp_logs.
+ */
+async function handleAdminCommand(adminPhone: string, command: AdminCommand): Promise<void> {
+  const target = await findWaLeadByPhone(command.phone);
+  if (!target) {
+    await sendMessage(adminPhone, `No WhatsApp conversation found for ${command.phone}.`);
+    return;
+  }
+  const fr = target.language === 'fr';
+
+  if (command.type === 'reply') {
+    await sendMessage(
+      target.phone_e164,
+      `${fr ? '👤 Équipe JobLinca' : '👤 JobLinca team'}: ${command.message}`,
+      target.linked_user_id
+    );
+    // Each reply keeps the human in charge for another day.
+    await setLeadPause(
+      target.id,
+      new Date(Date.now() + HANDOFF_EXTEND_MS).toISOString(),
+      target.handoff_reason ?? 'admin_reply'
+    );
+    await sendMessage(adminPhone, `✓ Sent to ${target.phone_e164}. The bot stays quiet; RESUME ${target.phone_e164} to hand back.`);
+    return;
+  }
+
+  await setLeadPause(target.id, null, null);
+  await updateLeadState(target.id, 'agent', target.role_selected, target.state_payload || {});
+  await sendMessage(
+    target.phone_e164,
+    fr
+      ? "Vous êtes de nouveau avec l'assistant JobLinca. Dites-moi quel emploi vous cherchez."
+      : "You're back with the JobLinca assistant. Tell me what job you're looking for.",
+    target.linked_user_id
+  );
+  await sendMessage(adminPhone, `✓ ${target.phone_e164} is back with the bot.`);
 }
 
 /**
@@ -1468,7 +1512,23 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     return { handled: false, reason: 'not_text' };
   }
 
-  const route = decideAgentRoute(toE164(input.waPhone || input.message.from));
+  const senderPhone = toE164(input.waPhone || input.message.from);
+
+  // Admin handoff commands work in every mode, so a handoff can always be closed.
+  const adminCommand = parseAdminCommand(inboundText);
+  if (adminCommand && isAdminAlertRecipient(senderPhone)) {
+    try {
+      await handleAdminCommand(senderPhone, adminCommand);
+    } catch (error) {
+      logEvent('error', 'admin_command_failed', {
+        error: error instanceof Error ? error.message : 'unknown_error',
+      });
+      await sendMessage(senderPhone, 'Command failed -- check the logs.');
+    }
+    return { handled: true, reason: 'handled' };
+  }
+
+  const route = decideAgentRoute(senderPhone);
   if (route === 'off') {
     return handleLegacyInbound(input);
   }
@@ -1485,6 +1545,18 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
   }
 
   const text = sanitizeFreeText(inboundText, 1000);
+
+  // A person has this conversation: stay silent, but pass the message on so
+  // the team sees follow-ups without opening anything. STOP still works.
+  if (isLeadPaused(lead) && !isOptOutCommand(text)) {
+    await sendAdminWhatsAppAlert(
+      [`💬 ${lead.phone_e164}: ${text.slice(0, 700)}`, `REPLY ${lead.phone_e164} <message> · RESUME ${lead.phone_e164}`].join('\n')
+    ).catch(() => undefined);
+    logEvent('info', 'paused_lead_message_forwarded', { leadId: lead.id });
+    return { handled: true, reason: 'handled' };
+  }
+
+  const displayName = await getProfileDisplayName(lead.linked_user_id);
   const eligible =
     isAgentEligible(lead, text) && (await countRecentAgentTurns(lead.id)) < DAILY_AGENT_TURN_CAP;
   const turnParams = {
@@ -1503,10 +1575,15 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
         ...turnParams,
         lead,
         route: 'live',
-        firstName: await getFirstName(lead.linked_user_id),
+        displayName,
       });
       if (outcome.ok) {
         await sendMessage(lead.phone_e164, outcome.reply, lead.linked_user_id);
+        if (outcome.followUp?.type === 'apply') {
+          // The existing APPLY handler owns limits, duplicates, screening and
+          // external-apply instructions; it sends its own result message.
+          await handleApplyCommand(lead, input, outcome.followUp.publicId);
+        }
         return { handled: true, reason: 'handled' };
       }
       logEvent('warn', 'agent_fallback', { leadId: lead.id, reason: outcome.reason });
@@ -1523,7 +1600,7 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       ...turnParams,
       lead,
       route: 'shadow',
-      firstName: await getFirstName(lead.linked_user_id),
+      displayName,
     }).catch((error) => {
       logEvent('warn', 'agent_shadow_failed', {
         leadId: lead.id,
