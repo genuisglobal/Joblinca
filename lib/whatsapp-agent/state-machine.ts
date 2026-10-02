@@ -7,6 +7,8 @@ export type WaRoleSelection = 'jobseeker' | 'recruiter' | 'talent' | null;
 export type WaConversationState =
   | 'idle'
   | 'menu'
+  // The conversational agent owns the conversation; free text and digits go to it.
+  | 'agent'
   | 'jobseeker.awaiting_account_choice'
   | 'jobseeker.awaiting_location_scope'
   | 'jobseeker.awaiting_location_town'
@@ -39,9 +41,38 @@ export interface RecruiterDraft {
   applicationMethod?: string | null;
 }
 
+export interface AgentResultRef {
+  /** 1-based position as shown to the user. */
+  n: number;
+  id: string;
+  publicId: string | null;
+  title: string | null;
+}
+
+export interface AgentSignupDraft {
+  fullName: string;
+  role: 'job_seeker' | 'recruiter';
+  email: string;
+}
+
+/** Agent memory that must survive between turns. */
+export interface AgentStatePayload {
+  /** Jobs from the last search page, so "the 2nd one" can be resolved. */
+  lastResults?: AgentResultRef[];
+  /** The query that produced lastResults, after any widening. */
+  lastQuery?: {
+    location: string | null;
+    role: string | null;
+    type: 'job' | 'internship';
+    recency: '24h' | '7d' | '30d';
+  } | null;
+  signupDraft?: AgentSignupDraft | null;
+}
+
 export interface WaStatePayload {
   jobSearch?: JobSearchDraft;
   recruiterDraft?: RecruiterDraft;
+  agent?: AgentStatePayload;
 }
 
 export function isJobseekerState(state: string): boolean {
@@ -53,7 +84,9 @@ export function isRecruiterState(state: string): boolean {
 }
 
 export function isMenuRootState(state: WaConversationState): boolean {
-  return state === 'idle' || state === 'menu';
+  // 'agent' counts as a root so that, if the agent is switched off or fails,
+  // the menu flow picks the conversation up as if it were idle.
+  return state === 'idle' || state === 'menu' || state === 'agent';
 }
 
 export function defaultStatePayload(): WaStatePayload {
@@ -93,6 +126,10 @@ export function mergePayload(
       ...base.recruiterDraft,
       ...(current.recruiterDraft || {}),
       ...(partial.recruiterDraft || {}),
+    },
+    agent: {
+      ...(current.agent || {}),
+      ...(partial.agent || {}),
     },
   };
 }

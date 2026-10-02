@@ -72,6 +72,14 @@ import {
 } from '@/lib/whatsapp-agent/limits';
 import { getUserSubscription } from '@/lib/subscriptions';
 import { callAiText, isAiConfigured } from '@/lib/ai/client';
+import { decideAgentRoute } from '@/lib/whatsapp-agent/agent-config';
+import { acquireLeadLock } from '@/lib/whatsapp-agent/agent/lock';
+import {
+  DAILY_AGENT_TURN_CAP,
+  countRecentAgentTurns,
+  isAgentEligible,
+  runAgentForLead,
+} from '@/lib/whatsapp-agent/agent/orchestrator';
 import { buildRecruiterDescriptionSystemPrompt } from '@/lib/ai/policies';
 
 const agentDb = createServiceSupabaseClient();
@@ -1232,14 +1240,21 @@ async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: st
   await sendMenuAndSetState(lead);
 }
 
-export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): Promise<InboundAgentResult> {
+/**
+ * The menu-driven state machine. Answers everything when the agent is off,
+ * and is the fallback whenever an agent turn fails.
+ */
+async function handleLegacyInbound(
+  input: InboundAgentInput,
+  preloadedLead: WaLeadRow | null = null
+): Promise<InboundAgentResult> {
   const inboundText = getInboundText(input.message, input.textBody);
   if (!inboundText) {
     return { handled: false, reason: 'not_text' };
   }
 
   try {
-    let lead = await loadLead(input);
+    let lead = preloadedLead ?? (await loadLead(input));
     const text = sanitizeFreeText(inboundText);
     const role = lead.linked_user_id ? await getProfileRole(lead.linked_user_id) : null;
 
@@ -1426,6 +1441,98 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     });
     return { handled: false, reason: 'error' };
   }
+}
+
+function inboundTimestampIso(message: WAInboundMessage): string {
+  const seconds = Number(message.timestamp);
+  return Number.isFinite(seconds) && seconds > 0
+    ? new Date(seconds * 1000).toISOString()
+    : new Date().toISOString();
+}
+
+async function getFirstName(userId: string | null): Promise<string | null> {
+  const name = await getProfileDisplayName(userId);
+  return name ? name.split(/\s+/)[0] || null : null;
+}
+
+/**
+ * Entry point. Per lead, WA_AGENT_MODE / allowlist / rollout decide:
+ *   off    -- menu flow only (exactly the pre-agent behaviour)
+ *   live   -- the agent answers; any failure falls back to the menu flow
+ *   shadow -- the menu flow answers; the agent then runs read-only and its
+ *             would-be reply is logged to wa_agent_turns for comparison
+ */
+export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): Promise<InboundAgentResult> {
+  const inboundText = getInboundText(input.message, input.textBody);
+  if (!inboundText) {
+    return { handled: false, reason: 'not_text' };
+  }
+
+  const route = decideAgentRoute(toE164(input.waPhone || input.message.from));
+  if (route === 'off') {
+    return handleLegacyInbound(input);
+  }
+
+  let lead: WaLeadRow;
+  try {
+    lead = await loadLead(input);
+  } catch (error) {
+    logEvent('error', 'agent_load_lead_failed', {
+      waMessageId: input.message.id,
+      error: error instanceof Error ? error.message : 'unknown_error',
+    });
+    return handleLegacyInbound(input);
+  }
+
+  const text = sanitizeFreeText(inboundText, 1000);
+  const eligible =
+    isAgentEligible(lead, text) && (await countRecentAgentTurns(lead.id)) < DAILY_AGENT_TURN_CAP;
+  const turnParams = {
+    inboundText: text,
+    waMessageId: input.message.id,
+    inboundAtIso: inboundTimestampIso(input.message),
+  };
+
+  if (route === 'live' && eligible) {
+    const lock = await acquireLeadLock(lead.id);
+    try {
+      // Re-read under the lease: a turn that just finished may have moved
+      // this lead's state since we first loaded it.
+      lead = await loadLead(input);
+      const outcome = await runAgentForLead({
+        ...turnParams,
+        lead,
+        route: 'live',
+        firstName: await getFirstName(lead.linked_user_id),
+      });
+      if (outcome.ok) {
+        await sendMessage(lead.phone_e164, outcome.reply, lead.linked_user_id);
+        return { handled: true, reason: 'handled' };
+      }
+      logEvent('warn', 'agent_fallback', { leadId: lead.id, reason: outcome.reason });
+      return await handleLegacyInbound(input, lead);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  const result = await handleLegacyInbound(input, lead);
+
+  if (route === 'shadow' && eligible && result.handled) {
+    await runAgentForLead({
+      ...turnParams,
+      lead,
+      route: 'shadow',
+      firstName: await getFirstName(lead.linked_user_id),
+    }).catch((error) => {
+      logEvent('warn', 'agent_shadow_failed', {
+        leadId: lead.id,
+        error: error instanceof Error ? error.message : 'unknown_error',
+      });
+    });
+  }
+
+  return result;
 }
 
 export function monthlyLimitSummaryMessage(): string {
