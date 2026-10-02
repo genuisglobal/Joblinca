@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { getUserSubscription } from '@/lib/subscriptions';
+import { signCvUrl } from '@/lib/storage/sign-cv';
 import { ACTIVE_ADMIN_TYPES } from '@/lib/admin-types';
 
 type CandidateRole = 'job_seeker' | 'talent';
@@ -349,10 +350,14 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     normalizedRole === 'job_seeker'
       ? jobSeekerProfile?.location?.trim() || null
       : locationInterests[0] || null;
-  const resumeUrl =
+  const storedResumeUrl =
     (normalizedRole === 'job_seeker'
       ? jobSeekerProfile?.resume_url
       : talentProfile?.resume_url)?.trim() || null;
+  // CVs are private; hand the recruiter a short-lived signed link.
+  const resumeUrl = storedResumeUrl
+    ? await signCvUrl(serviceSupabase, storedResumeUrl, candidateId)
+    : null;
   const portfolioUrl = extractPortfolioUrl(talentProfile?.portfolio);
   const candidateBase: Omit<CandidateDetailRecord, 'profileStrength'> = {
     id: candidateId,
@@ -368,7 +373,7 @@ export async function GET(_request: NextRequest, { params }: RouteContext) {
     graduationYear: talentProfile?.graduation_year || null,
     internshipEligible: talentProfile?.internship_eligible ?? null,
     skills,
-    hasResume: Boolean(resumeUrl),
+    hasResume: Boolean(storedResumeUrl),
     resumeUrl,
     hasPortfolio: Boolean(normalizedRole === 'talent' && hasPortfolioValue(talentProfile?.portfolio)),
     portfolioUrl,
