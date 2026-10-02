@@ -74,8 +74,15 @@ function makeCtx({
       writes.push(['alertAdmins', message]);
       return alertResult;
     },
+    checkPostingAccess: async () => ({ allowed: false, reason: 'not_recruiter' }),
+    createJob: async () => {
+      throw new Error('createJob not expected');
+    },
     links: {
       subscribe: 'https://joblinca.com/pricing?role=job_seeker',
+      recruiterSubscribe: 'https://joblinca.com/pricing?role=recruiter',
+      recruiterProfile: 'https://joblinca.com/dashboard/recruiter/profile',
+      recruiterJobs: 'https://joblinca.com/dashboard/recruiter/jobs',
       profile: 'https://joblinca.com/dashboard/job-seeker/profile',
       cvBuilder: 'https://joblinca.com/resume',
       login: 'https://joblinca.com/auth/login',
@@ -85,6 +92,7 @@ function makeCtx({
   const ctx = {
     lead,
     inboundText,
+    role: null,
     language: 'en',
     subscribed,
     dryRun,
@@ -356,8 +364,121 @@ async function phase2() {
   console.log('ok - handoff alerts admins with REPLY/RESUME, pauses 24h, never pauses into the void');
 }
 
+async function phase3() {
+  const AD = [
+    'AVIS DE RECRUTEMENT',
+    'Supermarché Mahima recrute 2 caissières à Douala (Akwa).',
+    'Missions : accueil des clients, encaissement, tenue de la caisse, inventaires hebdomadaires.',
+    'Profil : BAC minimum, 1 an d\'expérience en caisse, sérieux et ponctuel, bonne présentation.',
+    'Horaires : 8h-17h du lundi au samedi.',
+    'Salaire : 80 000 FCFA.',
+    'Envoyer CV à rh@mahima.cm avant le 30 octobre.',
+  ].join('\n');
+
+  function recruiterCtx(overrides = {}) {
+    const made = makeCtx({ lead: makeLead({ linked_user_id: 'rec-1' }), ...overrides });
+    made.ctx.role = overrides.role === undefined ? 'recruiter' : overrides.role;
+    made.ctx.deps.checkPostingAccess = async () => overrides.access || { allowed: true, feeXaf: 0 };
+    made.ctx.deps.createJob = async (userId, draft) => {
+      made.writes.push(['createJob', userId, draft]);
+      return overrides.createResult || { status: 'created', jobId: 'job-9', publicId: 'JL-002001' };
+    };
+    return made;
+  }
+
+  // Pasted ad -> ready in one go, ad kept verbatim with its line breaks.
+  {
+    const { ctx, writes } = recruiterCtx({ inboundText: AD });
+    const drafted = await run(ctx, 'draft_job_post', { title: 'Caissière', location: 'Douala', salary: '80 000 FCFA', how_to_apply: 'rh@mahima.cm', use_message_as_description: true });
+    assert.equal(drafted.data.status, 'ready_to_publish');
+    assert.equal(ctx.memory.jobDraft.description, AD, 'full ad kept, newlines and all');
+    assert.match(ctx.attachments[0], /📌 Caissière\n📍 Douala\n💰 80 000 FCFA\n📮 Apply via: rh@mahima.cm/);
+    assert.ok(!ctx.attachments[0].includes('will be expanded'), 'a full ad is not marked for expansion');
+
+    const early = await run(ctx, 'publish_job_post');
+    assert.equal(early.data.error, 'not_confirmed', 'the ad message itself is not a yes');
+
+    ctx.inboundText = 'Oui';
+    const published = await run(ctx, 'publish_job_post');
+    assert.equal(published.data.status, 'submitted_for_review');
+    assert.deepEqual(writes[0], ['createJob', 'rec-1', {
+      jobTitle: 'Caissière',
+      location: 'Douala',
+      salary: '80 000 FCFA',
+      description: AD,
+      applicationMethod: 'rh@mahima.cm',
+    }]);
+    assert.equal(ctx.memory.jobDraft, null);
+    assert.match(ctx.attachments.at(-1), /JL-002001 created and sent for review/);
+  }
+  console.log('ok - pasted ad: drafted in one call, verbatim, published only after yes');
+
+  // Built up across turns; optional fields default.
+  {
+    const { ctx, writes } = recruiterCtx({ inboundText: 'I need a cashier' });
+    const first = await run(ctx, 'draft_job_post', { title: 'Cashier' });
+    assert.equal(first.data.status, 'incomplete');
+    assert.deepEqual(first.data.missing, ['location', 'description (what the job involves)']);
+    assert.equal(ctx.attachments.length, 0, 'no preview until complete');
+
+    ctx.inboundText = 'Buea, handles the till and stock counts';
+    const second = await run(ctx, 'draft_job_post', { location: 'Buea', description: 'Handles the till and stock counts' });
+    assert.equal(second.data.status, 'ready_to_publish');
+    assert.equal(ctx.memory.jobDraft.jobTitle, 'Cashier', 'earlier fields kept');
+    assert.match(ctx.attachments[0], /will be expanded before review/);
+
+    ctx.inboundText = 'yes';
+    await run(ctx, 'publish_job_post');
+    assert.equal(writes[0][2].applicationMethod, 'JobLinca');
+    assert.equal(writes[0][2].salary, '');
+  }
+  console.log('ok - draft builds across turns; salary and how-to-apply optional');
+
+  // Who may post.
+  {
+    const seeker = recruiterCtx({ role: 'job_seeker', access: { allowed: false, reason: 'not_recruiter' } });
+    const denied = await run(seeker.ctx, 'draft_job_post', { title: 'Driver' });
+    assert.equal(denied.data.error, 'not_a_recruiter_account');
+    assert.match(seeker.ctx.attachments[0], /role=recruiter/);
+    assert.equal(seeker.ctx.memory.jobDraft, undefined);
+
+    const unpaid = recruiterCtx({ access: { allowed: false, reason: 'missing_subscription' } });
+    const needsSub = await run(unpaid.ctx, 'draft_job_post', { title: 'Driver' });
+    assert.equal(needsSub.data.error, 'recruiter_subscription_required');
+    assert.equal(unpaid.ctx.attachments[0], 'https://joblinca.com/pricing?role=recruiter');
+  }
+  {
+    // Subscription lapses between drafting and publishing.
+    const made = recruiterCtx({ inboundText: 'yes' });
+    made.ctx.memory.jobDraft = { jobTitle: 'Driver', location: 'Kribi', salary: null, applicationMethod: null, description: 'Drive the delivery van around Kribi.' };
+    made.ctx.deps.checkPostingAccess = async () => ({ allowed: false, reason: 'missing_subscription' });
+    const lapsed = await run(made.ctx, 'publish_job_post');
+    assert.equal(lapsed.data.error, 'recruiter_subscription_required');
+    assert.ok(!made.writes.some((w) => w[0] === 'createJob'));
+    assert.ok(made.ctx.memory.jobDraft, 'draft kept for later');
+  }
+  console.log('ok - only recruiters with access can draft or publish; access re-checked at publish');
+
+  // Failure modes keep the draft; shadow never creates.
+  {
+    const noProfile = recruiterCtx({ inboundText: 'yes', createResult: { status: 'no_recruiter_profile' } });
+    noProfile.ctx.memory.jobDraft = { jobTitle: 'Driver', location: 'Kribi', salary: null, applicationMethod: null, description: 'Drive the delivery van around Kribi.' };
+    const result = await run(noProfile.ctx, 'publish_job_post');
+    assert.equal(result.data.error, 'recruiter_profile_incomplete');
+    assert.equal(noProfile.ctx.attachments[0], 'https://joblinca.com/dashboard/recruiter/profile');
+    assert.ok(noProfile.ctx.memory.jobDraft);
+
+    const dry = recruiterCtx({ inboundText: 'yes', dryRun: true });
+    dry.ctx.memory.jobDraft = noProfile.ctx.memory.jobDraft;
+    assert.equal((await run(dry.ctx, 'publish_job_post')).data.status, 'dry_run');
+    assert.ok(!dry.writes.some((w) => w[0] === 'createJob'));
+  }
+  console.log('ok - publish failures keep the draft; shadow never creates a job');
+}
+
 main()
   .then(phase2)
+  .then(phase3)
   .then(() => console.log('All wa-agent tools tests passed.'))
   .catch((error) => {
     console.error('Test failure:', error instanceof Error ? error.stack : error);

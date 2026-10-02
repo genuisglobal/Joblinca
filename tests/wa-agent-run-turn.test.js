@@ -159,6 +159,10 @@ async function main() {
   assert.equal(eligible('agent', 'DETAILS JL-1001'), false);
   assert.equal(eligible('agent', 'apply to the 2nd one'), true, 'apply without an ID is the agent\'s');
   assert.equal(eligible('agent', 'info on the cashier job'), true);
+  const ad = 'AVIS DE RECRUTEMENT\nSupermarché Mahima recrute 2 caissières à Douala (Akwa). Missions : encaissement, tenue de la caisse, inventaires. Profil : BAC minimum, 1 an d\'expérience. Salaire 80 000 FCFA. Envoyer CV à rh@mahima.cm avant le 30 octobre.';
+  assert.equal(orchestrator.isAgentEligible({ conversation_state: 'agent' }, ad, 'recruiter'), true, 'a recruiter\'s ad is theirs to post');
+  assert.equal(orchestrator.isAgentEligible({ conversation_state: 'agent' }, ad, 'job_seeker'), false, 'a seeker\'s forward goes to discovery intake');
+  assert.equal(orchestrator.isAgentEligible({ conversation_state: 'agent' }, ad, null), false);
   assert.equal(eligible('agent', 'NEXT'), false);
   assert.equal(eligible('agent', 'STOP'), false);
   console.log('ok - eligibility keeps commands, recruiter forms and menu digits deterministic');

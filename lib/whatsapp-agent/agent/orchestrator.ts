@@ -22,6 +22,10 @@ import {
   type WaLeadRow,
 } from '@/lib/whatsapp-agent/leads';
 import { submitJobReportAsService } from '@/lib/jobs/report-job';
+import {
+  checkRecruiterPostingAccess,
+  createJobFromWhatsappDraft,
+} from '@/lib/whatsapp-agent/recruiter-posting';
 import { sendAdminWhatsAppAlert } from '@/lib/admin-alerts';
 import { getWaLimitContext } from '@/lib/whatsapp-agent/limits';
 import { detectLanguage } from '@/lib/whatsapp-agent/language';
@@ -58,7 +62,11 @@ const JOB_COLUMNS =
  * deterministic handlers, recruiter posting stays on its form (phase 3), and
  * a digit typed at the numbered menu is a menu choice.
  */
-export function isAgentEligible(lead: Pick<WaLeadRow, 'conversation_state'>, text: string): boolean {
+export function isAgentEligible(
+  lead: Pick<WaLeadRow, 'conversation_state'>,
+  text: string,
+  role: string | null = null
+): boolean {
   if (isOptOutCommand(text)) return false;
   // Only commands that name a job ID are deterministic. "apply to the 2nd
   // one" / "info on the cashier job" parse as commands without an ID, which
@@ -68,8 +76,14 @@ export function isAgentEligible(lead: Pick<WaLeadRow, 'conversation_state'>, tex
   if (isNextCommand(text)) return false;
   if (isRecruiterState(lead.conversation_state)) return false;
   if (lead.conversation_state === 'menu' && parseMenuChoice(text)) return false;
-  if (looksLikeForwardedJobPosting(text)) return false;
+  // A job ad from a recruiter is probably theirs to post; from anyone else
+  // it is a forward for the discovery pipeline, which the menu flow handles.
+  if (looksLikeForwardedJobPosting(text)) return isPostingRole(role);
   return true;
+}
+
+export function isPostingRole(role: string | null): boolean {
+  return role === 'recruiter' || role === 'admin' || role === 'staff';
 }
 
 export async function countRecentAgentTurns(leadId: string): Promise<number> {
@@ -116,8 +130,13 @@ export const defaultAgentDeps: AgentToolDeps = {
   listSeekerPlans,
   pauseLead: (leadId, untilIso, reason) => setLeadPause(leadId, untilIso, reason),
   alertAdmins: (message) => sendAdminWhatsAppAlert(message),
+  checkPostingAccess: checkRecruiterPostingAccess,
+  createJob: createJobFromWhatsappDraft,
   links: {
     subscribe: `${APP_URL}/pricing?role=job_seeker`,
+    recruiterSubscribe: `${APP_URL}/pricing?role=recruiter`,
+    recruiterProfile: `${APP_URL}/dashboard/recruiter/profile`,
+    recruiterJobs: `${APP_URL}/dashboard/recruiter/jobs`,
     profile: `${APP_URL}/dashboard/job-seeker/profile`,
     cvBuilder: `${APP_URL}/resume`,
     login: `${APP_URL}/auth/login`,
@@ -159,6 +178,8 @@ export async function runAgentForLead(params: {
   route: 'live' | 'shadow';
   /** Profile full name, when they have an account. */
   displayName: string | null;
+  /** profiles.role when they have an account (recruiter, job_seeker, admin...). */
+  role: string | null;
   deps?: AgentToolDeps;
 }): Promise<AgentTurnOutcome> {
   const { lead, route } = params;
@@ -184,6 +205,7 @@ export async function runAgentForLead(params: {
 
       outcome = await runAgentTurn({
         lead,
+        role: params.role,
         inboundText: params.inboundText,
         history,
         memory: readMemory(lead),

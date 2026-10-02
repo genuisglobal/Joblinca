@@ -28,6 +28,12 @@ import type {
 import type { AgentSearchQuery, AgentSearchResult, RankedSearchFn, WidenStep } from './search';
 import type { WhatsappSelfSignupResult } from '@/lib/field-registration/service';
 import type { ReportReason, SubmitReportResult } from '@/lib/jobs/report-job';
+import type {
+  CreateJobResult,
+  PostingAccess,
+  WhatsappJobDraft,
+} from '@/lib/whatsapp-agent/recruiter-posting';
+import type { AgentJobDraft } from '@/lib/whatsapp-agent/state-machine';
 import {
   evaluateViewBatch,
   FREE_MONTHLY_APPLY_LIMIT,
@@ -69,9 +75,14 @@ export interface AgentToolDeps {
   listSeekerPlans: () => Promise<Array<{ name: string; amountXaf: number; durationDays: number | null }>>;
   pauseLead: (leadId: string, untilIso: string, reason: string) => Promise<void>;
   alertAdmins: (message: string) => Promise<{ configured: boolean; sent: number }>;
+  checkPostingAccess: (linkedUserId: string | null, role: string | null) => Promise<PostingAccess>;
+  createJob: (userId: string, draft: WhatsappJobDraft) => Promise<CreateJobResult>;
   /** Absolute URLs on our own site, attached by tools (never typed by the model). */
   links: {
     subscribe: string;
+    recruiterSubscribe: string;
+    recruiterProfile: string;
+    recruiterJobs: string;
     profile: string;
     cvBuilder: string;
     login: string;
@@ -87,8 +98,10 @@ export const HANDOFF_PAUSE_MS = 24 * 60 * 60 * 1000;
 
 export interface AgentToolContext {
   lead: WaLeadRow;
-  /** The message being answered; confirm_signup checks it in code. */
+  /** The message being answered, line breaks kept; confirmations are checked against it in code. */
   inboundText: string;
+  /** profiles.role when they have an account. */
+  role: string | null;
   language: AgentLanguage;
   subscribed: boolean;
   dryRun: boolean;
@@ -305,6 +318,15 @@ const reportArgs = z.object({
   ref: z.string().trim().min(1).max(80),
   reason: z.enum(['scam', 'misleading', 'duplicate', 'offensive', 'wrong_info', 'other']),
   details: z.string().trim().max(500).nullish(),
+});
+
+const draftJobArgs = z.object({
+  title: z.string().trim().max(120).nullish(),
+  location: z.string().trim().max(80).nullish(),
+  salary: z.string().trim().max(80).nullish(),
+  how_to_apply: z.string().trim().max(300).nullish(),
+  description: z.string().trim().max(3000).nullish(),
+  use_message_as_description: z.boolean().nullish(),
 });
 
 const handoffArgs = z.object({
@@ -783,9 +805,173 @@ const TOOLS: ToolSpec[] = [
       };
     },
   },
+  {
+    definition: {
+      name: 'draft_job_post',
+      description:
+        'Recruiters only: start or update a job post. Call with whatever fields you have -- from a pasted ad or from the conversation -- and again as they fill gaps or correct things. If THIS message is the full ad, set use_message_as_description instead of copying it. Returns a preview and what is still missing; nothing is published until publish_job_post.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Job title, e.g. "Cashier".' },
+          location: { type: 'string', description: 'Town, e.g. "Douala".' },
+          salary: { type: 'string', description: 'As they wrote it: "80 000 FCFA", "negotiable".' },
+          how_to_apply: { type: 'string', description: 'A URL, email, phone, "WhatsApp 6...", or "JobLinca" to receive applications on JobLinca.' },
+          description: { type: 'string', description: 'A short brief in their words, when they did not paste a full ad.' },
+          use_message_as_description: { type: 'boolean', description: 'True when their current message is the full job ad.' },
+        },
+        additionalProperties: false,
+      },
+    },
+    schema: draftJobArgs,
+    run: async (ctx, args: z.infer<typeof draftJobArgs>) => {
+      const access = await ctx.deps.checkPostingAccess(ctx.lead.linked_user_id, ctx.role);
+      if (!access.allowed) return postingDenied(ctx, access.reason);
+
+      const previous = ctx.memory.jobDraft || EMPTY_JOB_DRAFT;
+      const draft: AgentJobDraft = {
+        jobTitle: args.title || previous.jobTitle,
+        location: args.location || previous.location,
+        salary: args.salary || previous.salary,
+        applicationMethod: args.how_to_apply || previous.applicationMethod,
+        description: args.use_message_as_description
+          ? ctx.inboundText.trim()
+          : args.description || previous.description,
+      };
+      ctx.memory.jobDraft = draft;
+
+      const missing = missingJobFields(draft);
+      if (missing.length === 0) {
+        ctx.attachments.push(formatJobDraftPreview(draft, ctx.language));
+      }
+      return {
+        ok: true,
+        data: {
+          status: missing.length === 0 ? 'ready_to_publish' : 'incomplete',
+          missing,
+          optional_not_given: [
+            ...(draft.salary ? [] : ['salary']),
+            ...(draft.applicationMethod ? [] : ['how_to_apply (defaults to applying on JobLinca)']),
+          ],
+          note:
+            missing.length === 0
+              ? 'The preview is attached. Ask them to reply YES to submit it for review, or to tell you what to change.'
+              : `Ask for: ${missing.join(', ')}. One short question.`,
+        },
+      };
+    },
+  },
+  {
+    definition: {
+      name: 'publish_job_post',
+      description: 'Submit the drafted job for review. Only right after they said yes to the preview.',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+    },
+    schema: noArgs,
+    run: async (ctx) => {
+      const draft = ctx.memory.jobDraft;
+      if (!draft || missingJobFields(draft).length > 0) {
+        return { ok: false, data: { error: 'draft_incomplete', missing: draft ? missingJobFields(draft) : ['everything'] } };
+      }
+      if (!isAffirmative(ctx.inboundText)) {
+        return { ok: false, data: { error: 'not_confirmed', note: 'Their last message was not a clear yes. Ask them to reply YES, or what to change.' } };
+      }
+      // Re-check: a subscription can lapse between drafting and publishing.
+      const access = await ctx.deps.checkPostingAccess(ctx.lead.linked_user_id, ctx.role);
+      if (!access.allowed) return postingDenied(ctx, access.reason);
+      if (ctx.dryRun) return { ok: true, data: { status: 'dry_run' } };
+
+      const result = await ctx.deps.createJob(ctx.lead.linked_user_id as string, {
+        jobTitle: draft.jobTitle as string,
+        location: draft.location as string,
+        salary: draft.salary || '',
+        description: draft.description as string,
+        applicationMethod: draft.applicationMethod || 'JobLinca',
+      });
+
+      if (result.status === 'no_recruiter_profile') {
+        ctx.attachments.push(ctx.deps.links.recruiterProfile);
+        return { ok: false, data: { error: 'recruiter_profile_incomplete', note: 'They need to finish their recruiter profile on the website first (link attached). The draft is kept.' } };
+      }
+      if (result.status === 'error') {
+        return { ok: false, data: { error: 'create_failed', note: 'Apologise; the draft is kept, they can say yes again in a moment.' } };
+      }
+
+      ctx.memory.jobDraft = null;
+      const ref = result.publicId || result.jobId;
+      const fr = ctx.language === 'fr';
+      ctx.attachments.push(
+        fr
+          ? `✅ Offre ${ref} créée et envoyée pour vérification. Suivez-la ici :\n${ctx.deps.links.recruiterJobs}`
+          : `✅ Job ${ref} created and sent for review. Track it here:\n${ctx.deps.links.recruiterJobs}`
+      );
+      return {
+        ok: true,
+        data: {
+          status: 'submitted_for_review',
+          ref,
+          ...(access.feeXaf > 0 ? { posting_fee_xaf: access.feeXaf, fee_note: 'charged on the website' } : {}),
+          note: 'Confirmation is attached. Our team reviews new posts before they go live, usually within a day.',
+        },
+      };
+    },
+  },
 ];
 
-const APPLY_INTENT = /\b(apply|applying|postuler|postule|candidater|candidature)\b/i;
+const EMPTY_JOB_DRAFT: AgentJobDraft = {
+  jobTitle: null,
+  location: null,
+  salary: null,
+  description: null,
+  applicationMethod: null,
+};
+
+/** Required to publish; salary and how-to-apply are optional. */
+export function missingJobFields(draft: AgentJobDraft): string[] {
+  return [
+    ...(draft.jobTitle ? [] : ['title']),
+    ...(draft.location ? [] : ['location']),
+    ...(draft.description && draft.description.trim().length >= 20 ? [] : ['description (what the job involves)']),
+  ];
+}
+
+export function formatJobDraftPreview(draft: AgentJobDraft, language: AgentLanguage): string {
+  const fr = language === 'fr';
+  const description = (draft.description || '').trim();
+  const clipped = description.length > 500 ? `${description.slice(0, 497)}...` : description;
+  return [
+    fr ? '📝 *Aperçu de votre offre*' : '📝 *Your job post*',
+    `📌 ${draft.jobTitle}`,
+    `📍 ${draft.location}`,
+    `💰 ${draft.salary || (fr ? 'Non précisé' : 'Not specified')}`,
+    `📮 ${fr ? 'Candidature' : 'Apply via'}: ${draft.applicationMethod || 'JobLinca'}`,
+    '',
+    clipped,
+    ...(description.length < 300
+      ? ['', fr ? '(La description sera développée avant la vérification.)' : '(The description will be expanded before review.)']
+      : []),
+  ].join('\n');
+}
+
+function postingDenied(
+  ctx: AgentToolContext,
+  reason: 'missing_account' | 'not_recruiter' | 'missing_subscription'
+): ToolResult {
+  if (reason === 'missing_subscription') {
+    ctx.attachments.push(ctx.deps.links.recruiterSubscribe);
+    return { ok: false, data: { error: 'recruiter_subscription_required', note: 'Posting needs an active recruiter subscription (link attached). Keep the draft for when they are subscribed.' } };
+  }
+  ctx.attachments.push(ctx.deps.buildRegisterUrl(ctx.lead.phone_e164, 'recruiter'));
+  return {
+    ok: false,
+    data: {
+      error: reason === 'missing_account' ? 'no_account' : 'not_a_recruiter_account',
+      note: 'Posting jobs needs a recruiter account linked to this WhatsApp number (signup link attached).',
+    },
+  };
+}
+
+const APPLY_INTENT =/\b(apply|applying|postuler|postule|candidater|candidature)\b/i;
 
 export const AGENT_TOOL_DEFINITIONS: AiToolDefinition[] = TOOLS.map((tool) => tool.definition);
 

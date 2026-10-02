@@ -69,6 +69,16 @@ export interface AgentStatePayload {
   signupDraft?: AgentSignupDraft | null;
   /** Job ID the agent asked "apply to this one?" about; a yes applies it. */
   proposedApply?: string | null;
+  /** A recruiter's job post being assembled; published only after a yes. */
+  jobDraft?: AgentJobDraft | null;
+}
+
+export interface AgentJobDraft {
+  jobTitle: string | null;
+  location: string | null;
+  salary: string | null;
+  description: string | null;
+  applicationMethod: string | null;
 }
 
 export interface WaStatePayload {

@@ -34,6 +34,8 @@ const MAX_REPLY_CHARS = 3500;
 
 export interface AgentTurnInput {
   lead: WaLeadRow;
+  /** profiles.role when they have an account. */
+  role?: string | null;
   inboundText: string;
   history: AiToolLoopMessage[];
   memory: AgentStatePayload;
@@ -101,6 +103,7 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnOutc
     // sees the first one's views; the caller's row is left untouched.
     lead: { ...input.lead },
     inboundText: input.inboundText,
+    role: input.role ?? null,
     language: input.language,
     subscribed: input.subscribed,
     dryRun: input.dryRun,
@@ -118,6 +121,7 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnOutc
       content: buildSystemPrompt({
         lead: input.lead,
         firstName: input.firstName,
+        role: input.role ?? null,
         subscribed: input.subscribed,
         language: input.language,
         memory: input.memory,
@@ -125,7 +129,8 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnOutc
       }),
     },
     ...input.history,
-    { role: 'user', content: input.inboundText.slice(0, 1000) },
+    // Long enough for a pasted job ad, which a recruiter may want posted.
+    { role: 'user', content: input.inboundText.slice(0, 3000) },
   ];
 
   const toolCalls: AgentToolCallRecord[] = [];
@@ -151,7 +156,7 @@ export async function runAgentTurn(input: AgentTurnInput): Promise<AgentTurnOutc
         messages,
         tools: AGENT_TOOL_DEFINITIONS,
         temperature: 0.3,
-        maxTokens: 350,
+        maxTokens: 500,
         timeoutMs: Math.min(PER_CALL_TIMEOUT_MS, remaining),
         retryCount: 0,
       });
