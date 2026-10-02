@@ -725,6 +725,9 @@ const en: Record<string, string> = {
   "remote.cat.security": "Security",
   "remote.cat.operations": "Operations",
   "remote.cat.internships": "Internships & Entry Level",
+  "remote.cat.aiTraining": "AI Training & Data Work",
+  "remote.aiTraining.noteTitle": "About AI training & data work:",
+  "remote.aiTraining.noteBody": "These are worker platforms, not single job postings — you sign up once and get matched to ongoing tasks (data labeling, AI model training, annotation). Each has been checked for Cameroon/Africa eligibility. Note: PayPal is largely unavailable in Cameroon, so most workers get paid via Payoneer or AirTM — check each platform's payout options before signing up.",
 
   // ---------------------------------------------------------------------------
   // Learn More – Job Seekers
@@ -2096,6 +2099,30 @@ const en: Record<string, string> = {
   "localePrompt.note":
     "You can change this later from the language toggle. / Vous pourrez la modifier plus tard avec le bouton de langue.",
   "localePrompt.saving": "Saving your preference...",
+
+  // ---------------------------------------------------------------------------
+  // WhatsApp agent
+  // ---------------------------------------------------------------------------
+  "wa.label.jobs": "jobs",
+  "wa.label.internships": "internships",
+  "wa.menu.title": "Welcome to JobLinca WhatsApp AI Agent.",
+  "wa.menu.instruction": "Reply with a number:",
+  "wa.menu.findJob": "1) Find a job",
+  "wa.menu.postJob": "2) Post a job",
+  "wa.menu.findInternship": "3) Find internship",
+  "wa.menu.createAccount": "4) Create account",
+  "wa.timeFilter.title": "Select time filter:",
+  "wa.timeFilter.day": "1) Last 24 hours",
+  "wa.timeFilter.week": "2) Last 1 week",
+  "wa.timeFilter.month": "3) Last 1 month",
+  "wa.locationScope.intro": "Great. Let us find {label}.",
+  "wa.locationScope.choose": "Choose location scope:",
+  "wa.locationScope.nationwide": "1) Nationwide",
+  "wa.locationScope.town": "2) Specific town",
+  "wa.roleMode.question": "Do you want:",
+  "wa.roleMode.all": "1) All {label}",
+  "wa.roleMode.specific": "2) Specific role",
+
 };
 
 export default en;

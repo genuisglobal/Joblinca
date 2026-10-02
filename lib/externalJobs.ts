@@ -179,6 +179,195 @@ export async function fetchFindworkExternalJobs(): Promise<ExternalJob[]> {
 }
 
 // ───────────────────────────────────────────────
+// Provider: RemoteOK
+// ───────────────────────────────────────────────
+
+const EXTERNAL_PROVIDER_USER_AGENT =
+  'Joblinca/1.0 (Cameroon Job Aggregator; contact@joblinca.com)';
+
+export async function fetchRemoteOkExternalJobs(): Promise<ExternalJob[]> {
+  try {
+    const res = await fetch('https://remoteok.com/api', {
+      headers: { 'User-Agent': EXTERNAL_PROVIDER_USER_AGENT },
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+
+    // The first element is RemoteOK's API terms notice, not a job -- it has
+    // no `id`/`position`, so filtering on those also skips it.
+    return data
+      .filter((job: any) => job && job.id && job.position)
+      .map((job: any) => {
+        const salary =
+          job.salary_min && job.salary_max
+            ? `$${Number(job.salary_min).toLocaleString()}–$${Number(job.salary_max).toLocaleString()}`
+            : null;
+
+        return {
+          external_id: String(job.id),
+          source: 'remoteok',
+          title: job.position,
+          company_name: job.company || null,
+          company_logo: job.company_logo || job.logo || undefined,
+          location: job.location || 'Worldwide',
+          salary,
+          job_type: Array.isArray(job.tags) ? job.tags.slice(0, 3).join(', ') : null,
+          category: deriveCategory(job.position, '', job.description || ''),
+          description: undefined,
+          url: job.url || job.apply_url,
+          fetched_at: new Date().toISOString(),
+        } as ExternalJob;
+      });
+  } catch (err) {
+    console.error('Failed to fetch RemoteOK jobs', err);
+    return [];
+  }
+}
+
+// ───────────────────────────────────────────────
+// Provider: Arbeitnow (remote-flagged subset only)
+// ───────────────────────────────────────────────
+//
+// Arbeitnow's board is mostly on-site German listings; only jobs with
+// `remote: true` belong in a global-jobs feed, and those are sparse and
+// scattered across pages (observed ~0-11% per page), so this paginates
+// until it has a decent batch or hits the page cap -- rather than a single
+// fetch like the other providers here, which would often return zero.
+
+export async function fetchArbeitnowExternalJobs(): Promise<ExternalJob[]> {
+  const jobs: ExternalJob[] = [];
+  const MAX_PAGES = 8;
+  const TARGET_COUNT = 60;
+
+  try {
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const res = await fetch(`https://www.arbeitnow.com/api/job-board-api?page=${page}`, {
+        headers: { 'User-Agent': EXTERNAL_PROVIDER_USER_AGENT },
+        next: { revalidate: 3600 },
+      });
+      if (!res.ok) break;
+
+      const data = await res.json();
+      const pageJobs = Array.isArray(data?.data) ? data.data : [];
+      if (pageJobs.length === 0) break;
+
+      for (const job of pageJobs) {
+        if (!job.remote) continue;
+        jobs.push({
+          external_id: job.slug,
+          source: 'arbeitnow',
+          title: job.title,
+          company_name: job.company_name || null,
+          company_logo: undefined,
+          location: job.location || 'Remote',
+          salary: null,
+          // Descriptions here are frequently German -- deriveCategory's
+          // keyword list is English-oriented, so title-only avoids spurious
+          // matches (same reasoning as the Cameroon providers skipping
+          // French description text).
+          job_type: Array.isArray(job.job_types) ? job.job_types.join(', ') : null,
+          category: deriveCategory(job.title),
+          description: undefined,
+          url: job.url,
+          fetched_at: new Date().toISOString(),
+        });
+      }
+
+      if (jobs.length >= TARGET_COUNT || !data?.links?.next) break;
+    }
+  } catch (err) {
+    console.error('Failed to fetch Arbeitnow jobs', err);
+  }
+
+  return jobs;
+}
+
+// ───────────────────────────────────────────────
+// Curated: AI training & data-annotation platforms
+// ───────────────────────────────────────────────
+//
+// These are worker marketplaces (sign up once, get assigned tasks), not job
+// boards with individual postings, so there's nothing to scrape -- this is a
+// small hand-curated, hand-verified list rather than a live provider. Each
+// entry is reviewed for actual Cameroon/Africa eligibility (DataAnnotation.tech
+// and similar US/UK/CA/AU/NZ-only platforms are deliberately excluded).
+// Refresh this list occasionally -- eligibility and URLs do change.
+
+interface AiTrainingPlatform {
+  slug: string;
+  platform: string;
+  headline: string;
+  eligibility: string;
+  workType: string;
+  url: string;
+}
+
+const AI_TRAINING_PLATFORMS: AiTrainingPlatform[] = [
+  {
+    slug: 'isahit',
+    platform: 'Isahit',
+    headline: "Join Isahit's AI & data annotation community",
+    eligibility: 'Built for Francophone & developing-world workers',
+    workType: 'Freelance · flexible hours',
+    url: 'https://www.isahit.com/work-for-us',
+  },
+  {
+    slug: 'appen',
+    platform: 'Appen (CrowdGen)',
+    headline: 'Become an Appen / CrowdGen crowd contributor',
+    eligibility: '170+ countries — broadest reach',
+    workType: 'Freelance · task-based',
+    url: 'https://crowd.appen.com/',
+  },
+  {
+    slug: 'telus-digital-ai',
+    platform: 'TELUS Digital AI Community',
+    headline: 'Get matched to AI data projects with TELUS Digital',
+    eligibility: '100+ countries, 500+ languages',
+    workType: 'Freelance · flexible hours',
+    url: 'https://www.telusinternational.ai/',
+  },
+  {
+    slug: 'outlier',
+    platform: 'Outlier (Scale AI)',
+    headline: 'Train AI models as an Outlier contributor',
+    eligibility: '100+ countries',
+    workType: 'Freelance · task-based',
+    url: 'https://outlier.ai',
+  },
+  {
+    slug: 'clickworker',
+    platform: 'Clickworker',
+    headline: 'Complete AI training & data tasks with Clickworker',
+    eligibility: 'Global — registration opens/closes per country by demand',
+    workType: 'Freelance · micro-tasks',
+    url: 'https://www.clickworker.com',
+  },
+];
+
+export const AI_TRAINING_CATEGORY = 'AI Training & Data Work';
+
+async function fetchAiTrainingPlatformJobs(): Promise<ExternalJob[]> {
+  return AI_TRAINING_PLATFORMS.map((p) => ({
+    external_id: p.slug,
+    source: p.slug,
+    title: p.headline,
+    company_name: p.platform,
+    company_logo: undefined,
+    location: p.eligibility,
+    salary: null,
+    job_type: p.workType,
+    category: AI_TRAINING_CATEGORY,
+    description: undefined,
+    url: p.url,
+    fetched_at: new Date().toISOString(),
+  }));
+}
+
+// ───────────────────────────────────────────────
 // Provider: Upwork (placeholder - requires OAuth)
 // ───────────────────────────────────────────────
 
@@ -204,6 +393,9 @@ const EXTERNAL_FEED_PROVIDERS = [
   fetchRemotiveExternalJobs,
   fetchJobicyExternalJobs,
   fetchFindworkExternalJobs,
+  fetchRemoteOkExternalJobs,
+  fetchArbeitnowExternalJobs,
+  fetchAiTrainingPlatformJobs,
   fetchUpworkExternalJobs,
 ];
 

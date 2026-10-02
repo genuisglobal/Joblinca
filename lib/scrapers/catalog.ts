@@ -83,6 +83,11 @@ export const SCRAPER_SOURCE_CATALOG = [
     trustTier: 80,
     executionKind: 'site',
     retireLegacyExternalFeed: false,
+    // Disabled 2026-09-20: TLS handshake fails consistently from three
+    // independent network paths (local curl, Node fetch, and a separate
+    // fetch infra) -- looks like the site's hosting is down, not a scraper
+    // bug. DNS still resolves. Re-enable if/when it comes back.
+    enabled: false,
   },
   {
     slug: 'kmerjobs',
@@ -95,6 +100,15 @@ export const SCRAPER_SOURCE_CATALOG = [
     // Retired 2026-07: kmerjobs.com no longer resolves (NXDOMAIN).
     // Re-enable if the site comes back.
     enabled: false,
+  },
+  {
+    slug: 'africarrieres',
+    label: 'Africarrieres',
+    sourceType: 'html',
+    baseUrl: 'https://africarrieres.com',
+    trustTier: 70,
+    executionKind: 'site',
+    retireLegacyExternalFeed: false,
   },
   {
     // First-party employer pages registered in /admin/aggregation/career-pages;

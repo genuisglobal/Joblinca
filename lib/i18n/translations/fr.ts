@@ -724,6 +724,9 @@ const fr: Record<string, string> = {
   "remote.cat.security": "S\u00e9curit\u00e9",
   "remote.cat.operations": "Op\u00e9rations",
   "remote.cat.internships": "Stages & D\u00e9butants",
+  "remote.cat.aiTraining": "Entra\u00eenement IA & annotation",
+  "remote.aiTraining.noteTitle": "\u00c0 propos de l'entra\u00eenement IA & de l'annotation de donn\u00e9es\u00a0:",
+  "remote.aiTraining.noteBody": "Ce sont des plateformes de travailleurs, pas des offres d'emploi individuelles \u2014 vous vous inscrivez une fois et \u00eates affect\u00e9 \u00e0 des t\u00e2ches r\u00e9currentes (annotation de donn\u00e9es, entra\u00eenement de mod\u00e8les IA). Chacune a \u00e9t\u00e9 v\u00e9rifi\u00e9e pour l'\u00e9ligibilit\u00e9 Cameroun/Afrique. \u00c0 noter\u00a0: PayPal est largement indisponible au Cameroun, la plupart des travailleurs sont donc pay\u00e9s via Payoneer ou AirTM \u2014 v\u00e9rifiez les options de paiement de chaque plateforme avant de vous inscrire.",
 
   // ---------------------------------------------------------------------------
   // Learn More \u2013 Job Seekers
@@ -2162,6 +2165,30 @@ const fr: Record<string, string> = {
   "localePrompt.note":
     "You can change this later from the language toggle. / Vous pourrez la modifier plus tard avec le bouton de langue.",
   "localePrompt.saving": "Enregistrement de votre preference...",
+
+  // ---------------------------------------------------------------------------
+  // WhatsApp agent
+  // ---------------------------------------------------------------------------
+  "wa.label.jobs": "des emplois",
+  "wa.label.internships": "des stages",
+  "wa.menu.title": "Bienvenue sur l'agent IA WhatsApp de JobLinca.",
+  "wa.menu.instruction": "Répondez avec un numéro :",
+  "wa.menu.findJob": "1) Trouver un emploi",
+  "wa.menu.postJob": "2) Publier une offre",
+  "wa.menu.findInternship": "3) Trouver un stage",
+  "wa.menu.createAccount": "4) Créer un compte",
+  "wa.timeFilter.title": "Choisissez une période :",
+  "wa.timeFilter.day": "1) Dernières 24 heures",
+  "wa.timeFilter.week": "2) Dernière semaine",
+  "wa.timeFilter.month": "3) Dernier mois",
+  "wa.locationScope.intro": "Parfait. Cherchons {label}.",
+  "wa.locationScope.choose": "Choisissez la zone :",
+  "wa.locationScope.nationwide": "1) Tout le pays",
+  "wa.locationScope.town": "2) Une ville précise",
+  "wa.roleMode.question": "Que souhaitez-vous :",
+  "wa.roleMode.all": "1) Tous {label}",
+  "wa.roleMode.specific": "2) Un poste précis",
+
 };
 
 export default fr;

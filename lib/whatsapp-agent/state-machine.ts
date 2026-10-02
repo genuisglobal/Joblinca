@@ -1,4 +1,6 @@
 import type { ParsedTimeFilter } from '@/lib/whatsapp-agent/parser';
+import { getServerT } from '@/lib/i18n/server-t';
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/locale';
 
 export type WaRoleSelection = 'jobseeker' | 'recruiter' | 'talent' | null;
 
@@ -95,23 +97,25 @@ export function mergePayload(
   };
 }
 
-export function menuMessage(): string {
+export function menuMessage(locale: Locale = DEFAULT_LOCALE): string {
+  const t = getServerT(locale);
   return [
-    'Welcome to JobLinca WhatsApp AI Agent.',
+    t('wa.menu.title'),
     '',
-    'Reply with a number:',
-    '1) Find a job',
-    '2) Post a job',
-    '3) Find internship',
-    '4) Create account',
+    t('wa.menu.instruction'),
+    t('wa.menu.findJob'),
+    t('wa.menu.postJob'),
+    t('wa.menu.findInternship'),
+    t('wa.menu.createAccount'),
   ].join('\n');
 }
 
-export function timeFilterPrompt(): string {
+export function timeFilterPrompt(locale: Locale = DEFAULT_LOCALE): string {
+  const t = getServerT(locale);
   return [
-    'Select time filter:',
-    '1) Last 24 hours',
-    '2) Last 1 week',
-    '3) Last 1 month',
+    t('wa.timeFilter.title'),
+    t('wa.timeFilter.day'),
+    t('wa.timeFilter.week'),
+    t('wa.timeFilter.month'),
   ].join('\n');
 }

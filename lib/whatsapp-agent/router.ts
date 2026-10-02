@@ -19,6 +19,7 @@ import {
   storePendingApply,
   clearPendingApply,
   getProfileRole,
+  setLeadLanguage,
   type WaLeadRow,
 } from '@/lib/whatsapp-agent/leads';
 import {
@@ -37,7 +38,9 @@ import {
   extractLocationHint,
   extractRoleKeywordsHint,
 } from '@/lib/whatsapp-agent/parser';
-import { parseIntentFromFreeText } from '@/lib/whatsapp-agent/intent-nlp';
+import { resolveInboundIntent } from '@/lib/whatsapp-agent/ai-intent';
+import { getServerT } from '@/lib/i18n/server-t';
+import { DEFAULT_LOCALE, type Locale } from '@/lib/i18n/locale';
 import {
   looksLikeForwardedJobPosting,
   storeForwardedJobPosting,
@@ -149,22 +152,39 @@ function buildRegisterUrl(phone: string, role: 'job_seeker' | 'recruiter' = 'job
   return `${REGISTER_URL}?${params.toString()}`;
 }
 
-function locationScopePrompt(searchType: 'job' | 'internship'): string {
-  const label = searchType === 'internship' ? 'internships' : 'jobs';
+/**
+ * The language to answer this lead in. Set from the current message when it
+ * read as one language or the other, otherwise whatever we last stored for
+ * them, otherwise English.
+ */
+function leadLocale(lead: Pick<WaLeadRow, 'language'>): Locale {
+  return lead.language === 'fr' ? 'fr' : 'en';
+}
+
+function locationScopePrompt(
+  searchType: 'job' | 'internship',
+  locale: Locale = DEFAULT_LOCALE
+): string {
+  const t = getServerT(locale);
+  const label = t(searchType === 'internship' ? 'wa.label.internships' : 'wa.label.jobs');
   return [
-    `Great. Let us find ${label}.`,
-    'Choose location scope:',
-    '1) Nationwide',
-    '2) Specific town',
+    t('wa.locationScope.intro', { label }),
+    t('wa.locationScope.choose'),
+    t('wa.locationScope.nationwide'),
+    t('wa.locationScope.town'),
   ].join('\n');
 }
 
-function roleModePrompt(searchType: 'job' | 'internship'): string {
-  const label = searchType === 'internship' ? 'internships' : 'jobs';
+function roleModePrompt(
+  searchType: 'job' | 'internship',
+  locale: Locale = DEFAULT_LOCALE
+): string {
+  const t = getServerT(locale);
+  const label = t(searchType === 'internship' ? 'wa.label.internships' : 'wa.label.jobs');
   return [
-    `Do you want:`,
-    `1) All ${label}`,
-    '2) Specific role',
+    t('wa.roleMode.question'),
+    t('wa.roleMode.all', { label }),
+    t('wa.roleMode.specific'),
   ].join('\n');
 }
 
@@ -276,7 +296,7 @@ async function sendQuickActions(phone: string, userId?: string | null): Promise<
 
 async function sendMenuAndSetState(lead: WaLeadRow): Promise<void> {
   await updateLeadState(lead.id, 'menu', lead.role_selected, lead.state_payload || {});
-  await sendMessage(lead.phone_e164, menuMessage(), lead.linked_user_id);
+  await sendMessage(lead.phone_e164, menuMessage(leadLocale(lead)), lead.linked_user_id);
 }
 
 async function getProfileDisplayName(userId: string | null): Promise<string | null> {
@@ -964,7 +984,7 @@ async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promis
     await updateLeadState(lead.id, 'jobseeker.awaiting_location_scope', 'jobseeker', nextPayload);
     await sendMessage(
       lead.phone_e164,
-      locationScopePrompt(nextPayload.jobSearch?.searchType === 'internship' ? 'internship' : 'job'),
+      locationScopePrompt(nextPayload.jobSearch?.searchType === 'internship' ? 'internship' : 'job', leadLocale(lead)),
       lead.linked_user_id
     );
     return true;
@@ -993,7 +1013,7 @@ async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promis
 
     if (locationScope === 'nationwide') {
       await updateLeadState(lead.id, 'jobseeker.awaiting_time_filter', 'jobseeker', nextPayload);
-      await sendMessage(lead.phone_e164, timeFilterPrompt(), lead.linked_user_id);
+      await sendMessage(lead.phone_e164, timeFilterPrompt(leadLocale(lead)), lead.linked_user_id);
       return true;
     }
 
@@ -1007,7 +1027,7 @@ async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promis
       jobSearch: { locationScope: 'town', location: text },
     });
     await updateLeadState(lead.id, 'jobseeker.awaiting_time_filter', 'jobseeker', nextPayload);
-    await sendMessage(lead.phone_e164, timeFilterPrompt(), lead.linked_user_id);
+    await sendMessage(lead.phone_e164, timeFilterPrompt(leadLocale(lead)), lead.linked_user_id);
     return true;
   }
 
@@ -1024,7 +1044,7 @@ async function handleJobSeekerFlow(lead: WaLeadRow, inboundText: string): Promis
     await updateLeadState(lead.id, 'jobseeker.awaiting_role_mode', 'jobseeker', nextPayload);
     await sendMessage(
       lead.phone_e164,
-      roleModePrompt(nextPayload.jobSearch?.searchType === 'internship' ? 'internship' : 'job'),
+      roleModePrompt(nextPayload.jobSearch?.searchType === 'internship' ? 'internship' : 'job', leadLocale(lead)),
       lead.linked_user_id
     );
     return true;
@@ -1120,7 +1140,7 @@ async function startJobSearchFromIntent(
 
   if (!locationHint) {
     await updateLeadState(lead.id, 'jobseeker.awaiting_location_scope', 'jobseeker', payload);
-    await sendMessage(lead.phone_e164, locationScopePrompt(searchType), lead.linked_user_id);
+    await sendMessage(lead.phone_e164, locationScopePrompt(searchType, leadLocale(lead)), lead.linked_user_id);
     return;
   }
 
@@ -1148,12 +1168,12 @@ async function startJobSearchFromIntent(
 
   if (!roleHint) {
     await updateLeadState(lead.id, 'jobseeker.awaiting_role_mode', 'jobseeker', payload);
-    await sendMessage(lead.phone_e164, roleModePrompt(searchType), lead.linked_user_id);
+    await sendMessage(lead.phone_e164, roleModePrompt(searchType, leadLocale(lead)), lead.linked_user_id);
     return;
   }
 
   await updateLeadState(lead.id, 'jobseeker.awaiting_time_filter', 'jobseeker', payload);
-  await sendMessage(lead.phone_e164, timeFilterPrompt(), lead.linked_user_id);
+  await sendMessage(lead.phone_e164, timeFilterPrompt(leadLocale(lead)), lead.linked_user_id);
 }
 
 async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: string | null): Promise<void> {
@@ -1191,7 +1211,7 @@ async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: st
     await updateLeadState(lead.id, 'jobseeker.awaiting_location_scope', 'jobseeker', nextPayload);
     await sendMessage(
       lead.phone_e164,
-      `${name ? `Welcome ${name}. ` : ''}${locationScopePrompt(searchType)}`,
+      `${name ? `Welcome ${name}. ` : ''}${locationScopePrompt(searchType, leadLocale(lead))}`,
       lead.linked_user_id
     );
     return;
@@ -1332,7 +1352,25 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       }
     }
 
-    const intent = parseIntentFromFreeText(text);
+    // Deterministic keyword parse first; the model is consulted only when that
+    // comes back 'unknown', which is where French and unusual phrasings land.
+    // Also settles which language to answer in.
+    const intent = await resolveInboundIntent(text, { storedLanguage: lead.language });
+
+    if (intent.detectedLanguage && intent.detectedLanguage !== lead.language) {
+      await setLeadLanguage(lead, intent.detectedLanguage);
+      // Keep the in-memory row in step so replies sent later in this same turn
+      // already use the new language.
+      lead.language = intent.detectedLanguage;
+    }
+
+    logEvent('info', 'intent_resolved', {
+      leadId: lead.id,
+      intent: intent.intent,
+      source: intent.source,
+      language: intent.language,
+    });
+
     if (intent.intent === 'menu') {
       await sendMenuAndSetState(lead);
       return { handled: true, reason: 'handled' };

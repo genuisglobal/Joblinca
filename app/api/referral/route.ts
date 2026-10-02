@@ -1,5 +1,19 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
+
+/**
+ * How many users this person referred. Service client: profiles RLS is
+ * self-or-admin, so the referrer's own session cannot see the rows that point
+ * at them and the count would always be 0.
+ */
+async function countReferrals(userId: string): Promise<number> {
+  const { count } = await createServiceSupabaseClient()
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('referred_by', userId);
+  return count ?? 0;
+}
 
 /**
  * GET /api/referral — returns the current user's referral code and stats.
@@ -42,19 +56,10 @@ export async function GET() {
       return NextResponse.json({ code: null, referralCount: 0 });
     }
 
-    const { count } = await supabase
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('referred_by', user.id);
-
-    return NextResponse.json({ code, referralCount: count ?? 0 });
+    return NextResponse.json({ code, referralCount: await countReferrals(user.id) });
   }
 
-  // Count how many users this person referred
-  const { count } = await supabase
-    .from('profiles')
-    .select('id', { count: 'exact', head: true })
-    .eq('referred_by', user.id);
+  const referralCount = await countReferrals(user.id);
 
   // Count total reward days earned
   let totalRewardDays = 0;
@@ -71,7 +76,7 @@ export async function GET() {
 
   return NextResponse.json({
     code: profile.referral_code,
-    referralCount: count ?? 0,
+    referralCount,
     totalRewardDays,
   });
 }
