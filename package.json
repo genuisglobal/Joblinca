@@ -39,6 +39,7 @@
     "@supabase/supabase-js": "^2.39.4",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.3",
+    "@vercel/functions": "1.6.0",
     "autoprefixer": "^10.4.15",
     "cheerio": "^1.2.0",
     "framer-motion": "^12.23.26",
