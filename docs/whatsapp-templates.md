@@ -13,7 +13,11 @@ WhatsApp only delivers **free-form** messages within 24 hours of the person's la
 | 5 | `job_post_approved_v1` | `lib/jobs/recruiter-notify.ts` uses plain text (admin approve, admin reject and the auto-approve sweep). It only reaches recruiters who have chatted with the bot, and only within 24h of their last message, so most never hear their post went live |
 | 6 | `job_post_rejected_v1` | Same, for rejections |
 
-Also: **add French (`fr`) versions of the existing templates** (`matched_jobs_digest_v1`, `application_status_update_v1`, `interview_*_v1`, `field_registration_complete_v1`). All of them are English-only today, so French speakers get English. Submit each under the same name with language **French**. The code already sends `*_TEMPLATE_LANG`; the follow-up change is to pick `fr` per lead from `wa_leads.language`.
+Also: **add French (`fr`) versions of the existing templates.** All of them are English-only today, so French speakers get English. In WhatsApp Manager, open each one and **Add language → French**, keeping **the same variables in the same order**:
+
+`job_alert_v1`, `matched_jobs_digest_v1`, `application_status_update_v1`, `interview_reminder_v1`, `interview_scheduled_v1`, `interview_rescheduled_v1`, `interview_cancelled_v1`, `field_registration_complete_v1`
+
+No code change is needed afterwards. `sendWhatsappTemplateLocalized` (`lib/messaging/whatsapp.ts`) tries the French copy for anyone whose `wa_leads.language` is `fr`. Until Meta approves it (error 132001), it sends the English template exactly as today.
 
 ## Meta rules to keep in mind
 

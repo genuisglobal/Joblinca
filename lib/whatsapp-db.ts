@@ -118,6 +118,17 @@ export async function setOptIn(waPhone: string, optedIn: boolean): Promise<void>
  *
  * Returns the persisted log row, or null if it was a duplicate.
  */
+/** The language this phone writes to us in, if we have ever read one ('en' | 'fr'). */
+export async function getLeadLanguage(waPhone: string): Promise<'en' | 'fr' | null> {
+  const { data } = await supabaseAdmin
+    .from('wa_leads')
+    .select('language')
+    .eq('phone_e164', toE164(waPhone))
+    .maybeSingle();
+  const language = data?.language;
+  return language === 'fr' || language === 'en' ? language : null;
+}
+
 /** When this phone last messaged us; drives the 24h free-form window. */
 export async function getLastInboundAt(waPhone: string): Promise<string | null> {
   const { data } = await supabaseAdmin
