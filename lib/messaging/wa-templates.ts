@@ -25,6 +25,7 @@ export const WA_TEMPLATES = {
   signupReminder: { env: 'WA_SIGNUP_REMINDER_TEMPLATE', defaultName: 'signup_link_reminder_v1', languages: ['en', 'fr'] },
   jobPostApproved: { env: 'WA_JOB_POST_APPROVED_TEMPLATE', defaultName: 'job_post_approved_v1', languages: ['en', 'fr'] },
   jobPostRejected: { env: 'WA_JOB_POST_REJECTED_TEMPLATE', defaultName: 'job_post_rejected_v1', languages: ['en', 'fr'] },
+  newApplicantAlert: { env: 'WA_NEW_APPLICANT_TEMPLATE', defaultName: 'new_applicant_alert_v1', languages: ['en', 'fr'] },
 } satisfies Record<string, TemplateSpec>;
 
 export type TemplateKey = keyof typeof WA_TEMPLATES;

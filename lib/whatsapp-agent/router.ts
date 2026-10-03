@@ -82,6 +82,7 @@ import {
   getWaLimitContext,
 } from '@/lib/whatsapp-agent/limits';
 import { decideAgentRoute } from '@/lib/whatsapp-agent/agent-config';
+import { notifyRecruiterOfNewApplication } from '@/lib/jobs/new-applicant-alert';
 import { handleInboundMedia, inboundMediaKind } from '@/lib/whatsapp-agent/agent/media';
 import {
   checkRecruiterPostingAccess,
@@ -572,6 +573,8 @@ async function handleApplyCommand(lead: WaLeadRow, inbound: InboundAgentInput, p
 
   await incrementApplyCounter(lead, 1);
   await clearPendingApply(lead.id);
+  // Already inside the webhook's waitUntil, so awaiting doesn't delay Meta.
+  await notifyRecruiterOfNewApplication(agentDb, insertResult.data.id);
   await sendMessage(
     lead.phone_e164,
     `Application submitted for ${job.public_id || publicId}. You can track it in your dashboard.`,

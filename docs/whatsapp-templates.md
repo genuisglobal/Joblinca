@@ -12,6 +12,7 @@ WhatsApp only delivers **free-form** messages within 24 hours of the person's la
 | 4 | `signup_link_reminder_v1` | No nudge for people who started signup in chat but never set a password |
 | 5 | `job_post_approved_v1` | `lib/jobs/recruiter-notify.ts` uses plain text (admin approve, admin reject and the auto-approve sweep). It only reaches recruiters who have chatted with the bot, and only within 24h of their last message, so most never hear their post went live |
 | 6 | `job_post_rejected_v1` | Same, for rejections |
+| 7 | `new_applicant_alert_v1` | New: recruiters weren't told about new applications on WhatsApp at all |
 
 Also: **add French (`fr`) versions of the existing templates.** All of them are English-only today, so French speakers get English. In WhatsApp Manager, open each one and **Add language → French**, keeping **the same variables in the same order**:
 
@@ -177,9 +178,36 @@ Votre offre « {{1}} » ({{2}}) n'a pas été publiée. Motif : {{3}}. Vous pouv
 
 ---
 
+## 7. `new_applicant_alert_v1`
+
+- **Category:** Utility · **Languages:** `en` + `fr` · **Recipients:** recruiter who posted the job (linked WhatsApp only). At most one per job every 6 hours; the count covers everything since the last alert.
+
+**Body (en)**
+```
+New application for "{{1}}" ({{2}}) from {{3}}. You have {{4}} new application(s) since your last alert. Review them in your JobLinca dashboard.
+```
+
+**Body (fr)**
+```
+Nouvelle candidature pour « {{1}} » ({{2}}) de {{3}}. Vous avez {{4}} nouvelle(s) candidature(s) depuis la dernière alerte. Consultez-les dans votre tableau de bord JobLinca.
+```
+
+**Button:** Visit website, **static** URL
+- Text: `Review applications` / `Voir les candidatures`
+- URL: `https://joblinca.com/dashboard/recruiter/applications`
+
+| Var | Sample |
+|---|---|
+| {{1}} | `Cashier` |
+| {{2}} | `JL-001042` |
+| {{3}} | `Ada Nkem` |
+| {{4}} | `3` |
+
+---
+
 ## Wiring (done; works before approval)
 
-All six are wired through `lib/messaging/wa-templates.ts`: **try the template, fall back to the plain text we sent before.** Until Meta approves a template its call fails and the text goes out exactly as today. Once approved, delivery outside the 24h window starts working without a deploy. Set any env var below to `off` to skip a template, or to a different name (e.g. `team_reply_v2`) to switch versions.
+All seven are wired through `lib/messaging/wa-templates.ts`: **try the template, fall back to the plain text we sent before.** Until Meta approves a template its call fails and the text goes out exactly as today. Once approved, delivery outside the 24h window starts working without a deploy. Set any env var below to `off` to skip a template, or to a different name (e.g. `team_reply_v2`) to switch versions.
 
 | Template | Env var (default = name above) | Where |
 |---|---|---|
@@ -188,5 +216,6 @@ All six are wired through `lib/messaging/wa-templates.ts`: **try the template, f
 | 3 | `WA_TEAM_REPLY_TEMPLATE` | admin `REPLY` in `router.ts`; template only if the user's last message is >24h old |
 | 4 | `WA_SIGNUP_REMINDER_TEMPLATE` | daily cron `/api/cron/wa-signup-reminders` (10:15 UTC): in-chat signups whose link was sent 24h–7d ago and is still unused get **one** reminder with a freshly minted link (only token hashes are stored, so the first link can't be resent; minting expires it) |
 | 5, 6 | `WA_JOB_POST_APPROVED_TEMPLATE`, `WA_JOB_POST_REJECTED_TEMPLATE` | `lib/jobs/recruiter-notify.ts` |
+| 7 | `WA_NEW_APPLICANT_TEMPLATE` | `lib/jobs/new-applicant-alert.ts`, called after website (`POST /api/applications`) and WhatsApp applications; needs migration `20261003000200` |
 
 Language: pass `fr` when `wa_leads.language = 'fr'`, else `en`.
