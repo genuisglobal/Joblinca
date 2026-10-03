@@ -1,12 +1,23 @@
 import { NextResponse } from "next/server";
 import { completeLeadFromInviteToken } from "@/lib/field-registration/service";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import {
+  buildProfileWrite,
+  decideProvisionAccess,
+  isSelfServiceRole,
+  type SelfServiceRole,
+} from "@/lib/profile/provision-access";
 import { sendSignupWelcomeFromAgent } from "@/lib/whatsapp-agent/signup-welcome";
 import { claimRegistrationAttribution } from "@/lib/registration-officers";
 
 /**
- * Creates/updates a profiles row after signup and creates role-specific rows.
- * Uses service role to bypass RLS for initial provisioning.
+ * Creates a profiles row after signup and creates role-specific rows.
+ * Uses service role to bypass RLS for initial provisioning, so it decides
+ * access itself (lib/profile/provision-access.ts): self-service roles only,
+ * the caller must be the user (session cookie or Bearer token) unless the
+ * auth user was created in the last few minutes, and an existing profile's
+ * role is never changed.
  *
  * Database uses role_enum: job_seeker, talent, recruiter, field_agent, vetting_officer, verification_officer, admin, staff
  */
@@ -20,26 +31,16 @@ type IncomingRole =
   | "vetting_officer"
   | "verification_officer";
 
-// The database role_enum values - pass through directly
-function mapRoleToDb(role: IncomingRole): IncomingRole {
-  // Valid roles in the database enum
-  const validRoles: IncomingRole[] = [
-    "job_seeker",
-    "talent",
-    "recruiter",
-    "field_agent",
-    "admin",
-    "staff",
-    "vetting_officer",
-    "verification_officer",
-  ];
-
-  if (validRoles.includes(role)) {
-    return role;
+/** The authenticated caller, from the session cookie or an Authorization: Bearer token. */
+async function resolveCallerId(request: Request): Promise<string | null> {
+  const bearer = request.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  try {
+    const client = createServerSupabaseClient();
+    const { data } = bearer ? await client.auth.getUser(bearer) : await client.auth.getUser();
+    return data.user?.id ?? null;
+  } catch {
+    return null;
   }
-
-  // fallback safety
-  return "job_seeker";
 }
 
 export async function POST(request: Request) {
@@ -90,13 +91,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing userId or role" }, { status: 400 });
     }
 
-    const dbRole = mapRoleToDb(role);
-
     const supabase = createServiceSupabaseClient();
+
+    const callerId = await resolveCallerId(request);
+    let authUserCreatedAt: string | null = null;
+    if (!callerId) {
+      const { data: authUser } = await supabase.auth.admin.getUserById(userId);
+      authUserCreatedAt = authUser?.user?.created_at ?? null;
+    }
+    const access = decideProvisionAccess({ userId, role, callerId, authUserCreatedAt });
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+
     const warnings: string[] = [];
     const { data: existingProfile, error: existingProfileError } = await supabase
       .from("profiles")
-      .select("id")
+      .select("id, role, full_name, phone")
       .eq("id", userId)
       .maybeSingle();
 
@@ -108,6 +119,10 @@ export async function POST(request: Request) {
     }
 
     const isFirstProfileProvision = !existingProfile?.id;
+    // An existing profile keeps its role; role-specific rows follow it.
+    const requestedRole = role as SelfServiceRole;
+    const existingRole = (existingProfile?.role as string | undefined) ?? null;
+    const effectiveRole: string = existingRole ?? requestedRole;
 
     // Resolve referral: look up who referred this user (only if referral columns exist)
     let referredBy: string | null = null;
@@ -128,38 +143,38 @@ export async function POST(request: Request) {
       }
     }
 
-    // 1) Upsert into profiles (MATCH YOUR TABLE COLUMNS)
-    // Build profile data — only include referral fields if the columns exist
-    const profileData: Record<string, unknown> = {
-      id: userId,
-      full_name: fullName ?? null,
+    // 1) Write the profile. New: full row. Existing: never the role, and
+    // only name/phone where empty -- this route provisions, it doesn't edit.
+    const profileData = buildProfileWrite({
+      userId,
+      role: requestedRole,
+      fullName: fullName ?? null,
       phone: phone ?? null,
-      role: dbRole,
-      avatar_url: avatarUrl ?? null,
-    };
+      avatarUrl: avatarUrl ?? null,
+      existing: existingProfile
+        ? { full_name: (existingProfile.full_name as string | null) ?? null, phone: (existingProfile.phone as string | null) ?? null }
+        : null,
+    });
 
-    // Try with referral fields first, fall back without them
-    if (newReferralCode || referralCode) {
-      profileData.referral_code = newReferralCode ?? Math.random().toString(36).slice(2, 10);
-      profileData.referred_by = referredBy;
-    }
-
-    let { error: profileError } = await supabase
-      .from("profiles")
-      .upsert(profileData, { onConflict: "id" });
-
-    // If it fails due to missing referral columns, retry without them
-    if (profileError && profileError.message.includes('referral_code')) {
-      const { referral_code: _rc, referred_by: _rb, ...basicData } = profileData as Record<string, unknown> & { referral_code?: unknown; referred_by?: unknown };
-      const result = await supabase
-        .from("profiles")
-        .upsert(basicData, { onConflict: "id" });
-      profileError = result.error;
+    let profileError: { message: string } | null = null;
+    if (profileData && isFirstProfileProvision) {
+      // Referral fields only on creation, and only if the columns exist.
+      if (newReferralCode || referralCode) {
+        profileData.referral_code = newReferralCode ?? Math.random().toString(36).slice(2, 10);
+        profileData.referred_by = referredBy;
+      }
+      ({ error: profileError } = await supabase.from("profiles").insert(profileData));
+      if (profileError && profileError.message.includes("referral_code")) {
+        const { referral_code: _rc, referred_by: _rb, ...basicData } = profileData;
+        ({ error: profileError } = await supabase.from("profiles").insert(basicData));
+      }
+    } else if (profileData) {
+      ({ error: profileError } = await supabase.from("profiles").update(profileData).eq("id", userId));
     }
 
     if (profileError) {
       return NextResponse.json(
-        { error: `profiles upsert failed: ${profileError.message}` },
+        { error: `profiles write failed: ${profileError.message}` },
         { status: 500 }
       );
     }
@@ -170,7 +185,7 @@ export async function POST(request: Request) {
 
     // If UI role is job_seeker, try job_seeker_profiles (optional)
     // Only insert minimal required fields to avoid column mismatch issues
-    if (role === "job_seeker") {
+    if (effectiveRole === "job_seeker") {
       const { error } = await supabase.from("job_seeker_profiles").upsert(
         {
           user_id: userId,
@@ -187,7 +202,7 @@ export async function POST(request: Request) {
 
     // If UI role is talent, try talent_profiles (optional)
     // Only insert minimal required fields to avoid column mismatch issues
-    if (role === "talent") {
+    if (effectiveRole === "talent") {
       const { error } = await supabase.from("talent_profiles").upsert(
         {
           user_id: userId,
@@ -203,7 +218,7 @@ export async function POST(request: Request) {
     }
 
     // Recruiter: MUST create public.recruiters row because jobs.recruiter_id FK points there
-    if (role === "recruiter") {
+    if (effectiveRole === "recruiter") {
       // A) create/ensure recruiters row exists (critical for FK)
       const { error: recruitersError } = await supabase.from("recruiters").upsert(
         {
@@ -270,7 +285,7 @@ export async function POST(request: Request) {
 
     if (
       officerCodeToClaim &&
-      !["field_agent", "admin", "staff", "vetting_officer", "verification_officer"].includes(role)
+      isSelfServiceRole(effectiveRole)
     ) {
       try {
         await claimRegistrationAttribution(supabase, {
@@ -293,7 +308,7 @@ export async function POST(request: Request) {
       }
     }
 
-    if (isFirstProfileProvision && role === "job_seeker" && phone?.trim()) {
+    if (isFirstProfileProvision && effectiveRole === "job_seeker" && phone?.trim()) {
       try {
         await sendSignupWelcomeFromAgent({
           phone,
