@@ -4,6 +4,8 @@ export type RegistrationLeadRole = (typeof REGISTRATION_LEAD_ROLES)[number];
 export const REGISTRATION_LEAD_CAPTURE_MODES = [
   'quick_capture',
   'assisted_signup',
+  // Self-service from the WhatsApp agent: no officer involved.
+  'whatsapp_self',
 ] as const;
 export type RegistrationLeadCaptureMode = (typeof REGISTRATION_LEAD_CAPTURE_MODES)[number];
 
@@ -46,8 +48,9 @@ export type RegistrationLeadInviteStatus =
 
 export interface RegistrationLeadRecord {
   id: string;
-  officer_user_id: string;
-  officer_code_snapshot: string;
+  /** Null for whatsapp_self leads. */
+  officer_user_id: string | null;
+  officer_code_snapshot: string | null;
   intended_role: RegistrationLeadRole;
   capture_mode: RegistrationLeadCaptureMode;
   full_name: string;

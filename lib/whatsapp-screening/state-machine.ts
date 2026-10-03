@@ -141,7 +141,10 @@ export function parseApplyIntent(
 
 export function isCancelIntent(inputText: string): boolean {
   const value = normalizeText(inputText);
-  return ['stop', 'unsubscribe', 'cancel', 'quit', 'exit', 'non'].includes(value);
+  // No "non" here: it is the French answer to every yes/no screening question,
+  // and this check runs before the answer is parsed, so it used to cancel the
+  // candidate's application instead of recording "no".
+  return ['stop', 'unsubscribe', 'cancel', 'quit', 'exit', 'annuler'].includes(value);
 }
 
 export function buildHybridQuestionCatalog(_jobTitle: string): ScreeningQuestion[] {

@@ -4,9 +4,15 @@ import { toE164 } from '@/lib/whatsapp';
 import {
   sendWhatsappMessage,
   sendWhatsappQuickReplies,
+  sendWhatsappTemplate,
 } from '@/lib/messaging/whatsapp';
+import {
+  isWithinServiceWindow,
+  sendTemplateWithFallback,
+  type TemplateSendResult,
+} from '@/lib/messaging/wa-templates';
+import { getLastInboundAt } from '@/lib/whatsapp-db';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
-import { resolveJobLifecycleStatus } from '@/lib/jobs/lifecycle';
 import {
   getOrCreateWaLead,
   syncLeadUserLink,
@@ -20,6 +26,9 @@ import {
   clearPendingApply,
   getProfileRole,
   setLeadLanguage,
+  setLeadPause,
+  isLeadPaused,
+  findWaLeadByPhone,
   type WaLeadRow,
 } from '@/lib/whatsapp-agent/leads';
 import {
@@ -33,6 +42,9 @@ import {
   isGreeting,
   isHelpMenu,
   isNextCommand,
+  isOptOutCommand,
+  parseAdminCommand,
+  type AdminCommand,
   looksLikeInternshipIntent,
   looksLikeJobIntent,
   extractLocationHint,
@@ -69,9 +81,23 @@ import {
   FREE_MONTHLY_VIEW_LIMIT,
   getWaLimitContext,
 } from '@/lib/whatsapp-agent/limits';
-import { getUserSubscription } from '@/lib/subscriptions';
-import { callAiText, isAiConfigured } from '@/lib/ai/client';
-import { buildRecruiterDescriptionSystemPrompt } from '@/lib/ai/policies';
+import { decideAgentRoute } from '@/lib/whatsapp-agent/agent-config';
+import { notifyRecruiterOfNewApplication } from '@/lib/jobs/new-applicant-alert';
+import { handleInboundMedia, inboundMediaKind } from '@/lib/whatsapp-agent/agent/media';
+import {
+  checkRecruiterPostingAccess,
+  createJobFromWhatsappDraft,
+  type WhatsappJobDraft,
+} from '@/lib/whatsapp-agent/recruiter-posting';
+import { isAdminAlertRecipient, sendAdminTemplateAlert } from '@/lib/admin-alerts';
+import { acquireLeadLock } from '@/lib/whatsapp-agent/agent/lock';
+import {
+  DAILY_AGENT_TURN_CAP,
+  defaultMediaDeps,
+  countRecentAgentTurns,
+  isAgentEligible,
+  runAgentForLead,
+} from '@/lib/whatsapp-agent/agent/orchestrator';
 
 const agentDb = createServiceSupabaseClient();
 const SEARCH_PAGE_SIZE = 10;
@@ -81,9 +107,6 @@ const ACCOUNT_URL = `${APP_URL}/auth/login`;
 const REGISTER_URL = `${APP_URL}/auth/register`;
 const SUBSCRIBE_URL = `${APP_URL}/pricing`;
 const JOBS_URL = `${APP_URL}/jobs`;
-const WA_RECRUITER_POSTING_FEE_XAF = Number(process.env.WA_RECRUITER_POSTING_FEE_XAF || '0');
-const WA_RECRUITER_REQUIRE_SUBSCRIPTION =
-  process.env.WA_RECRUITER_REQUIRE_SUBSCRIPTION !== '0';
 interface InboundAgentInput {
   message: WAInboundMessage;
   textBody: string | null;
@@ -133,14 +156,6 @@ function sanitizeFreeText(input: string, max = 500): string {
   const compact = input.replace(/\s+/g, ' ').trim();
   if (compact.length <= max) return compact;
   return compact.slice(0, max);
-}
-
-function parseSalary(raw: string): number | null {
-  const digits = raw.replace(/[^\d]/g, '');
-  if (!digits) return null;
-  const value = Number(digits);
-  if (Number.isNaN(value)) return null;
-  return value;
 }
 
 function buildRegisterUrl(phone: string, role: 'job_seeker' | 'recruiter' = 'job_seeker'): string {
@@ -202,68 +217,6 @@ function parseAccountChoice(input: string): 'create' | 'continue' | null {
 function getSearchTypeFromLead(lead: WaLeadRow): 'job' | 'internship' {
   const payload = mergePayload(lead.state_payload, {});
   return payload.jobSearch?.searchType === 'internship' ? 'internship' : 'job';
-}
-
-function detectApplyMethod(raw: string): {
-  applyMethod: 'joblinca' | 'external_url' | 'email' | 'phone' | 'whatsapp' | 'multiple';
-  externalApplyUrl: string | null;
-  applyEmail: string | null;
-  applyPhone: string | null;
-  applyWhatsapp: string | null;
-} {
-  const value = raw.trim();
-  const lower = value.toLowerCase();
-  const emailMatch = value.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
-  const urlMatch = value.match(/https?:\/\/[^\s]+/i);
-  const phoneDigits = value.replace(/[^\d]/g, '');
-
-  if (urlMatch) {
-    return {
-      applyMethod: 'external_url',
-      externalApplyUrl: urlMatch[0],
-      applyEmail: null,
-      applyPhone: null,
-      applyWhatsapp: null,
-    };
-  }
-
-  if (emailMatch) {
-    return {
-      applyMethod: 'email',
-      externalApplyUrl: null,
-      applyEmail: emailMatch[0],
-      applyPhone: null,
-      applyWhatsapp: null,
-    };
-  }
-
-  if (lower.includes('whatsapp') && phoneDigits.length >= 8) {
-    return {
-      applyMethod: 'whatsapp',
-      externalApplyUrl: null,
-      applyEmail: null,
-      applyPhone: null,
-      applyWhatsapp: phoneDigits,
-    };
-  }
-
-  if (phoneDigits.length >= 8) {
-    return {
-      applyMethod: 'phone',
-      externalApplyUrl: null,
-      applyEmail: null,
-      applyPhone: phoneDigits,
-      applyWhatsapp: null,
-    };
-  }
-
-  return {
-    applyMethod: 'joblinca',
-    externalApplyUrl: null,
-    applyEmail: null,
-    applyPhone: null,
-    applyWhatsapp: null,
-  };
 }
 
 async function sendMessage(phone: string, message: string, userId?: string | null): Promise<void> {
@@ -340,96 +293,27 @@ async function enforceRecruiterPostingAccess(
   lead: WaLeadRow,
   role: string | null
 ): Promise<{ allowed: boolean; reason?: string }> {
-  if (!lead.linked_user_id) {
+  const access = await checkRecruiterPostingAccess(lead.linked_user_id, role);
+  if (!access.allowed) {
+    const message =
+      access.reason === 'missing_account'
+        ? `Recruiter posting requires a website account. Create account: ${buildRegisterUrl(lead.phone_e164, 'recruiter')}`
+        : access.reason === 'not_recruiter'
+          ? `This number is not linked to a recruiter account. Login/create recruiter profile: ${buildRegisterUrl(lead.phone_e164, 'recruiter')}`
+          : `Active recruiter subscription required before posting jobs. Subscribe here: ${SUBSCRIBE_URL}`;
+    await sendMessage(lead.phone_e164, message, lead.linked_user_id);
+    return { allowed: false, reason: access.reason };
+  }
+
+  if (access.feeXaf > 0) {
     await sendMessage(
       lead.phone_e164,
-      `Recruiter posting requires a website account. Create account: ${buildRegisterUrl(lead.phone_e164, 'recruiter')}`,
-      lead.linked_user_id
-    );
-    return { allowed: false, reason: 'missing_account' };
-  }
-
-  if (role !== 'recruiter' && role !== 'admin' && role !== 'staff') {
-    await sendMessage(
-      lead.phone_e164,
-      `This number is not linked to a recruiter account. Login/create recruiter profile: ${buildRegisterUrl(lead.phone_e164, 'recruiter')}`,
-      lead.linked_user_id
-    );
-    return { allowed: false, reason: 'not_recruiter' };
-  }
-
-  if (role === 'admin' || role === 'staff') {
-    return { allowed: true };
-  }
-
-  if (!WA_RECRUITER_REQUIRE_SUBSCRIPTION) {
-    return { allowed: true };
-  }
-
-  const subscription = await getUserSubscription(lead.linked_user_id);
-  if (!subscription.isActive || subscription.plan?.role !== 'recruiter') {
-    await sendMessage(
-      lead.phone_e164,
-      `Active recruiter subscription required before posting jobs. Subscribe here: ${SUBSCRIBE_URL}`,
-      lead.linked_user_id
-    );
-    return { allowed: false, reason: 'missing_subscription' };
-  }
-
-  if (WA_RECRUITER_POSTING_FEE_XAF > 0) {
-    await sendMessage(
-      lead.phone_e164,
-      `Posting fee: ${WA_RECRUITER_POSTING_FEE_XAF.toLocaleString('en-US')} XAF (charged on website).`,
+      `Posting fee: ${access.feeXaf.toLocaleString('en-US')} XAF (charged on website).`,
       lead.linked_user_id
     );
   }
 
   return { allowed: true };
-}
-
-async function expandRecruiterDescriptionWithAi(input: {
-  jobTitle: string;
-  companyName: string | null;
-  seedDescription: string;
-}): Promise<string> {
-  const seed = input.seedDescription.trim();
-  if (!seed) return seed;
-  if (!isAiConfigured()) return seed;
-
-  try {
-    const completionPromise = callAiText({
-      temperature: 0.3,
-      maxTokens: 700,
-      timeoutMs: 8000,
-      messages: [
-        { role: 'system', content: buildRecruiterDescriptionSystemPrompt() },
-        {
-          role: 'user',
-          content: [
-            `Job title: ${input.jobTitle}`,
-            `Company: ${input.companyName || 'Not specified'}`,
-            `Recruiter short brief: ${seed}`,
-            'Rewrite the brief into a practical markdown job description.',
-          ].join('\n'),
-        },
-      ],
-    });
-
-    const timeoutPromise = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), 8000)
-    );
-    const completion = await Promise.race([completionPromise, timeoutPromise]);
-    if (!completion) return seed;
-
-    const generated = completion.text?.trim();
-    if (!generated) return seed;
-    return generated;
-  } catch (error) {
-    logEvent('warn', 'recruiter_description_ai_failed', {
-      error: error instanceof Error ? error.message : 'unknown_error',
-    });
-    return seed;
-  }
 }
 
 async function loadLead(input: InboundAgentInput): Promise<WaLeadRow> {
@@ -689,6 +573,8 @@ async function handleApplyCommand(lead: WaLeadRow, inbound: InboundAgentInput, p
 
   await incrementApplyCounter(lead, 1);
   await clearPendingApply(lead.id);
+  // Already inside the webhook's waitUntil, so awaiting doesn't delay Meta.
+  await notifyRecruiterOfNewApplication(agentDb, insertResult.data.id);
   await sendMessage(
     lead.phone_e164,
     `Application submitted for ${job.public_id || publicId}. You can track it in your dashboard.`,
@@ -827,25 +713,17 @@ async function handleRecruiterFlow(
   return true;
 }
 
-type ConfirmedRecruiterDraft = {
-  jobTitle: string;
-  location: string;
-  salary: string;
-  description: string;
-  applicationMethod: string;
-};
+type ConfirmedRecruiterDraft = WhatsappJobDraft;
 
 async function createRecruiterJobFromDraft(
   lead: WaLeadRow,
   draft: ConfirmedRecruiterDraft
 ): Promise<boolean> {
-  const recruiterProfile = await agentDb
-    .from('recruiters')
-    .select('id, company_name')
-    .eq('id', lead.linked_user_id)
-    .maybeSingle();
+  const result = lead.linked_user_id
+    ? await createJobFromWhatsappDraft(lead.linked_user_id, draft)
+    : ({ status: 'no_recruiter_profile' } as const);
 
-  if (!recruiterProfile.data?.id) {
+  if (result.status === 'no_recruiter_profile') {
     await sendMessage(
       lead.phone_e164,
       `Recruiter profile not complete. Please complete it on website: ${APP_URL}/dashboard/recruiter/profile`,
@@ -855,46 +733,8 @@ async function createRecruiterJobFromDraft(
     return true;
   }
 
-  const applyMethod = detectApplyMethod(draft.applicationMethod);
-  const salary = parseSalary(draft.salary);
-  const aiDescription = await expandRecruiterDescriptionWithAi({
-    jobTitle: draft.jobTitle,
-    companyName: recruiterProfile.data.company_name || null,
-    seedDescription: draft.description,
-  });
-  const lifecycleStatus = resolveJobLifecycleStatus({
-    published: false,
-    approval_status: 'pending',
-    closes_at: null,
-    removed_at: null,
-    archived_at: null,
-    filled_at: null,
-  });
-
-  const { data: createdJob, error: createError } = await agentDb
-    .from('jobs')
-    .insert({
-      recruiter_id: lead.linked_user_id,
-      posted_by: lead.linked_user_id,
-      posted_by_role: 'recruiter',
-      title: draft.jobTitle,
-      location: draft.location,
-      salary,
-      description: aiDescription || draft.description,
-      company_name: recruiterProfile.data.company_name || null,
-      published: false,
-      approval_status: 'pending',
-      lifecycle_status: lifecycleStatus,
-      apply_method: applyMethod.applyMethod,
-      external_apply_url: applyMethod.externalApplyUrl,
-      apply_email: applyMethod.applyEmail,
-      apply_phone: applyMethod.applyPhone,
-      apply_whatsapp: applyMethod.applyWhatsapp,
-    })
-    .select('id, public_id')
-    .single();
-
-  if (createError || !createdJob) {
+  if (result.status === 'error') {
+    logEvent('error', 'recruiter_job_create_failed', { leadId: lead.id, error: result.message });
     await sendMessage(
       lead.phone_e164,
       `Could not create job now. Please post on website: ${APP_URL}/dashboard/recruiter/jobs/new`,
@@ -907,7 +747,7 @@ async function createRecruiterJobFromDraft(
   await updateLeadState(lead.id, 'menu', 'recruiter', mergePayload({}, {}));
   await sendMessage(
     lead.phone_e164,
-    `Job created (${createdJob.public_id || createdJob.id}) and sent for review. Reply MENU for more options.`,
+    `Job created (${result.publicId || result.jobId}) and sent for review. Reply MENU for more options.`,
     lead.linked_user_id
   );
   return true;
@@ -1231,16 +1071,22 @@ async function handleMenuChoice(lead: WaLeadRow, choice: 1 | 2 | 3 | 4, role: st
   await sendMenuAndSetState(lead);
 }
 
-export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): Promise<InboundAgentResult> {
+/**
+ * The menu-driven state machine. Answers everything when the agent is off,
+ * and is the fallback whenever an agent turn fails.
+ */
+async function handleLegacyInbound(
+  input: InboundAgentInput,
+  preloadedLead: WaLeadRow | null = null
+): Promise<InboundAgentResult> {
   const inboundText = getInboundText(input.message, input.textBody);
   if (!inboundText) {
     return { handled: false, reason: 'not_text' };
   }
 
   try {
-    let lead = await loadLead(input);
+    let lead = preloadedLead ?? (await loadLead(input));
     const text = sanitizeFreeText(inboundText);
-    const lower = text.toLowerCase();
     const role = lead.linked_user_id ? await getProfileRole(lead.linked_user_id) : null;
 
     if (lead.conversation_state.startsWith('talent.')) {
@@ -1256,7 +1102,7 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
       });
     }
 
-    if (['stop', 'unsubscribe', 'no', 'non'].includes(lower)) {
+    if (isOptOutCommand(text)) {
       return { handled: false, reason: 'delegated' };
     }
 
@@ -1426,6 +1272,227 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
     });
     return { handled: false, reason: 'error' };
   }
+}
+
+function inboundTimestampIso(message: WAInboundMessage): string {
+  const seconds = Number(message.timestamp);
+  return Number.isFinite(seconds) && seconds > 0
+    ? new Date(seconds * 1000).toISOString()
+    : new Date().toISOString();
+}
+
+const HANDOFF_EXTEND_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * REPLY / RESUME from an admin phone. Lets the team run a handoff entirely
+ * from WhatsApp: replies are relayed from the business number, so the user
+ * stays in one thread and everything lands in whatsapp_logs.
+ */
+async function handleAdminCommand(adminPhone: string, command: AdminCommand): Promise<void> {
+  const target = await findWaLeadByPhone(command.phone);
+  if (!target) {
+    await sendMessage(adminPhone, `No WhatsApp conversation found for ${command.phone}.`);
+    return;
+  }
+  const fr = target.language === 'fr';
+
+  if (command.type === 'reply') {
+    const replyText = `${fr ? '👤 Équipe JobLinca' : '👤 JobLinca team'}: ${command.message}`;
+    // Free text only reaches them within 24h of their last message; after
+    // that only the approved team_reply template gets through.
+    const withinWindow = isWithinServiceWindow(await getLastInboundAt(target.phone_e164));
+    let delivery: TemplateSendResult;
+    if (withinWindow) {
+      delivery = await sendWhatsappMessage(target.phone_e164, replyText, target.linked_user_id)
+        .then(() => 'text' as const)
+        .catch(() => 'failed' as const);
+    } else {
+      const firstName = ((await getProfileDisplayName(target.linked_user_id)) || target.display_name || '')
+        .split(/\s+/)[0];
+      delivery = await sendTemplateWithFallback(
+        {
+          sendTemplate: (to, name, lang, components) =>
+            sendWhatsappTemplate(to, name, lang, components, target.linked_user_id),
+          sendText: (to, text) => sendWhatsappMessage(to, text, target.linked_user_id),
+        },
+        {
+          to: target.phone_e164,
+          template: 'teamReply',
+          language: target.language,
+          body: [firstName || (fr ? 'à vous' : 'there'), command.message],
+          fallbackText: replyText,
+        }
+      );
+    }
+    if (delivery === 'failed') {
+      await sendMessage(
+        adminPhone,
+        `✗ Could not deliver to ${target.phone_e164}${withinWindow ? '' : ' -- their last message was over 24h ago and the team_reply template is not approved yet'}.`
+      );
+      return;
+    }
+    // Each reply keeps the human in charge for another day.
+    await setLeadPause(
+      target.id,
+      new Date(Date.now() + HANDOFF_EXTEND_MS).toISOString(),
+      target.handoff_reason ?? 'admin_reply'
+    );
+    await sendMessage(adminPhone, `✓ Sent to ${target.phone_e164}. The bot stays quiet; RESUME ${target.phone_e164} to hand back.`);
+    return;
+  }
+
+  await setLeadPause(target.id, null, null);
+  await updateLeadState(target.id, 'agent', target.role_selected, target.state_payload || {});
+  await sendMessage(
+    target.phone_e164,
+    fr
+      ? "Vous êtes de nouveau avec l'assistant JobLinca. Dites-moi quel emploi vous cherchez."
+      : "You're back with the JobLinca assistant. Tell me what job you're looking for.",
+    target.linked_user_id
+  );
+  await sendMessage(adminPhone, `✓ ${target.phone_e164} is back with the bot.`);
+}
+
+/**
+ * Entry point. Per lead, WA_AGENT_MODE / allowlist / rollout decide:
+ *   off    -- menu flow only (exactly the pre-agent behaviour)
+ *   live   -- the agent answers; any failure falls back to the menu flow
+ *   shadow -- the menu flow answers; the agent then runs read-only and its
+ *             would-be reply is logged to wa_agent_turns for comparison
+ */
+export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): Promise<InboundAgentResult> {
+  const typedText = getInboundText(input.message, input.textBody);
+  const mediaKind = typedText ? null : inboundMediaKind(input.message);
+  if (!typedText && !mediaKind) {
+    return { handled: false, reason: 'not_text' };
+  }
+
+  const senderPhone = toE164(input.waPhone || input.message.from);
+
+  // Admin handoff commands work in every mode, so a handoff can always be closed.
+  const adminCommand = typedText ? parseAdminCommand(typedText) : null;
+  if (adminCommand && isAdminAlertRecipient(senderPhone)) {
+    try {
+      await handleAdminCommand(senderPhone, adminCommand);
+    } catch (error) {
+      logEvent('error', 'admin_command_failed', {
+        error: error instanceof Error ? error.message : 'unknown_error',
+      });
+      await sendMessage(senderPhone, 'Command failed -- check the logs.');
+    }
+    return { handled: true, reason: 'handled' };
+  }
+
+  const route = decideAgentRoute(senderPhone);
+  if (route === 'off') {
+    return handleLegacyInbound(input);
+  }
+  // Voice notes, CVs and photos are only understood by the live agent; for
+  // everyone else media stays unhandled, as it always was.
+  if (!typedText && route !== 'live') {
+    return { handled: false, reason: 'not_text' };
+  }
+
+  let lead: WaLeadRow;
+  try {
+    lead = await loadLead(input);
+  } catch (error) {
+    logEvent('error', 'agent_load_lead_failed', {
+      waMessageId: input.message.id,
+      error: error instanceof Error ? error.message : 'unknown_error',
+    });
+    return handleLegacyInbound(input);
+  }
+
+  // A person has this conversation: stay silent, but pass the message on so
+  // the team sees follow-ups without opening anything. STOP still works.
+  const pausedPreview = typedText ? sanitizeFreeText(typedText, 700) : `[${mediaKind}]`;
+  if (isLeadPaused(lead) && !(typedText && isOptOutCommand(typedText))) {
+    await sendAdminTemplateAlert(
+      'adminUserMessage',
+      [lead.phone_e164, pausedPreview],
+      [`💬 ${lead.phone_e164}: ${pausedPreview}`, `REPLY ${lead.phone_e164} <message> · RESUME ${lead.phone_e164}`].join('\n')
+    ).catch(() => undefined);
+    logEvent('info', 'paused_lead_message_forwarded', { leadId: lead.id });
+    return { handled: true, reason: 'handled' };
+  }
+
+  const displayName = await getProfileDisplayName(lead.linked_user_id);
+  const role = lead.linked_user_id ? await getProfileRole(lead.linked_user_id) : null;
+
+  let inboundText: string;
+  if (typedText) {
+    inboundText = typedText;
+  } else {
+    const media = await handleInboundMedia({ message: input.message, lead, role, deps: defaultMediaDeps });
+    if (media.kind === 'ignore') return { handled: false, reason: 'not_text' };
+    if (media.kind === 'reply') {
+      logEvent('info', 'agent_media_handled', { leadId: lead.id, event: media.event });
+      await sendMessage(lead.phone_e164, media.reply, lead.linked_user_id);
+      return { handled: true, reason: 'handled' };
+    }
+    inboundText = media.text;
+    // From here on a transcribed voice note is just a message: the menu flow
+    // and exact commands see the transcript as its text.
+    input = { ...input, textBody: media.text };
+  }
+
+  const text = sanitizeFreeText(inboundText, 1000);
+  const eligible =
+    isAgentEligible(lead, text, role) && (await countRecentAgentTurns(lead.id)) < DAILY_AGENT_TURN_CAP;
+  const turnParams = {
+    // Line breaks kept: a recruiter's pasted job ad becomes the description.
+    inboundText: inboundText.trim().slice(0, 4000),
+    role,
+    waMessageId: input.message.id,
+    inboundAtIso: inboundTimestampIso(input.message),
+  };
+
+  if (route === 'live' && eligible) {
+    const lock = await acquireLeadLock(lead.id);
+    try {
+      // Re-read under the lease: a turn that just finished may have moved
+      // this lead's state since we first loaded it.
+      lead = await loadLead(input);
+      const outcome = await runAgentForLead({
+        ...turnParams,
+        lead,
+        route: 'live',
+        displayName,
+      });
+      if (outcome.ok) {
+        await sendMessage(lead.phone_e164, outcome.reply, lead.linked_user_id);
+        if (outcome.followUp?.type === 'apply') {
+          // The existing APPLY handler owns limits, duplicates, screening and
+          // external-apply instructions; it sends its own result message.
+          await handleApplyCommand(lead, input, outcome.followUp.publicId);
+        }
+        return { handled: true, reason: 'handled' };
+      }
+      logEvent('warn', 'agent_fallback', { leadId: lead.id, reason: outcome.reason });
+      return await handleLegacyInbound(input, lead);
+    } finally {
+      await lock.release();
+    }
+  }
+
+  const result = await handleLegacyInbound(input, lead);
+
+  if (route === 'shadow' && eligible && result.handled) {
+    await runAgentForLead({
+      ...turnParams,
+      lead,
+      route: 'shadow',
+      displayName,
+    }).catch((error) => {
+      logEvent('warn', 'agent_shadow_failed', {
+        leadId: lead.id,
+        error: error instanceof Error ? error.message : 'unknown_error',
+      });
+    });
+  }
+
+  return result;
 }
 
 export function monthlyLimitSummaryMessage(): string {

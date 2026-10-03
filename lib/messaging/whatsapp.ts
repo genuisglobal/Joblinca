@@ -12,7 +12,7 @@ import {
   type WAQuickReplyButton,
   type WATemplateComponent,
 } from '@/lib/whatsapp';
-import { saveOutboundMessage } from '@/lib/whatsapp-db';
+import { getLeadLanguage, saveOutboundMessage } from '@/lib/whatsapp-db';
 
 // ─── Send a plain-text message ────────────────────────────────────────────────
 
@@ -60,6 +60,41 @@ export async function sendWhatsappTemplate(
 }
 
 // â”€â”€â”€ Send quick reply buttons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/** Meta's answer when a template has no approved copy in the requested language. */
+function isMissingTranslationError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /132001|does not exist in the translation/i.test(message);
+}
+
+/**
+ * Send a template in the recipient's language when we can. If they write to
+ * us in French, try the template's `fr` copy first; when Meta has no
+ * approved French copy (error 132001) send the configured language as
+ * before. So French speakers keep getting the English template until the
+ * French one is approved, then get French with no deploy.
+ *
+ * The French copy must use the same variables, in the same order.
+ */
+export async function sendWhatsappTemplateLocalized(
+  to: string,
+  templateName: string,
+  configuredLanguage: string,
+  components: WATemplateComponent[] = [],
+  userId?: string | null,
+  lookupLanguage: (phone: string) => Promise<'en' | 'fr' | null> = getLeadLanguage
+): Promise<void> {
+  const preferred = configuredLanguage === 'en' ? await lookupLanguage(to).catch(() => null) : null;
+  if (preferred === 'fr') {
+    try {
+      await sendWhatsappTemplate(to, templateName, 'fr', components, userId);
+      return;
+    } catch (error) {
+      if (!isMissingTranslationError(error)) throw error;
+    }
+  }
+  await sendWhatsappTemplate(to, templateName, configuredLanguage, components, userId);
+}
 
 export async function sendWhatsappQuickReplies(opts: {
   to: string;
@@ -112,7 +147,7 @@ export async function sendFieldRegistrationInviteWhatsapp(opts: {
   ];
 
   try {
-    await sendWhatsappTemplate(
+    await sendWhatsappTemplateLocalized(
       opts.to,
       templateName,
       languageCode,
@@ -170,7 +205,7 @@ export async function sendJobAlertWhatsapp(opts: {
       ],
     },
   ];
-  await sendWhatsappTemplate(
+  await sendWhatsappTemplateLocalized(
     opts.to,
     'job_alert_v1',
     'en',
@@ -207,7 +242,7 @@ export async function sendInterviewReminderWhatsapp(opts: {
       ],
     },
   ];
-  await sendWhatsappTemplate(
+  await sendWhatsappTemplateLocalized(
     opts.to,
     templateName,
     languageCode,
@@ -241,7 +276,7 @@ export async function sendInterviewScheduledWhatsapp(opts: {
   ];
 
   try {
-    await sendWhatsappTemplate(
+    await sendWhatsappTemplateLocalized(
       opts.to,
       templateName,
       languageCode,
@@ -347,7 +382,7 @@ export async function sendInterviewRescheduledWhatsapp(opts: {
   ];
 
   try {
-    await sendWhatsappTemplate(
+    await sendWhatsappTemplateLocalized(
       opts.to,
       templateName,
       languageCode,
@@ -408,7 +443,7 @@ export async function sendInterviewCancelledWhatsapp(opts: {
   ];
 
   try {
-    await sendWhatsappTemplate(
+    await sendWhatsappTemplateLocalized(
       opts.to,
       templateName,
       languageCode,
@@ -545,7 +580,7 @@ export async function sendApplicationStatusAlertWhatsapp(opts: {
   ];
 
   try {
-    await sendWhatsappTemplate(
+    await sendWhatsappTemplateLocalized(
       opts.to,
       templateName,
       languageCode,
@@ -605,7 +640,7 @@ export async function sendMatchedJobsDigestWhatsapp(opts: {
   ];
 
   try {
-    await sendWhatsappTemplate(
+    await sendWhatsappTemplateLocalized(
       opts.to,
       templateName,
       languageCode,

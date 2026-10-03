@@ -46,7 +46,8 @@ export async function POST(
     await notifyRecruiterViaWhatsApp(
       createServiceSupabaseClient(),
       data.recruiter_id,
-      `❌ Your job "${data.title}" was not approved.\nReason: ${reason.trim()}\n\nYou can edit and resubmit it from your dashboard.`
+      `❌ Your job "${data.title}" was not approved.\nReason: ${reason.trim()}\n\nYou can edit and resubmit it from your dashboard.`,
+      { kind: 'rejected', jobTitle: data.title, publicId: data.public_id ?? null, reason: reason.trim() }
     );
 
     return NextResponse.json({ success: true, job: data });

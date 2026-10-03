@@ -32,7 +32,8 @@ export default async function CompleteRegistrationPage({
           <h1 className="text-2xl font-semibold text-white">Registration link unavailable</h1>
           <p className="mt-3 text-sm text-neutral-400">
             This link is invalid, expired, or has already been used. Ask your JobLinca
-            registration officer to send you a fresh link.
+            registration officer for a fresh link, or message JobLinca on WhatsApp and ask
+            to create an account.
           </p>
         </div>
       </main>
@@ -50,8 +51,9 @@ export default async function CompleteRegistrationPage({
             Finish your JobLinca account
           </h1>
           <p className="mt-3 text-sm text-neutral-400">
-            Your registration officer already saved your basic details. Add your email and
-            password to activate your account.
+            {inviteContext.lead.capture_mode === 'whatsapp_self'
+              ? 'You started your account on WhatsApp. Choose a password to activate it.'
+              : 'Your registration officer already saved your basic details. Add your email and password to activate your account.'}
           </p>
 
           <div className="mt-6 grid gap-4 rounded-xl border border-neutral-800 bg-neutral-950/60 p-4 md:grid-cols-3">
