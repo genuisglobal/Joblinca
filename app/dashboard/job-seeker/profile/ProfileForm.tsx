@@ -325,7 +325,7 @@ export default function ProfileForm({ profile }: ProfileFormProps) {
                 <div>
                   <p className="text-white font-medium">Resume uploaded</p>
                   <a
-                    href={formData.resumeUrl}
+                    href="/api/profile/resume/file"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-blue-400 hover:text-blue-300 text-sm"
