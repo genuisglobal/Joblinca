@@ -1,4 +1,6 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import { signVerificationDocuments } from '@/lib/storage/sign-documents';
 import VerificationsClient from './VerificationsClient';
 
 interface PageProps {
@@ -82,11 +84,15 @@ export default async function AdminVerificationsPage({ searchParams }: PageProps
     `)
     .order('created_at', { ascending: false });
 
-  const verificationDocs =
+  // ID cards, selfies and business registrations are in a private bucket:
+  // the browser only ever gets short-lived signed links.
+  const verificationDocs = await signVerificationDocuments(
+    createServiceSupabaseClient(),
     (rawVerificationDocs ?? []).map((doc: any) => ({
       ...doc,
       officer: Array.isArray(doc.officer) ? doc.officer[0] ?? null : doc.officer ?? null,
-    })) ?? [];
+    }))
+  );
 
   // Get counts (use normalized arrays)
   const recruiterCounts = {

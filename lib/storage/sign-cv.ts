@@ -44,7 +44,9 @@ export async function signCvUrl(
     return data.signedUrl;
   }
 
-  // A private-bucket URL that isn't in the owner's folder is never handed out.
+  // A storage URL we couldn't sign (someone else's folder, another bucket, an
+  // odd path) is never handed out; only genuinely external links pass.
   if (isPrivateCvReference(value)) return null;
+  if (typeof value === 'string' && /\/storage\/v1\/object\//i.test(value)) return null;
   return getHttpUrl(value);
 }
