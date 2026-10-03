@@ -4,7 +4,14 @@ import { toE164 } from '@/lib/whatsapp';
 import {
   sendWhatsappMessage,
   sendWhatsappQuickReplies,
+  sendWhatsappTemplate,
 } from '@/lib/messaging/whatsapp';
+import {
+  isWithinServiceWindow,
+  sendTemplateWithFallback,
+  type TemplateSendResult,
+} from '@/lib/messaging/wa-templates';
+import { getLastInboundAt } from '@/lib/whatsapp-db';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
 import {
   getOrCreateWaLead,
@@ -81,7 +88,7 @@ import {
   createJobFromWhatsappDraft,
   type WhatsappJobDraft,
 } from '@/lib/whatsapp-agent/recruiter-posting';
-import { isAdminAlertRecipient, sendAdminWhatsAppAlert } from '@/lib/admin-alerts';
+import { isAdminAlertRecipient, sendAdminTemplateAlert } from '@/lib/admin-alerts';
 import { acquireLeadLock } from '@/lib/whatsapp-agent/agent/lock';
 import {
   DAILY_AGENT_TURN_CAP,
@@ -1287,11 +1294,40 @@ async function handleAdminCommand(adminPhone: string, command: AdminCommand): Pr
   const fr = target.language === 'fr';
 
   if (command.type === 'reply') {
-    await sendMessage(
-      target.phone_e164,
-      `${fr ? '👤 Équipe JobLinca' : '👤 JobLinca team'}: ${command.message}`,
-      target.linked_user_id
-    );
+    const replyText = `${fr ? '👤 Équipe JobLinca' : '👤 JobLinca team'}: ${command.message}`;
+    // Free text only reaches them within 24h of their last message; after
+    // that only the approved team_reply template gets through.
+    const withinWindow = isWithinServiceWindow(await getLastInboundAt(target.phone_e164));
+    let delivery: TemplateSendResult;
+    if (withinWindow) {
+      delivery = await sendWhatsappMessage(target.phone_e164, replyText, target.linked_user_id)
+        .then(() => 'text' as const)
+        .catch(() => 'failed' as const);
+    } else {
+      const firstName = ((await getProfileDisplayName(target.linked_user_id)) || target.display_name || '')
+        .split(/\s+/)[0];
+      delivery = await sendTemplateWithFallback(
+        {
+          sendTemplate: (to, name, lang, components) =>
+            sendWhatsappTemplate(to, name, lang, components, target.linked_user_id),
+          sendText: (to, text) => sendWhatsappMessage(to, text, target.linked_user_id),
+        },
+        {
+          to: target.phone_e164,
+          template: 'teamReply',
+          language: target.language,
+          body: [firstName || (fr ? 'à vous' : 'there'), command.message],
+          fallbackText: replyText,
+        }
+      );
+    }
+    if (delivery === 'failed') {
+      await sendMessage(
+        adminPhone,
+        `✗ Could not deliver to ${target.phone_e164}${withinWindow ? '' : ' -- their last message was over 24h ago and the team_reply template is not approved yet'}.`
+      );
+      return;
+    }
     // Each reply keeps the human in charge for another day.
     await setLeadPause(
       target.id,
@@ -1369,7 +1405,9 @@ export async function handleWhatsAppJobAgentInbound(input: InboundAgentInput): P
   // the team sees follow-ups without opening anything. STOP still works.
   const pausedPreview = typedText ? sanitizeFreeText(typedText, 700) : `[${mediaKind}]`;
   if (isLeadPaused(lead) && !(typedText && isOptOutCommand(typedText))) {
-    await sendAdminWhatsAppAlert(
+    await sendAdminTemplateAlert(
+      'adminUserMessage',
+      [lead.phone_e164, pausedPreview],
       [`💬 ${lead.phone_e164}: ${pausedPreview}`, `REPLY ${lead.phone_e164} <message> · RESUME ${lead.phone_e164}`].join('\n')
     ).catch(() => undefined);
     logEvent('info', 'paused_lead_message_forwarded', { leadId: lead.id });

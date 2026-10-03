@@ -635,8 +635,88 @@ export async function createWhatsappSelfSignupInvite(
     baseUrl: input.baseUrl,
     templateName: 'whatsapp_agent_chat',
   });
+  // The link goes out in the agent's very next message, so record it as sent;
+  // the signup reminder job looks for leads in invite_sent.
+  await markLeadInviteSent(db, { leadId: issued.lead.id, inviteId: issued.invite.id, actorUserId: null });
 
   return { status: 'invite_created', ...issued };
+}
+
+/** One reminder per lead, between these ages of the invite. */
+const SIGNUP_REMINDER_MIN_AGE_MS = 24 * 60 * 60 * 1000;
+const SIGNUP_REMINDER_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface SignupReminderStats {
+  considered: number;
+  sent: number;
+  failed: number;
+}
+
+/**
+ * Nudge people who asked for an account in WhatsApp but never set a
+ * password. Only token hashes are stored, so each reminder mints a fresh
+ * single-use link (expiring the old one) and hands it to `send`. A lead gets
+ * at most one reminder (payload_json.reminderSentAt).
+ */
+export async function sendWhatsappSelfSignupReminders(
+  db: DatabaseClient,
+  params: {
+    baseUrl: string;
+    send: (lead: RegistrationLeadRecord, claimUrl: string, rawToken: string) => Promise<boolean>;
+    limit?: number;
+    now?: number;
+  }
+): Promise<SignupReminderStats> {
+  const now = params.now ?? Date.now();
+  // Aged by the chat invite's sent_at: registration_leads.updated_at is reset
+  // by a trigger on every update, so it says nothing about the link's age.
+  const { data, error } = await db
+    .from('registration_lead_invites')
+    .select(
+      'id, sent_at, lead:lead_id (id, officer_user_id, officer_code_snapshot, intended_role, capture_mode, full_name, phone_e164, email, payload_json, consent_whatsapp, consent_recorded_at, status, existing_user_id, completed_user_id, notes, created_at, updated_at)'
+    )
+    .eq('template_name', 'whatsapp_agent_chat')
+    .in('status', ['sent', 'opened'])
+    .lte('sent_at', new Date(now - SIGNUP_REMINDER_MIN_AGE_MS).toISOString())
+    .gte('sent_at', new Date(now - SIGNUP_REMINDER_MAX_AGE_MS).toISOString())
+    .order('sent_at', { ascending: true })
+    .limit(params.limit ?? 50);
+  if (error) throw new Error(error.message || 'Failed to load signup reminder candidates');
+
+  const stats: SignupReminderStats = { considered: 0, sent: 0, failed: 0 };
+  for (const row of (data || []) as Array<{ lead: RegistrationLeadRecord | RegistrationLeadRecord[] | null }>) {
+    const lead = Array.isArray(row.lead) ? row.lead[0] : row.lead;
+    if (!lead || lead.capture_mode !== 'whatsapp_self') continue;
+    if (!['invite_sent', 'opened'].includes(lead.status)) continue;
+    if ((lead.payload_json as Record<string, unknown> | null)?.reminderSentAt) continue;
+    stats.considered++;
+
+    const issued = await issueLeadInvite(db, {
+      lead,
+      actorUserId: null,
+      baseUrl: params.baseUrl,
+      templateName: 'signup_link_reminder',
+    });
+    const rawToken = decodeURIComponent(issued.claimUrl.split('/').pop() || '');
+    const delivered = await params.send(lead, issued.claimUrl, rawToken).catch(() => false);
+
+    // Recorded either way: a number that can't receive messages shouldn't be
+    // retried every day for a week.
+    await db
+      .from('registration_leads')
+      .update({
+        payload_json: { ...(lead.payload_json || {}), reminderSentAt: new Date(now).toISOString(), reminderDelivered: delivered },
+      })
+      .eq('id', lead.id);
+
+    if (delivered) {
+      await markLeadInviteSent(db, { leadId: lead.id, inviteId: issued.invite.id, actorUserId: null });
+      stats.sent++;
+    } else {
+      stats.failed++;
+    }
+  }
+  return stats;
 }
 
 export async function markLeadInviteSent(

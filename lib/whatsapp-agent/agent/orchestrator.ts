@@ -31,7 +31,7 @@ import {
   checkRecruiterPostingAccess,
   createJobFromWhatsappDraft,
 } from '@/lib/whatsapp-agent/recruiter-posting';
-import { sendAdminWhatsAppAlert } from '@/lib/admin-alerts';
+import { sendAdminTemplateAlert } from '@/lib/admin-alerts';
 import { getWaLimitContext } from '@/lib/whatsapp-agent/limits';
 import { detectLanguage } from '@/lib/whatsapp-agent/language';
 import {
@@ -134,7 +134,8 @@ export const defaultAgentDeps: AgentToolDeps = {
   submitReport: (params) => submitJobReportAsService(createServiceSupabaseClient(), params),
   listSeekerPlans,
   pauseLead: (leadId, untilIso, reason) => setLeadPause(leadId, untilIso, reason),
-  alertAdmins: (message) => sendAdminWhatsAppAlert(message),
+  alertHandoff: (alert) =>
+    sendAdminTemplateAlert('adminHandoff', [alert.reason, alert.name, alert.phone, alert.summary], alert.text),
   checkPostingAccess: checkRecruiterPostingAccess,
   createJob: createJobFromWhatsappDraft,
   links: {

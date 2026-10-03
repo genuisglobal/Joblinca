@@ -173,16 +173,16 @@ Votre offre « {{1}} » ({{2}}) n'a pas été publiée. Motif : {{3}}. Vous pouv
 
 ---
 
-## After approval: wiring (code follow-up)
+## Wiring (done; works before approval)
 
-These are not wired yet. Once Meta approves them, the code change is mechanical and follows the pattern `sendApplicationStatusAlertWhatsapp` already uses: **try the template, fall back to plain text.**
+All six are wired through `lib/messaging/wa-templates.ts`: **try the template, fall back to the plain text we sent before.** Until Meta approves a template its call fails and the text goes out exactly as today. Once approved, delivery outside the 24h window starts working without a deploy. Set any env var below to `off` to skip a template, or to a different name (e.g. `team_reply_v2`) to switch versions.
 
 | Template | Env var (default = name above) | Where |
 |---|---|---|
 | 1 | `WA_ADMIN_HANDOFF_TEMPLATE` | `handoff_to_human` tool → `lib/admin-alerts.ts` |
 | 2 | `WA_ADMIN_USER_MESSAGE_TEMPLATE` | paused-lead forward in `router.ts` |
 | 3 | `WA_TEAM_REPLY_TEMPLATE` | admin `REPLY` in `router.ts`; template only if the user's last message is >24h old |
-| 4 | `WA_SIGNUP_REMINDER_TEMPLATE` | new daily cron: `whatsapp_self` leads still `invite_sent` after 24h. It must **mint a fresh invite**, because only token hashes are stored and the raw token from the first link can't be recovered. |
+| 4 | `WA_SIGNUP_REMINDER_TEMPLATE` | daily cron `/api/cron/wa-signup-reminders` (10:15 UTC): in-chat signups whose link was sent 24h–7d ago and is still unused get **one** reminder with a freshly minted link (only token hashes are stored, so the first link can't be resent; minting expires it) |
 | 5, 6 | `WA_JOB_POST_APPROVED_TEMPLATE`, `WA_JOB_POST_REJECTED_TEMPLATE` | `lib/jobs/recruiter-notify.ts` |
 
 Language: pass `fr` when `wa_leads.language = 'fr'`, else `en`.

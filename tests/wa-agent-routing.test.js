@@ -14,8 +14,10 @@ function loadRouter({
   eligible = (l, text) => !/^stop$/i.test(text.trim()),
   linkedUserId = null,
   role = null,
+  lastInboundAt = new Date().toISOString(),
+  templateApproved = false,
 } = {}) {
-  const calls = { sent: [], agentRuns: [], agentTexts: [], locks: 0, released: 0, stateUpdates: [], alerts: [], pauses: [], downloads: 0 };
+  const calls = { sent: [], agentRuns: [], agentTexts: [], templates: [], locks: 0, released: 0, stateUpdates: [], alerts: [], pauses: [], downloads: 0 };
   const lead = {
     id: 'lead-1',
     phone_e164: '+237670000001',
@@ -42,9 +44,13 @@ function loadRouter({
     '@/lib/whatsapp': { toE164: (v) => (v.startsWith('+') ? v : `+${v}`) },
     '@/lib/messaging/whatsapp': {
       sendWhatsappMessage: async (to, text) => calls.sent.push(text),
-      sentTo: null,
       sendWhatsappQuickReplies: async () => {},
+      sendWhatsappTemplate: async (to, name, lang, components) => {
+        if (!templateApproved) throw new Error('(#132001) Template name does not exist in the translation');
+        calls.templates.push({ to, name, lang, params: components[0].parameters.map((p) => p.text) });
+      },
     },
+    '@/lib/whatsapp-db': { getLastInboundAt: async () => lastInboundAt },
     '@/lib/whatsapp-screening/service': { handleWhatsAppScreeningInbound: async () => ({ handled: false }) },
     '@/lib/jobs/lifecycle': { resolveJobLifecycleStatus: () => 'on_hold' },
     '@/lib/whatsapp-agent/leads': {
@@ -66,8 +72,9 @@ function loadRouter({
     },
     '@/lib/admin-alerts': {
       isAdminAlertRecipient: (phone) => admins.includes(phone),
-      sendAdminWhatsAppAlert: async (message) => {
-        calls.alerts.push(message);
+      sendAdminTemplateAlert: async (template, body, fallbackText) => {
+        calls.alerts.push(fallbackText);
+        calls.adminTemplates = [...(calls.adminTemplates || []), { template, body }];
         return { configured: true, sent: 1, failed: 0 };
       },
     },
@@ -203,6 +210,7 @@ async function main() {
     assert.deepEqual(calls.agentRuns, []);
     assert.match(calls.alerts[0], /^💬 \+237670000001: hello\? anyone there\?/);
     assert.match(calls.alerts[0], /REPLY \+237670000001/);
+    assert.deepEqual(calls.adminTemplates[0], { template: 'adminUserMessage', body: ['+237670000001', 'hello? anyone there?'] });
 
     const stop = loadRouter({ pausedUntil: future });
     const stopResult = await stop.router.handleWhatsAppJobAgentInbound(inbound('STOP'));
@@ -228,6 +236,23 @@ async function main() {
     await notAdmin.router.handleWhatsAppJobAgentInbound(inbound('REPLY +237670000001 you have won', '237655555555'));
     assert.ok(!notAdmin.calls.sent.some((m) => m.includes('JobLinca team')), 'non-admins cannot relay');
     console.log('ok - admin REPLY relays and extends pause, RESUME hands back, non-admins ignored');
+
+    // Outside the 24h window: the team_reply template, with text as fallback.
+    const stale = new Date(Date.now() - 30 * 3600 * 1000).toISOString();
+    const approved = loadRouter({ admins: ['+237699000000'], lastInboundAt: stale, templateApproved: true });
+    await approved.router.handleWhatsAppJobAgentInbound(inbound('REPLY +237670000001 Line one\nline two', admin));
+    assert.deepEqual(approved.calls.templates[0], {
+      to: '+237670000001',
+      name: 'team_reply_v1',
+      lang: 'en',
+      params: ['there', 'Line one line two'],
+    }, 'template used, newlines flattened for Meta');
+    assert.match(approved.calls.sent[0], /^✓ Sent/);
+
+    const notYet = loadRouter({ admins: ['+237699000000'], lastInboundAt: stale, templateApproved: false });
+    await notYet.router.handleWhatsAppJobAgentInbound(inbound('REPLY +237670000001 Hello', admin));
+    assert.equal(notYet.calls.sent[0], '👤 JobLinca team: Hello', 'falls back to text until the template is approved');
+    console.log('ok - REPLY after 24h uses the team_reply template, text until it is approved');
   });
 
   // ── media ───────────────────────────────────────────────────────────────

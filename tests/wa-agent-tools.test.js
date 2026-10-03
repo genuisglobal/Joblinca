@@ -70,8 +70,8 @@ function makeCtx({
     },
     listSeekerPlans: async () => [{ name: 'Seeker Monthly', amountXaf: 2000, durationDays: 30 }],
     pauseLead: async (...args) => writes.push(['pauseLead', ...args]),
-    alertAdmins: async (message) => {
-      writes.push(['alertAdmins', message]);
+    alertHandoff: async (alert) => {
+      writes.push(['alertAdmins', alert.text, alert]);
       return alertResult;
     },
     checkPostingAccess: async () => ({ allowed: false, reason: 'not_recruiter' }),
@@ -343,7 +343,13 @@ async function phase2() {
     const { ctx, writes } = makeCtx();
     const result = await run(ctx, 'handoff_to_human', { reason: 'scam_or_safety', summary: 'Was asked to pay a recruiter.' });
     assert.equal(result.data.status, 'handed_off');
-    const alert = writes.find((w) => w[0] === 'alertAdmins')[1];
+    const alertCall = writes.find((w) => w[0] === 'alertAdmins');
+    const alert = alertCall[1];
+    assert.deepEqual(
+      { reason: alertCall[2].reason, name: alertCall[2].name, phone: alertCall[2].phone },
+      { reason: 'scam or safety', name: 'Ada Nkem', phone: '+237670000001' },
+      'template fields passed alongside the fallback text'
+    );
     assert.ok(alert.includes('Ada Nkem · +237670000001 · no account'), alert);
     assert.ok(alert.includes('REPLY +237670000001 <your message>'));
     assert.ok(alert.includes('RESUME +237670000001'));

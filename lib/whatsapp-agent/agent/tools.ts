@@ -74,7 +74,14 @@ export interface AgentToolDeps {
   }) => Promise<SubmitReportResult>;
   listSeekerPlans: () => Promise<Array<{ name: string; amountXaf: number; durationDays: number | null }>>;
   pauseLead: (leadId: string, untilIso: string, reason: string) => Promise<void>;
-  alertAdmins: (message: string) => Promise<{ configured: boolean; sent: number }>;
+  /** Alert admins of a handoff: template with these fields, `text` as the fallback. */
+  alertHandoff: (alert: {
+    text: string;
+    reason: string;
+    name: string;
+    phone: string;
+    summary: string;
+  }) => Promise<{ configured: boolean; sent: number }>;
   checkPostingAccess: (linkedUserId: string | null, role: string | null) => Promise<PostingAccess>;
   createJob: (userId: string, draft: WhatsappJobDraft) => Promise<CreateJobResult>;
   /** Absolute URLs on our own site, attached by tools (never typed by the model). */
@@ -775,18 +782,24 @@ const TOOLS: ToolSpec[] = [
       if (ctx.dryRun) return { ok: true, data: { status: 'dry_run' } };
 
       const phone = ctx.lead.phone_e164;
-      const alert = await ctx.deps.alertAdmins(
-        [
+      const name = ctx.displayName || 'Unknown';
+      const summary = args.summary.slice(0, 500);
+      const alert = await ctx.deps.alertHandoff({
+        reason: args.reason.replace(/_/g, ' '),
+        name,
+        phone,
+        summary,
+        text: [
           `🙋 WhatsApp handoff (${args.reason})`,
-          `${ctx.displayName || 'Unknown'} · ${phone}${ctx.lead.linked_user_id ? ' · has account' : ' · no account'}`,
+          `${name} · ${phone}${ctx.lead.linked_user_id ? ' · has account' : ' · no account'}`,
           '',
-          args.summary.slice(0, 500),
+          summary,
           '',
           `Reply to them: REPLY ${phone} <your message>`,
           `Hand back to the bot: RESUME ${phone}`,
           `Or chat directly: https://wa.me/${phone.replace(/\D/g, '')}`,
-        ].join('\n')
-      );
+        ].join('\n'),
+      });
       if (!alert.configured || alert.sent === 0) {
         // Nobody would see it -- don't silence the bot for a handoff that went nowhere.
         return {

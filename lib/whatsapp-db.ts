@@ -118,6 +118,16 @@ export async function setOptIn(waPhone: string, optedIn: boolean): Promise<void>
  *
  * Returns the persisted log row, or null if it was a duplicate.
  */
+/** When this phone last messaged us; drives the 24h free-form window. */
+export async function getLastInboundAt(waPhone: string): Promise<string | null> {
+  const { data } = await supabaseAdmin
+    .from('wa_conversations')
+    .select('last_inbound_at')
+    .eq('wa_phone', toE164(waPhone))
+    .maybeSingle();
+  return (data?.last_inbound_at as string | null | undefined) ?? null;
+}
+
 /**
  * Replace a logged inbound message's text, e.g. "[audio]" with the voice
  * note's transcript, so conversation history reads the way it was meant.
