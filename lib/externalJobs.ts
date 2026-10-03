@@ -12,6 +12,12 @@ import { fetchRemoteJobs } from '@/lib/remoteJobs';
 import { LEGACY_EXTERNAL_FEED_RETIRING_SOURCE_SLUGS } from '@/lib/scrapers/catalog';
 import { runAllScrapers, deduplicateJobs, deduplicateCrossSources } from '@/lib/scrapers/registry';
 import type { ScrapedJob } from '@/lib/scrapers/types';
+import {
+  AI_TRAINING_CATEGORY,
+  AI_TRAINING_OPENINGS_SOURCE,
+  fetchAiTrainingOpenings,
+  refileEligibleAiTrainingJobs,
+} from '@/lib/ai-training-jobs';
 
 export interface ExternalJob {
   external_id: string;
@@ -346,9 +352,20 @@ const AI_TRAINING_PLATFORMS: AiTrainingPlatform[] = [
     workType: 'Freelance · micro-tasks',
     url: 'https://www.clickworker.com',
   },
+  {
+    // RWS's individual TrainAI postings are almost all city/country-locked
+    // (filtered out of the live feed), but its standing talent pool is an
+    // open application for a "global talent network".
+    slug: 'rws-trainai',
+    platform: 'RWS TrainAI',
+    headline: 'Join the RWS TrainAI global talent pool',
+    eligibility: 'Global talent pool — open application',
+    workType: 'Freelance · project-based',
+    url: 'https://jobs.lever.co/rws',
+  },
 ];
 
-export const AI_TRAINING_CATEGORY = 'AI Training & Data Work';
+export { AI_TRAINING_CATEGORY };
 
 async function fetchAiTrainingPlatformJobs(): Promise<ExternalJob[]> {
   return AI_TRAINING_PLATFORMS.map((p) => ({
@@ -389,35 +406,60 @@ export async function fetchUpworkExternalJobs(): Promise<ExternalJob[]> {
 // Aggregate all providers (remote + Cameroon local)
 // ───────────────────────────────────────────────
 
-const EXTERNAL_FEED_PROVIDERS = [
-  fetchRemotiveExternalJobs,
-  fetchJobicyExternalJobs,
-  fetchFindworkExternalJobs,
-  fetchRemoteOkExternalJobs,
-  fetchArbeitnowExternalJobs,
-  fetchAiTrainingPlatformJobs,
-  fetchUpworkExternalJobs,
+type FeedProvider = {
+  fetch: () => Promise<ExternalJob[]>;
+  /**
+   * Set when the provider owns exactly one source and a successful run is a
+   * complete picture of it. Replacing is per source, and a source that
+   * returns no jobs is otherwise left untouched — fine for big feeds, wrong
+   * for a handful of openings that close daily (a closed posting would stay
+   * listed with a dead link).
+   */
+  authoritativeSource?: string;
+};
+
+const EXTERNAL_FEED_PROVIDERS: FeedProvider[] = [
+  { fetch: fetchRemotiveExternalJobs },
+  { fetch: fetchJobicyExternalJobs },
+  { fetch: fetchFindworkExternalJobs },
+  { fetch: fetchRemoteOkExternalJobs },
+  { fetch: fetchArbeitnowExternalJobs },
+  { fetch: fetchAiTrainingPlatformJobs },
+  { fetch: fetchAiTrainingOpenings, authoritativeSource: AI_TRAINING_OPENINGS_SOURCE },
+  { fetch: fetchUpworkExternalJobs },
 ];
 
 /**
- * Fetch jobs for the public legacy external feed only.
+ * Fetch the public legacy external feed, plus which authoritative sources
+ * completed (and may therefore be cleared when they returned nothing).
  *
  * Cameroon aggregation sources should flow through discovered_jobs and the
  * aggregation pipeline, not back into external_jobs.
  */
-export async function fetchExternalFeedJobs(): Promise<ExternalJob[]> {
+export async function fetchExternalFeedJobsWithStatus(): Promise<{
+  jobs: ExternalJob[];
+  completedAuthoritativeSources: string[];
+}> {
   const results: ExternalJob[] = [];
+  const completedAuthoritativeSources: string[] = [];
 
   for (const provider of EXTERNAL_FEED_PROVIDERS) {
     try {
-      const jobs = await provider();
+      const jobs = await provider.fetch();
       results.push(...jobs);
+      if (provider.authoritativeSource) completedAuthoritativeSources.push(provider.authoritativeSource);
     } catch (err) {
-      console.error('Failed to fetch external feed jobs from provider', provider.name, err);
+      console.error('Failed to fetch external feed jobs from provider', provider.fetch.name, err);
     }
   }
 
-  return results;
+  // AI-training postings that arrive through the general remote feeds and
+  // pass the Cameroon eligibility rules belong in the AI tab too.
+  return { jobs: refileEligibleAiTrainingJobs(results), completedAuthoritativeSources };
+}
+
+export async function fetchExternalFeedJobs(): Promise<ExternalJob[]> {
+  return (await fetchExternalFeedJobsWithStatus()).jobs;
 }
 
 export async function clearRetiredExternalFeedSources(supabase: SupabaseClient) {
@@ -434,6 +476,10 @@ export async function clearRetiredExternalFeedSources(supabase: SupabaseClient) 
 export async function replaceExternalJobsBySource(
   supabase: SupabaseClient,
   jobs: ExternalJob[],
+  options: {
+    /** Sources whose provider completed; cleared even when they returned no jobs. */
+    clearIfEmpty?: string[];
+  } = {},
 ) {
   let inserted = 0;
   let errors = 0;
@@ -443,6 +489,11 @@ export async function replaceExternalJobsBySource(
     const sourceJobs = bySource.get(job.source) || [];
     sourceJobs.push(job);
     bySource.set(job.source, sourceJobs);
+  }
+
+  // An empty entry runs the delete below with nothing to insert.
+  for (const source of options.clearIfEmpty ?? []) {
+    if (!bySource.has(source)) bySource.set(source, []);
   }
 
   for (const [source, sourceJobs] of bySource) {

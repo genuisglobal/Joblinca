@@ -12,7 +12,7 @@
 import { createClient } from '@supabase/supabase-js';
 import {
   clearRetiredExternalFeedSources,
-  fetchExternalFeedJobs,
+  fetchExternalFeedJobsWithStatus,
   replaceExternalJobsBySource,
 } from '@/lib/externalJobs';
 import { runAutoPipelineMaintenance } from '@/lib/scrapers/auto-pipeline';
@@ -69,7 +69,7 @@ export async function runRefreshJobsDispatch(
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (supabaseUrl && serviceRoleKey) {
       const supabase = createClient(supabaseUrl, serviceRoleKey);
-      const jobs = await fetchExternalFeedJobs();
+      const { jobs, completedAuthoritativeSources } = await fetchExternalFeedJobsWithStatus();
       const retiredSourceSummary = { cleared: true, error: null as string | null };
       try {
         await clearRetiredExternalFeedSources(supabase);
@@ -78,7 +78,9 @@ export async function runRefreshJobsDispatch(
         retiredSourceSummary.error = String(retiredSourceError);
         console.error('[dispatch] Failed to clear retired external feed rows:', retiredSourceError);
       }
-      const feedResult = await replaceExternalJobsBySource(supabase, jobs);
+      const feedResult = await replaceExternalJobsBySource(supabase, jobs, {
+        clearIfEmpty: completedAuthoritativeSources,
+      });
       externalFeedSummary = {
         fetched: jobs.length,
         inserted: feedResult.inserted,

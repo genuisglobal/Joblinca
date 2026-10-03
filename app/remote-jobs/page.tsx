@@ -91,9 +91,14 @@ function formatDate(
 /** Brand names that don't title-case cleanly from their slug (e.g. hyphenated or all-caps). */
 const SOURCE_LABEL_OVERRIDES: Record<string, string> = {
   'telus-digital-ai': 'TELUS Digital',
+  'rws-trainai': 'RWS TrainAI',
 };
 
-function sourceLabel(source: string) {
+/** Live AI-training openings share one source; the vendor is the meaningful name. */
+const AI_TRAINING_OPENINGS_SOURCE = 'ai-training-openings';
+
+function sourceLabel(source: string, companyName?: string | null) {
+  if (source === AI_TRAINING_OPENINGS_SOURCE && companyName) return companyName;
   if (SOURCE_LABEL_OVERRIDES[source]) return SOURCE_LABEL_OVERRIDES[source];
   return source.charAt(0).toUpperCase() + source.slice(1);
 }
@@ -409,7 +414,7 @@ export default function RemoteJobsPage() {
                     {/* Apply Button */}
                     <div className="shrink-0 flex items-center gap-2">
                       <span className="text-xs text-neutral-600 hidden lg:inline">
-                        via {sourceLabel(job.source)}
+                        via {sourceLabel(job.source, job.company_name)}
                       </span>
                       <a
                         href={job.url}
@@ -417,7 +422,7 @@ export default function RemoteJobsPage() {
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition-all"
                       >
-                        {t("remote.applyOn", { source: sourceLabel(job.source) })}
+                        {t("remote.applyOn", { source: sourceLabel(job.source, job.company_name) })}
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
                     </div>

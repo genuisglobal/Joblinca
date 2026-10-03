@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import {
   clearRetiredExternalFeedSources,
-  fetchExternalFeedJobs,
+  fetchExternalFeedJobsWithStatus,
   replaceExternalJobsBySource,
 } from '@/lib/externalJobs';
 import { NextRequest, NextResponse } from 'next/server';
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   if (profileError || !profile || profile.role !== 'admin') {
     return new NextResponse('Forbidden', { status: 403 });
   }
-  const jobs = await fetchExternalFeedJobs();
+  const { jobs, completedAuthoritativeSources } = await fetchExternalFeedJobsWithStatus();
   let retiredCameroonSourcesCleared = true;
   let retiredCameroonSourcesError: string | null = null;
 
@@ -43,7 +43,9 @@ export async function POST(request: NextRequest) {
     retiredCameroonSourcesError = String(err);
   }
 
-  const result = await replaceExternalJobsBySource(supabase, jobs);
+  const result = await replaceExternalJobsBySource(supabase, jobs, {
+    clearIfEmpty: completedAuthoritativeSources,
+  });
 
   return NextResponse.json({
     total: jobs.length,
