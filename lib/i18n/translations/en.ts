@@ -727,7 +727,7 @@ const en: Record<string, string> = {
   "remote.cat.internships": "Internships & Entry Level",
   "remote.cat.aiTraining": "AI Training & Data Work",
   "remote.aiTraining.noteTitle": "About AI training & data work:",
-  "remote.aiTraining.noteBody": "This tab has two kinds of listings. Platforms (Isahit, Appen, TELUS Digital, Outlier, Clickworker, RWS TrainAI): sign up once and get matched to ongoing tasks — each checked for Cameroon/Africa eligibility. Live openings from AI-data companies: dated postings, refreshed automatically, shown only when they are open worldwide or to Cameroon/Africa and don't require a language or country you can't meet. Note: PayPal is largely unavailable in Cameroon, so most workers get paid via Payoneer or AirTM — check payout options before signing up.",
+  "remote.aiTraining.noteBody": "This tab has two kinds of listings. Platforms (Isahit, Appen, TELUS Digital, Outlier, Clickworker, RWS TrainAI): sign up once and get matched to ongoing tasks — each checked for Cameroon/Africa eligibility. Live openings, refreshed daily: expert AI-training contracts from Mercor (many ask for a degree or professional experience; paid hourly in USD) and postings from AI-data companies. A live opening is shown only when it is open worldwide or to Cameroon and doesn't require a language or country you can't meet. Note: PayPal is largely unavailable in Cameroon, so most workers get paid via Payoneer or AirTM — check payout options before signing up.",
 
   // ---------------------------------------------------------------------------
   // Learn More – Job Seekers

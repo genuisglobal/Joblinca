@@ -122,4 +122,101 @@ test('re-files only eligible AI-training jobs from the general feeds into the AI
   assert.equal(jobs[0].category, 'Other', 'input is not mutated');
 });
 
+// ── Mercor (sitemap + job pages; eligibility from the listing record) ────
+const {
+  extractMercorEligibility,
+  mercorListingOpenToCameroon,
+  extractJobPostingLd,
+  formatJobPostingPay,
+  parseMercorSitemap,
+} = loadModule('lib/ai-training-jobs.ts');
+
+/** A job page shaped like Mercor's on 2026-10-03: JSON-LD block + embedded listing record. */
+function mercorPage({ record, ld }) {
+  const recordJson = JSON.stringify({ title: ld.title, location: 'Remote', ...record }).slice(1, -1);
+  return `<html><head><script type="application/ld+json">${JSON.stringify(ld)}</script></head>` +
+    `<body><script>self.__next_f.push([1,"..."]);{"listing":{${recordJson},"formId":null}}</script></body></html>`;
+}
+const OPEN_RECORD = {
+  workArrangement: 'remote',
+  eligibleLocation: null,
+  eligibleResidenceLocation: null,
+  ineligibleLocation: ['CUB', 'IRN', 'PRK', 'SYR', 'RUS', 'BLR', 'VEN'],
+  ineligibleResidenceLocation: null,
+  disableApplications: false,
+  isPrivate: false,
+};
+const LD = (title, extra = {}) => ({ '@context': 'https://schema.org/', '@type': 'JobPosting', title, ...extra });
+const open = (record, title = 'Multimodal Image Expert') =>
+  mercorListingOpenToCameroon({ ...OPEN_RECORD, ...record }, title);
+
+test('Mercor: trusts the listing record, not JSON-LD that mislabels open roles "US"', () => {
+  // Real case: JSON-LD said US-only, the record was open to all but 7 sanctioned countries.
+  const html = mercorPage({
+    record: OPEN_RECORD,
+    ld: LD('Multimodal Image Expert', {
+      applicantLocationRequirements: [{ '@type': 'Country', name: 'US' }],
+      jobLocationType: 'TELECOMMUTE',
+    }),
+  });
+  const eligibility = extractMercorEligibility(html);
+  assert.deepEqual(eligibility.ineligibleLocation, OPEN_RECORD.ineligibleLocation);
+  assert.equal(mercorListingOpenToCameroon(eligibility, 'Multimodal Image Expert'), true);
+});
+
+test('Mercor: country allow-lists that leave Cameroon out are rejected', () => {
+  assert.equal(open({ eligibleLocation: ['USA'] }), false);
+  assert.equal(open({ eligibleLocation: ['USA', 'CAN', 'GBR'] }), false);
+  assert.equal(open({ eligibleLocation: ['ZAF'] }), false, 'South Africa is not Cameroon');
+  assert.equal(open({ eligibleResidenceLocation: ['CAN', 'USA'] }), false);
+  assert.equal(open({ eligibleLocation: ['NGA', 'CMR'] }), true);
+});
+
+test('Mercor: Cameroon in a deny-list, on-site roles, closed or private listings are rejected', () => {
+  assert.equal(open({ ineligibleLocation: ['CMR'] }), false);
+  assert.equal(open({ ineligibleResidenceLocation: ['CMR'] }), false);
+  assert.equal(open({ workArrangement: 'onsite' }), false);
+  assert.equal(open({ disableApplications: true }), false);
+  assert.equal(open({ isPrivate: true }), false);
+});
+
+test('Mercor: language rule still applies to open roles', () => {
+  assert.equal(open({}, 'Audiobook QA Expert — French'), true);
+  assert.equal(open({}, 'Bilingual French Generalist Expert — AI Safety'), true);
+  assert.equal(open({}, 'Audiobook QA Expert — Japanese'), false);
+});
+
+test('Mercor: a page missing the record fields is not listed (fail closed)', () => {
+  const html = `<script type="application/ld+json">${JSON.stringify(LD('Some Expert'))}</script>`;
+  assert.equal(extractMercorEligibility(html), null);
+});
+
+test('Mercor: JSON-LD title and pay are read, ignoring malformed blocks', () => {
+  const html =
+    '<script type="application/ld+json">{not json</script>' +
+    `<script type="application/ld+json">${JSON.stringify(
+      LD('Nuclear Engineer, Fuel Cycle', {
+        baseSalary: { currency: 'USD', value: { minValue: 65, maxValue: 75, unitText: 'HOUR' } },
+      })
+    )}</script>`;
+  const ld = extractJobPostingLd(html);
+  assert.equal(ld.title, 'Nuclear Engineer, Fuel Cycle');
+  assert.equal(formatJobPostingPay(ld), '$65–75/hr');
+  assert.equal(formatJobPostingPay(LD('x', { baseSalary: { currency: 'USD', value: { minValue: 100, maxValue: 100, unitText: 'HOUR' } } })), '$100/hr');
+  assert.equal(formatJobPostingPay(LD('x')), null);
+});
+
+test('Mercor: sitemap yields only listing pages, newest first', () => {
+  const xml = `<urlset>
+    <url><loc>https://work.mercor.com/jobs/list_OLD/old-role</loc><lastmod>2026-09-01</lastmod></url>
+    <url><loc>https://work.mercor.com/jobs/apply/interview-scheduled</loc><lastmod>2026-10-03</lastmod></url>
+    <url><loc>https://work.mercor.com/jobs/list_NEW/new-role</loc><lastmod>2026-10-03</lastmod></url>
+    <url><loc>https://work.mercor.com/explore</loc></url>
+  </urlset>`;
+  assert.deepEqual(parseMercorSitemap(xml), [
+    'https://work.mercor.com/jobs/list_NEW/new-role',
+    'https://work.mercor.com/jobs/list_OLD/old-role',
+  ]);
+});
+
 console.log(`\nai-training-eligibility: ${passed} passed`);

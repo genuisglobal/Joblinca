@@ -253,6 +253,197 @@ export async function fetchAiTrainingOpenings(): Promise<ExternalJob[]> {
   return openings;
 }
 
+// ── Mercor ───────────────────────────────────────────────────────────────
+//
+// Mercor runs the largest open marketplace of expert AI-training contracts
+// (STEM, medicine, law, finance, software, language & audio; $30-250/hr).
+// On 2026-10-03, 208 of its 319 listings were open to Cameroon.
+//
+// Its robots.txt disallows /api/ but allows the sitemap and the job pages,
+// so this reads only those: sitemap → page. Never the internal API.
+//
+// Eligibility comes from the listing record the page renders from
+// (workArrangement, eligibleLocation, ineligibleLocation, ...), NOT from
+// the page's schema.org JobPosting block: that block labels open-to-all
+// roles "US" (checked 2026-10-03 — "Multimodal Image Expert" says US in
+// JSON-LD but its record is open everywhere except 7 sanctioned countries),
+// and trusting it hid every eligible role. JSON-LD is used for title/pay.
+
+export const MERCOR_SOURCE = 'mercor';
+const MERCOR_SITEMAP = 'https://work.mercor.com/sitemap.xml';
+const MERCOR_CONCURRENCY = 6;
+/** Stop starting new page fetches after this; the refresh cron has 300s for everything. */
+const MERCOR_TIME_BUDGET_MS = 60_000;
+
+/** The subset of schema.org JobPosting that Mercor's pages carry and we use. */
+export interface JobPostingLd {
+  '@type'?: string;
+  title?: string;
+  url?: string;
+  datePosted?: string;
+  validThrough?: string;
+  employmentType?: string | string[];
+  jobLocationType?: string;
+  applicantLocationRequirements?: Array<{ name?: string }> | { name?: string };
+  hiringOrganization?: { name?: string };
+  baseSalary?: { currency?: string; value?: { minValue?: number; maxValue?: number; value?: number; unitText?: string } };
+}
+
+const CAMEROON_ISO3 = 'CMR';
+
+export interface MercorEligibility {
+  workArrangement: string | null;
+  eligibleLocation: string[] | null;
+  eligibleResidenceLocation: string[] | null;
+  ineligibleLocation: string[] | null;
+  ineligibleResidenceLocation: string[] | null;
+  disableApplications: boolean;
+  isPrivate: boolean;
+}
+
+/** Reads the listing record's eligibility fields out of a Mercor job page. Null if any is missing. */
+export function extractMercorEligibility(html: string): MercorEligibility | null {
+  const field = (name: string) => html.match(new RegExp(`"${name}":(null|true|false|"[^"]*"|\\[[^\\]]*\\])`))?.[1];
+  const raw = {
+    workArrangement: field('workArrangement'),
+    eligibleLocation: field('eligibleLocation'),
+    eligibleResidenceLocation: field('eligibleResidenceLocation'),
+    ineligibleLocation: field('ineligibleLocation'),
+    ineligibleResidenceLocation: field('ineligibleResidenceLocation'),
+    disableApplications: field('disableApplications'),
+    isPrivate: field('isPrivate'),
+  };
+  if (Object.values(raw).some((v) => v === undefined)) return null;
+  try {
+    const parse = (v: string | undefined) => JSON.parse(v as string);
+    return {
+      workArrangement: parse(raw.workArrangement),
+      eligibleLocation: parse(raw.eligibleLocation),
+      eligibleResidenceLocation: parse(raw.eligibleResidenceLocation),
+      ineligibleLocation: parse(raw.ineligibleLocation),
+      ineligibleResidenceLocation: parse(raw.ineligibleResidenceLocation),
+      disableApplications: parse(raw.disableApplications) === true,
+      isPrivate: parse(raw.isPrivate) === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Open to someone living in Cameroon: remote, accepting applications, and
+ * every allow-list either empty or containing CMR, with CMR in no deny-list.
+ */
+export function mercorListingOpenToCameroon(e: MercorEligibility, title: string): boolean {
+  if (e.workArrangement !== 'remote' || e.disableApplications || e.isPrivate) return false;
+  const allows = (list: string[] | null) => !list || list.length === 0 || list.includes(CAMEROON_ISO3);
+  const denies = (list: string[] | null) => Array.isArray(list) && list.includes(CAMEROON_ISO3);
+  if (!allows(e.eligibleLocation) || !allows(e.eligibleResidenceLocation)) return false;
+  if (denies(e.ineligibleLocation) || denies(e.ineligibleResidenceLocation)) return false;
+  return languageFitsCameroon(title);
+}
+
+export function extractJobPostingLd(html: string): JobPostingLd | null {
+  const scripts = html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g);
+  for (const match of scripts) {
+    try {
+      const parsed = JSON.parse(match[1]);
+      const candidates = Array.isArray(parsed) ? parsed : [parsed];
+      const posting = candidates.find((c) => c && c['@type'] === 'JobPosting');
+      if (posting) return posting as JobPostingLd;
+    } catch {
+      // A malformed block elsewhere on the page shouldn't hide the posting.
+    }
+  }
+  return null;
+}
+
+export function formatJobPostingPay(ld: JobPostingLd): string | null {
+  const value = ld.baseSalary?.value;
+  if (!value) return null;
+  const min = value.minValue ?? value.value;
+  const max = value.maxValue ?? value.value;
+  if (typeof min !== 'number') return null;
+  const symbol = (ld.baseSalary?.currency ?? 'USD').toUpperCase() === 'USD' ? '$' : `${ld.baseSalary?.currency} `;
+  const unit = String(value.unitText ?? '').toUpperCase();
+  const suffix = unit === 'HOUR' ? '/hr' : unit === 'DAY' ? '/day' : unit === 'WEEK' ? '/wk' : unit === 'MONTH' ? '/mo' : '';
+  const range = typeof max === 'number' && max !== min ? `${symbol}${min}–${max}` : `${symbol}${min}`;
+  return `${range}${suffix}`;
+}
+
+/** Listing pages from the sitemap, newest first (the budget may not reach them all). */
+export function parseMercorSitemap(xml: string): string[] {
+  const entries = Array.from(xml.matchAll(/<url>([\s\S]*?)<\/url>/g)).map((m) => {
+    const loc = m[1].match(/<loc>([^<]+)<\/loc>/)?.[1] ?? '';
+    const lastmod = m[1].match(/<lastmod>([^<]+)<\/lastmod>/)?.[1] ?? '';
+    return { loc, lastmod };
+  });
+  return entries
+    .filter((e) => /^https:\/\/work\.mercor\.com\/jobs\/list_[A-Za-z0-9]+/.test(e.loc))
+    .sort((a, b) => b.lastmod.localeCompare(a.lastmod))
+    .map((e) => e.loc);
+}
+
+async function getText(url: string): Promise<string> {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xml' },
+    signal: AbortSignal.timeout(15_000),
+    next: { revalidate: 3600 },
+  } as RequestInit);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return res.text();
+}
+
+/**
+ * Throws if the sitemap can't be read, so stale Mercor rows are kept rather
+ * than cleared. Individual page failures just skip that listing.
+ */
+export async function fetchMercorAiTrainingJobs(): Promise<ExternalJob[]> {
+  const pages = parseMercorSitemap(await getText(MERCOR_SITEMAP));
+  const deadline = Date.now() + MERCOR_TIME_BUDGET_MS;
+  const fetchedAt = new Date().toISOString();
+  const openings: ExternalJob[] = [];
+  let next = 0;
+
+  async function worker() {
+    while (next < pages.length && Date.now() < deadline) {
+      const url = pages[next++];
+      try {
+        const html = await getText(url);
+        const ld = extractJobPostingLd(html);
+        const eligibility = extractMercorEligibility(html);
+        if (!ld?.title || !eligibility) continue; // can't verify → don't list
+        if (ld.validThrough && new Date(ld.validThrough).getTime() < Date.now()) continue;
+        if (!mercorListingOpenToCameroon(eligibility, ld.title)) continue;
+        const listingId = url.match(/\/jobs\/(list_[A-Za-z0-9]+)/)?.[1] ?? url;
+        openings.push({
+          external_id: listingId,
+          source: MERCOR_SOURCE,
+          title: String(ld.title),
+          // Most Mercor clients are confidential; the page shows no company.
+          company_name: ld.hiringOrganization?.name?.trim() || 'Mercor',
+          company_logo: undefined,
+          location: 'Remote — open to Cameroon',
+          salary: formatJobPostingPay(ld),
+          job_type: 'Contract · remote · expert AI training',
+          category: AI_TRAINING_CATEGORY,
+          description: undefined,
+          url,
+          fetched_at: fetchedAt,
+        });
+      } catch {
+        // One slow or missing page shouldn't sink the rest.
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: MERCOR_CONCURRENCY }, worker));
+  if (next < pages.length) {
+    console.warn(`[ai-training] Mercor: time budget reached after ${next}/${pages.length} pages.`);
+  }
+  return openings;
+}
+
 /**
  * General remote feeds (Remotive, RemoteOK, ...) occasionally carry an
  * AI-training posting. Re-file the ones that pass the same rules into the

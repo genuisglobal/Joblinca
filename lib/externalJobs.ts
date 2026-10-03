@@ -16,6 +16,8 @@ import {
   AI_TRAINING_CATEGORY,
   AI_TRAINING_OPENINGS_SOURCE,
   fetchAiTrainingOpenings,
+  fetchMercorAiTrainingJobs,
+  MERCOR_SOURCE,
   refileEligibleAiTrainingJobs,
 } from '@/lib/ai-training-jobs';
 
@@ -426,6 +428,7 @@ const EXTERNAL_FEED_PROVIDERS: FeedProvider[] = [
   { fetch: fetchArbeitnowExternalJobs },
   { fetch: fetchAiTrainingPlatformJobs },
   { fetch: fetchAiTrainingOpenings, authoritativeSource: AI_TRAINING_OPENINGS_SOURCE },
+  { fetch: fetchMercorAiTrainingJobs, authoritativeSource: MERCOR_SOURCE },
   { fetch: fetchUpworkExternalJobs },
 ];
 
