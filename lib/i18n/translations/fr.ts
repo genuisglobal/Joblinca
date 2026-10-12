@@ -1095,6 +1095,7 @@ const fr: Record<string, string> = {
   "dashboardNav.overview": "Vue d'ensemble",
   "dashboardNav.applications": "Candidatures",
   "dashboardNav.candidateSearch": "Recherche de candidats",
+  "dashboardNav.shortlists": "Présélections",
   "dashboardNav.messages": "Messages",
   "dashboardNav.whatsAppScreening": "Prescreening WhatsApp",
   "dashboardNav.myJobs": "Mes offres",
