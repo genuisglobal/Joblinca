@@ -1,5 +1,6 @@
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { grantReferralReward } from '@/lib/referral-rewards';
+import { createShortlistRequestForPayment } from '@/lib/vetting/service';
 
 type FinalizeSource = 'webhook' | 'status_poll';
 
@@ -185,6 +186,19 @@ async function applyJobTierEffects(
       social_promotion: socialPromotion,
     })
     .eq('id', transaction.job_id as string);
+
+  if (hiringTier === 'tier2_shortlist') {
+    // Non-blocking: the payment stands either way, and the queue page re-runs
+    // syncPaidShortlistJobs to pick up any job this misses.
+    try {
+      await createShortlistRequestForPayment(supabase, {
+        transactionId: transaction.id as string,
+        jobId: transaction.job_id as string,
+      });
+    } catch (err) {
+      console.error('Shortlist request creation failed (non-blocking)', err);
+    }
+  }
 }
 
 async function applyPromoRedemption(

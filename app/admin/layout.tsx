@@ -71,6 +71,7 @@ export default async function AdminLayout({
               </div>
               <NavLink href={localize('/admin/jobs')} icon={<BriefcaseIcon />} label="Jobs" />
               <NavLink href={localize('/admin/content-jobs')} icon={<DocumentIcon />} label="Content Jobs" />
+              <NavLink href={localize('/admin/shortlists')} icon={<UsersIcon />} label="Shortlists" />
               <NavLink href={localize('/admin/verifications')} icon={<ShieldCheckIcon />} label="Verifications" />
               <NavLink href={localize('/admin/support')} icon={<LifeBuoyIcon />} label="Support" />
               <NavLink href={localize('/admin/reports')} icon={<FlagIcon />} label="Reports" />

@@ -1096,6 +1096,7 @@ const en: Record<string, string> = {
   "dashboardNav.overview": "Overview",
   "dashboardNav.applications": "Applications",
   "dashboardNav.candidateSearch": "Candidate Search",
+  "dashboardNav.shortlists": "Shortlists",
   "dashboardNav.messages": "Messages",
   "dashboardNav.whatsAppScreening": "WhatsApp Screening",
   "dashboardNav.myJobs": "My Jobs",
