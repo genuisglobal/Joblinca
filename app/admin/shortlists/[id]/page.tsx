@@ -2,12 +2,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { getShortlistAdmin } from '@/lib/vetting/auth';
+import { listHiresForRequest } from '@/lib/vetting/hires';
 import {
   getVettingRequest,
   loadCandidatePool,
   loadSelection,
   VettingError,
 } from '@/lib/vetting/service';
+import HiresPanel from './HiresPanel';
 import ShortlistBuilder from './ShortlistBuilder';
 
 export const metadata = {
@@ -35,10 +37,31 @@ export default async function AdminShortlistPage({ params }: { params: { id: str
     throw err;
   }
 
-  const [pool, selection] = await Promise.all([
+  const delivered = request.status === 'delivered' || request.status === 'completed';
+  const [pool, selection, hires] = await Promise.all([
     loadCandidatePool(supabase, request.job_id),
     loadSelection(supabase, request.id),
+    delivered ? listHiresForRequest(supabase, request.id) : Promise.resolve([]),
   ]);
+
+  // The pool leaves out hired applicants, so name the shortlisted people directly.
+  let shortlisted: Array<{ applicationId: string; candidateId: string; rank: number; fullName: string | null }> = [];
+  if (delivered && selection.length > 0) {
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in(
+        'id',
+        selection.map((s) => s.candidateId)
+      );
+    const nameById = new Map((profiles ?? []).map((p) => [p.id as string, (p.full_name as string | null) ?? null]));
+    shortlisted = selection.map((s) => ({
+      applicationId: s.applicationId,
+      candidateId: s.candidateId,
+      rank: s.rank,
+      fullName: nameById.get(s.candidateId) ?? null,
+    }));
+  }
 
   return (
     <div>
@@ -51,6 +74,18 @@ export default async function AdminShortlistPage({ params }: { params: { id: str
         initialSelection={selection}
         currentUserId={admin.userId}
       />
+      {delivered && (
+        <div className="mt-6">
+          <HiresPanel
+            requestId={request.id}
+            billingModel={request.billing_model}
+            successFeePercent={request.success_fee_percent}
+            deliveredAt={request.delivered_at}
+            candidates={shortlisted}
+            hires={hires}
+          />
+        </div>
+      )}
     </div>
   );
 }
