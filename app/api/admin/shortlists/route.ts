@@ -23,12 +23,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const billingModel = body?.billingModel === 'success_fee' ? 'success_fee' : 'prepaid';
+  let successFeePercent: number | null = null;
+  if (billingModel === 'success_fee' && body?.successFeePercent !== undefined) {
+    successFeePercent = Number(body.successFeePercent);
+    if (!Number.isFinite(successFeePercent) || successFeePercent <= 0 || successFeePercent > 100) {
+      return NextResponse.json({ error: 'Success fee must be 1–100% of the first month' }, { status: 400 });
+    }
+  }
+
   try {
     const id = await createManualShortlistRequest(createServiceSupabaseClient(), {
       jobRef,
       source,
       shortlistSize: size,
       createdBy: admin.userId,
+      billingModel,
+      successFeePercent,
     });
     return NextResponse.json({ id }, { status: 201 });
   } catch (err) {

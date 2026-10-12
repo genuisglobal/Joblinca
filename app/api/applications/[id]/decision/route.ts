@@ -7,6 +7,7 @@ import {
 } from '@/lib/hiring-pipeline/server';
 import { moveApplicationToLegacyStatus } from '@/lib/hiring-pipeline/transitions';
 import type { HiringDecisionStatus } from '@/lib/hiring-pipeline/types';
+import { recordHireFromApplication } from '@/lib/vetting/hires';
 
 const VALID_DECISIONS: HiringDecisionStatus[] = ['active', 'hired', 'rejected', 'withdrawn'];
 
@@ -122,6 +123,12 @@ export async function POST(
 
     if (error || !updated) {
       throw new Error(error?.message || 'Failed to record decision');
+    }
+
+    if (decisionStatus === 'hired') {
+      // Candidates Joblinca introduced on a shortlist may carry a hire fee
+      // (pay-per-result balance or success fee). Best-effort; never blocks.
+      await recordHireFromApplication(db, params.id);
     }
 
     await recordApplicationActivity({
