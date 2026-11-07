@@ -261,7 +261,7 @@ export default function CoursePlayerPage() {
                       prose-strong:text-white
                       prose-code:bg-gray-700 prose-code:px-1 prose-code:rounded
                       prose-pre:bg-gray-900 prose-pre:border prose-pre:border-gray-700
-                      prose-table:text-sm prose-th:text-gray-200 prose-td:text-gray-300
+                      prose-table:text-sm prose-table:block prose-table:overflow-x-auto prose-pre:overflow-x-auto prose-th:text-gray-200 prose-td:text-gray-300
                       prose-th:border-gray-600 prose-td:border-gray-700"
                     dangerouslySetInnerHTML={{
                       __html: sanitizeHtml(markdownToHtml(activeModule.article_body || '')),

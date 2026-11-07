@@ -46,10 +46,10 @@ export default async function DashboardLayout({
   return (
     <div className="min-h-screen bg-gray-900 flex">
       <DashboardSidebar role={role} />
-      <div className="flex-1 flex flex-col min-h-screen lg:ml-0">
+      <div className="flex-1 min-w-0 flex flex-col min-h-screen lg:ml-0">
         <DashboardHeader />
         {role !== 'field_agent' && <RegistrationOfficerPrompt />}
-        <main className="flex-1 p-6 overflow-auto">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 overflow-auto">{children}</main>
       </div>
     </div>
   );

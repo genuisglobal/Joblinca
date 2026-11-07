@@ -2042,7 +2042,7 @@ export default function ApplyForm({
 
         {/* Job Summary Sidebar */}
         <div className="lg:col-span-1">
-          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 sticky top-6">
+          <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 sticky top-[calc(var(--site-header-h)+1rem)]">
             <h3 className="text-lg font-semibold text-white mb-4">Opportunity Summary</h3>
 
             <div className="space-y-4">

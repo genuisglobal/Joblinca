@@ -515,7 +515,7 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-1">Work Type</label>
               <select

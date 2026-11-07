@@ -127,7 +127,7 @@ export default function PricingPage() {
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-10">
+      <header className="border-b border-gray-800 bg-gray-900/80">
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
           <Link href={addLocalePrefix('/', locale)} className="text-xl font-bold text-white">
             Joblinca

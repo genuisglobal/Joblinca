@@ -66,7 +66,7 @@ export default function HomeHeroSearch() {
                 setSearchKeyword(term);
               }
             }}
-            className="px-3 py-1 text-sm text-neutral-400 hover:text-white bg-neutral-800/50 hover:bg-neutral-800 rounded-full transition-colors"
+            className="px-4 py-2 sm:px-3 sm:py-1 text-sm text-neutral-400 hover:text-white bg-neutral-800/50 hover:bg-neutral-800 rounded-full transition-colors"
           >
             {term}
           </button>

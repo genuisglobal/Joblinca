@@ -300,7 +300,7 @@ export default function PaymentModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 shadow-2xl">
+      <div className="modal-panel bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 shadow-2xl">
         <div className="flex items-center justify-between p-5 border-b border-gray-700">
           <h2 className="text-lg font-semibold text-white">{t('payment.completePayment')}</h2>
           <button

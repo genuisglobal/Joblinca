@@ -588,7 +588,7 @@ export default function ApplyOptions({
       {/* Report Modal */}
       {showReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-900 p-6">
+          <div className="modal-panel w-full max-w-md rounded-2xl border border-neutral-700 bg-neutral-900 p-6">
             <h3 className="text-lg font-semibold text-white mb-1">{t('jobApply.reportTitle')}</h3>
             <p className="text-sm text-neutral-400 mb-4">
               {t('jobApply.reportSubtitle')}

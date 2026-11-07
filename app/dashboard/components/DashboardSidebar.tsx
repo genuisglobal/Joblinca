@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from '@/lib/i18n/context';
 import { addLocalePrefix, stripLocalePrefix } from '@/lib/i18n/locale';
 
@@ -316,6 +316,9 @@ const fieldAgentNav: NavItem[] = [
   },
 ];
 
+/** Fired by the menu button in DashboardHeader to open/close the mobile drawer. */
+export const DASHBOARD_NAV_TOGGLE_EVENT = 'joblinca:dashboard-nav-toggle';
+
 interface DashboardSidebarProps {
   role: Role;
 }
@@ -325,6 +328,26 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const normalizedPathname = stripLocalePrefix(pathname || '/');
+
+  useEffect(() => {
+    const toggle = () => setIsOpen((open) => !open);
+    window.addEventListener(DASHBOARD_NAV_TOGGLE_EVENT, toggle);
+    return () => window.removeEventListener(DASHBOARD_NAV_TOGGLE_EVENT, toggle);
+  }, []);
+
+  // Close the drawer on navigation and stop the page scrolling behind it.
+  useEffect(() => {
+    setIsOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isOpen]);
 
   const navItems =
     role === 'recruiter'
@@ -337,56 +360,36 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
 
   return (
     <>
-      {/* Mobile menu button */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-gray-800 rounded-lg text-white"
-        aria-label={isOpen ? t('nav.closeMenu') : t('nav.openMenu')}
-      >
-        <svg
-          className="w-6 h-6"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          {isOpen ? (
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M6 18L18 6M6 6l12 12"
-            />
-          ) : (
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M4 6h16M4 12h16M4 18h16"
-            />
-          )}
-        </svg>
-      </button>
-
       {/* Overlay for mobile */}
       {isOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-30"
+          className="lg:hidden fixed inset-0 bg-black/50 z-[55]"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-gray-800 border-r border-gray-700 transform transition-transform duration-200 ease-in-out ${
+        className={`fixed lg:static inset-y-0 left-0 z-[56] lg:z-auto w-64 max-w-[85vw] bg-gray-800 border-r border-gray-700 transform transition-transform duration-200 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
         <div className="h-full flex flex-col">
           {/* Logo */}
-          <div className="p-6 border-b border-gray-700">
+          <div className="p-6 border-b border-gray-700 flex items-center justify-between">
             <Link href={addLocalePrefix('/', locale)} className="flex items-center gap-2">
               <span className="text-2xl font-bold text-blue-500">Joblinca</span>
             </Link>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="lg:hidden -mr-2 p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700"
+              aria-label={t('nav.closeMenu')}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
           {/* Navigation */}

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { ACTIVE_ADMIN_TYPES, type AdminType } from "@/lib/admin-types";
@@ -25,6 +26,7 @@ export default function NavBar() {
   const [userAdminType, setUserAdminType] = useState<AdminType | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
 
   const fetchUserAndRole = useCallback(async (skipLoading = false) => {
     if (!skipLoading) setLoading(true);
@@ -136,16 +138,34 @@ export default function NavBar() {
     closeMobileMenu();
   }, [pathname]);
 
+  // The mobile menu is portalled to <body>. The site header uses
+  // backdrop-blur, which makes it the containing block for `fixed`
+  // descendants, so a drawer rendered inside it was clipped to the
+  // header's height and its links could not be reached.
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  // Stop the page scrolling behind the open menu.
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [mobileMenuOpen]);
+
   if (loading) {
     return (
-      <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 py-4 h-16" />
+      <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 h-[72px]" />
     );
   }
 
   return (
     <>
-      {/* Main Navigation Bar */}
-      <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
+      {/* Main Navigation Bar (height mirrored by --site-header-h in globals.css) */}
+      <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 h-[72px]">
         {/* Logo */}
         <Link href={localizedHref("/")} className="flex items-center">
           <Image
@@ -269,17 +289,18 @@ export default function NavBar() {
         </button>
       </nav>
 
+      {portalReady && createPortal(<>
       {/* Mobile Navigation Overlay */}
       {mobileMenuOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
           onClick={closeMobileMenu}
         />
       )}
 
       {/* Mobile Navigation Panel */}
       <div
-        className={`lg:hidden fixed top-0 right-0 z-50 h-full w-[280px] max-w-[85vw] bg-gray-900 border-l border-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out ${
+        className={`lg:hidden fixed inset-y-0 right-0 z-[61] w-[280px] max-w-[85vw] bg-gray-900 border-l border-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out ${
           mobileMenuOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -493,6 +514,7 @@ export default function NavBar() {
           </div>
         </div>
       </div>
+      </>, document.body)}
     </>
   );
 }

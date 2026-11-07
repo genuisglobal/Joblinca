@@ -124,7 +124,7 @@ export default function RegistrationOfficerPrompt() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
+      <div className="modal-panel w-full max-w-md rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl">
         <div className="mb-5">
           <h2 className="text-xl font-semibold text-white">
             Did a registration officer help you?

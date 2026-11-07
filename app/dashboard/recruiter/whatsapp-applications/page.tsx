@@ -211,8 +211,8 @@ export default function RecruiterWhatsAppApplicationsPage() {
         </div>
       </div>
 
-      <div className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden">
-        <div className="grid grid-cols-12 gap-3 px-4 py-3 text-xs font-semibold text-gray-400 border-b border-gray-700">
+      <div className="bg-gray-800 border border-gray-700 rounded-lg overflow-x-auto">
+        <div className="grid min-w-[760px] grid-cols-12 gap-3 px-4 py-3 text-xs font-semibold text-gray-400 border-b border-gray-700">
           <div className="col-span-2">Candidate</div>
           <div className="col-span-3">Job</div>
           <div className="col-span-1">Lang</div>
@@ -228,7 +228,7 @@ export default function RecruiterWhatsAppApplicationsPage() {
             No WhatsApp screening sessions yet.
           </div>
         ) : (
-          <div className="divide-y divide-gray-700/60">
+          <div className="min-w-[760px] divide-y divide-gray-700/60">
             {sessions.map((session) => (
               <div key={session.id} className="grid grid-cols-12 gap-3 px-4 py-3 text-sm">
                 <div className="col-span-2 text-gray-200">{maskPhone(session.wa_phone)}</div>

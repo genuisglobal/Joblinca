@@ -13,6 +13,7 @@ import {
   type Locale,
 } from '@/lib/i18n/locale';
 import ApplyOptions from './ApplyOptions';
+import MobileApplyBar from './MobileApplyBar';
 import {
   describeEligibleRoles,
   getOpportunityTypeLabel,
@@ -410,7 +411,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
     <div className="min-h-screen bg-gray-900">
-      <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="mx-auto max-w-6xl px-4 pt-6 pb-28 sm:pt-8 lg:pb-8">
         <Link
           href={addLocalePrefix('/jobs', preferredLocale)}
           className="mb-6 inline-flex items-center gap-1 text-sm text-blue-400 hover:text-blue-300"
@@ -752,7 +753,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
           </div>
 
           <div className="lg:col-span-1">
-            <div className="sticky top-6 space-y-6">
+            <div className="sticky top-[calc(var(--site-header-h)+1rem)] space-y-6">
               <div className="rounded-lg border border-gray-700 bg-gray-800 p-5">
                 <h2 className="mb-4 text-base font-semibold text-white">{t('jobDetail.opportunitySummary')}</h2>
                 <div className="space-y-4 text-sm">
@@ -779,6 +780,7 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                 </div>
               </div>
 
+              <div id="apply-options" className="scroll-mt-[calc(var(--site-header-h)+1rem)]">
               <ApplyOptions
                 job={{
                   id: job.id,
@@ -804,10 +806,19 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                 isSaved={isSaved}
                 isClosed={!!isClosed}
               />
+              </div>
             </div>
           </div>
         </div>
       </div>
+      {!isClosed && !existingApplication && (
+        <MobileApplyBar
+          targetId="apply-options"
+          title={job.title}
+          company={job.company_name ?? null}
+          label={t('jobs.applyNow')}
+        />
+      )}
     </div>
     </>
   );

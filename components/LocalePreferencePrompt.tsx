@@ -68,8 +68,8 @@ export default function LocalePreferencePrompt({
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950 shadow-2xl">
-        <div className="border-b border-neutral-800 bg-gradient-to-r from-blue-950/80 to-emerald-950/70 px-6 py-5">
+      <div className="modal-panel w-full max-w-xl rounded-3xl border border-neutral-800 bg-neutral-950 shadow-2xl">
+        <div className="rounded-t-3xl border-b border-neutral-800 bg-gradient-to-r from-blue-950/80 to-emerald-950/70 px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
               <Languages className="h-5 w-5 text-blue-200" />
@@ -85,12 +85,12 @@ export default function LocalePreferencePrompt({
           </div>
         </div>
 
-        <div className="grid gap-3 p-6 md:grid-cols-2">
+        <div className="grid gap-3 p-4 sm:p-6 md:grid-cols-2">
           <button
             type="button"
             onClick={() => handleSelect('en')}
             disabled={Boolean(pendingLocale)}
-            className={`rounded-2xl border px-5 py-5 text-left transition-colors ${
+            className={`rounded-2xl border px-4 py-4 sm:px-5 sm:py-5 text-left transition-colors ${
               locale === 'en'
                 ? 'border-blue-500 bg-blue-500/10'
                 : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700 hover:bg-neutral-800'
@@ -108,7 +108,7 @@ export default function LocalePreferencePrompt({
             type="button"
             onClick={() => handleSelect('fr')}
             disabled={Boolean(pendingLocale)}
-            className={`rounded-2xl border px-5 py-5 text-left transition-colors ${
+            className={`rounded-2xl border px-4 py-4 sm:px-5 sm:py-5 text-left transition-colors ${
               locale === 'fr'
                 ? 'border-emerald-500 bg-emerald-500/10'
                 : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700 hover:bg-neutral-800'

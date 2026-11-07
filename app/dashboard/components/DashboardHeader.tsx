@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import VerificationBadge from './VerificationBadge';
+import { DASHBOARD_NAV_TOGGLE_EVENT } from './DashboardSidebar';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n/context';
 import { addLocalePrefix } from '@/lib/i18n/locale';
@@ -109,16 +110,28 @@ export default function DashboardHeader() {
   const subscriptionHref = addLocalePrefix('/dashboard/subscription', locale);
 
   return (
-    <header className="bg-gray-800 border-b border-gray-700 px-6 py-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">{t('dashboardShell.title')}</h1>
-          <p className="text-gray-400 text-sm">
-            {t('dashboardShell.portal', { role: roleLabel })}
-          </p>
+    <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 sm:px-6 sm:py-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event(DASHBOARD_NAV_TOGGLE_EVENT))}
+            className="lg:hidden shrink-0 p-2 -ml-1 rounded-lg bg-gray-700 text-white hover:bg-gray-600"
+            aria-label={t('nav.openMenu')}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-bold text-white truncate">{t('dashboardShell.title')}</h1>
+            <p className="text-gray-400 text-xs sm:text-sm truncate">
+              {t('dashboardShell.portal', { role: roleLabel })}
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {showSubscription && (
             <div className="hidden lg:block">
               {subscriptionLoading ? (
@@ -149,7 +162,14 @@ export default function DashboardHeader() {
           )}
 
           {user?.role === 'recruiter' && (
-            <VerificationBadge isVerified={user?.isVerified || false} />
+            <>
+              <span className="sm:hidden">
+                <VerificationBadge isVerified={user?.isVerified || false} size="sm" showLabel={false} />
+              </span>
+              <span className="hidden sm:inline-flex">
+                <VerificationBadge isVerified={user?.isVerified || false} />
+              </span>
+            </>
           )}
 
           <div className="flex items-center gap-3">

@@ -181,3 +181,29 @@ html.dark {
     display: none;
   }
 }
+
+/* Mobile layout helpers */
+:root {
+  /* Height of the sticky site header (NavBar: 72px + 1px border). */
+  --site-header-h: 73px;
+}
+
+/* Keep a modal's panel inside the visible screen and let it scroll, so
+   its action buttons are reachable on short phone screens. dvh follows
+   the mobile browser's collapsing URL bar; vh is the fallback. */
+.modal-panel {
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* iOS Safari zooms the page in when a focused field's text is under
+   16px and leaves it zoomed. Force 16px form text on phone widths. */
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']),
+  select:not([data-keep-font-size]),
+  textarea:not([data-keep-font-size]) {
+    font-size: 16px;
+  }
+}
