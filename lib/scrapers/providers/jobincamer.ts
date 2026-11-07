@@ -7,6 +7,7 @@
  */
 
 import { BaseScraper } from '../base';
+import { locationFromDetailText, locationFromMetaParts, splitMetaLine } from './jobincamer-parse';
 import { deriveCategory } from '@/lib/externalJobs';
 import type { Cheerio, CheerioAPI } from 'cheerio';
 import type { ScrapedJob, ScraperConfig } from '../types';
@@ -63,16 +64,11 @@ export class JobInCamerScraper extends BaseScraper {
           // Format: "COMPANY | Location | Publie le DD-MM-YYYY | Postuler avant le DD-MM-YYYY"
           const bodyText = $el.find('.media-body').text();
 
-          // Location - text after map marker icon, before date
-          const locationMatch = bodyText.match(/(?:fa-map[^|]*|[|])\s*([\w\séèêëàâäùûüîïôöç-]+?)(?:\s*[|]|\s*Publi)/i);
-          let locationRaw: string | null = null;
-
-          // Simpler approach: split the metadata line by |
+          // [company, location?, "Publié le …", "Postuler avant le …"]. Cards
+          // no longer carry a location, so never take a date segment as one;
+          // the detail page fills it in below.
           const metaParts = this.extractMetaLine($el, $);
-          if (metaParts.length >= 2) {
-            // Usually: [company, location, dates...]
-            locationRaw = metaParts[1]?.trim() || null;
-          }
+          const locationRaw = locationFromMetaParts(metaParts);
 
           // Posted date
           const postedMatch = bodyText.match(/Publi[ée]\s+le\s+(\d{2}-\d{2}-\d{4})/i);
@@ -137,6 +133,13 @@ export class JobInCamerScraper extends BaseScraper {
           if (details.email && !job.contact_email) job.contact_email = details.email;
           if (details.phone && !job.contact_phone) job.contact_phone = details.phone;
           if (details.whatsapp && !job.contact_whatsapp) job.contact_whatsapp = details.whatsapp;
+          if (job.location === 'Cameroon') {
+            const detailLocation = locationFromDetailText(details.pageText);
+            if (detailLocation) {
+              job.location = detailLocation;
+              job.region = this.normalizeRegion(detailLocation);
+            }
+          }
         }
         await this.delay(1500);
       } catch {
@@ -156,9 +159,8 @@ export class JobInCamerScraper extends BaseScraper {
     // Get text between closing </h4> and the first <br
     const afterHeading = bodyHtml.split('</h4>')[1] || '';
     const metaLine = afterHeading.split('<br')[0] || '';
-    // Strip HTML tags and split by |
-    const text = metaLine.replace(/<[^>]+>/g, '').trim();
-    return text.split('|').map((s) => s.trim()).filter(Boolean);
+    // Strip tags, decode entities (the raw HTML has "Publi&#xe9;"), split by |
+    return splitMetaLine(metaLine);
   }
 
   /** Infer job type from title and body text. */

@@ -262,6 +262,12 @@ function shouldPreferIncomingLabel(existing: string | null, incoming: string | n
     return true;
   }
 
+  // A date segment stored as a location by the old jobincamer parser
+  // ("Publi&#xe9; le 06-11-2026") is junk: let a real place replace it.
+  if (/^(publi|postuler)/i.test(current) || /\d{2}-\d{2}-\d{4}/.test(current)) {
+    return !/^(publi|postuler)/i.test(next);
+  }
+
   return current.toLowerCase() === 'cameroon' && next.toLowerCase() !== 'cameroon';
 }
 
