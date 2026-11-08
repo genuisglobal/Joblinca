@@ -190,12 +190,12 @@ export default async function HomePage() {
       <HomeJsonLd totalJobCount={totalJobCount} />
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-[92vh] flex items-center overflow-hidden">
+      <section className="relative flex items-center overflow-hidden lg:min-h-[92vh]">
         <div className="absolute inset-0 bg-gradient-to-br from-neutral-950 via-neutral-900/80 to-neutral-950" />
         <div className="absolute top-1/4 left-0 w-[600px] h-[600px] bg-primary-600/6 rounded-full blur-[120px]" />
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-accent-500/6 rounded-full blur-[120px]" />
 
-        <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-20">
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-16 lg:py-20">
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
             <div>
               <div className="flex mb-6">
@@ -317,6 +317,69 @@ export default async function HomePage() {
               <p className="text-sm text-neutral-400">{t('home.stats.payment')}</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── FEATURED JOBS (server-rendered) ──────────────────────────────── */}
+      <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-950">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold mb-2">
+                {totalJobCount <= 10 ? t('home.featured.allAvailable') : t('home.featured.todaysFeatured')}
+              </h2>
+              <p className="text-neutral-400">
+                {totalJobCount <= 10
+                  ? t('home.featured.rolesFromVerified', { count: totalJobCount, label: featuredRoleLabel })
+                  : t('home.featured.freshPicks')}
+              </p>
+            </div>
+            {totalJobCount > 10 && (
+              <Link
+                href={addLocalePrefix('/jobs', locale)}
+                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium transition-colors"
+              >
+                {t('home.featured.viewAll', { count: totalJobCount })}
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            )}
+          </div>
+
+          {jobs.length > 0 ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {jobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  headingLevel="h3"
+                  href={addLocalePrefix(`/jobs/${job.id}`, locale)}
+                  title={job.title}
+                  company={job.company_name}
+                  location={job.location}
+                  workType={
+                    job.work_type === 'remote'
+                      ? t('common.remote')
+                      : job.work_type === 'hybrid'
+                        ? t('common.hybrid')
+                        : job.work_type === 'onsite'
+                          ? t('common.onSite')
+                          : null
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-neutral-900/30 rounded-xl border border-neutral-800/50">
+              <Briefcase className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
+              <p className="text-neutral-400 mb-4">{t('home.featured.newJobsDaily')}</p>
+              <Link
+                href={addLocalePrefix('/auth/register?role=candidate', locale)}
+                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium"
+              >
+                {t('home.featured.signUpNotified')}
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          )}
         </div>
       </section>
 
@@ -510,69 +573,6 @@ export default async function HomePage() {
               </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ── FEATURED JOBS (server-rendered) ──────────────────────────────── */}
-      <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-950">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-2">
-                {totalJobCount <= 10 ? t('home.featured.allAvailable') : t('home.featured.todaysFeatured')}
-              </h2>
-              <p className="text-neutral-400">
-                {totalJobCount <= 10
-                  ? t('home.featured.rolesFromVerified', { count: totalJobCount, label: featuredRoleLabel })
-                  : t('home.featured.freshPicks')}
-              </p>
-            </div>
-            {totalJobCount > 10 && (
-              <Link
-                href={addLocalePrefix('/jobs', locale)}
-                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium transition-colors"
-              >
-                {t('home.featured.viewAll', { count: totalJobCount })}
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            )}
-          </div>
-
-          {jobs.length > 0 ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {jobs.map((job) => (
-                <JobCard
-                  key={job.id}
-                  headingLevel="h3"
-                  href={addLocalePrefix(`/jobs/${job.id}`, locale)}
-                  title={job.title}
-                  company={job.company_name}
-                  location={job.location}
-                  workType={
-                    job.work_type === 'remote'
-                      ? t('common.remote')
-                      : job.work_type === 'hybrid'
-                        ? t('common.hybrid')
-                        : job.work_type === 'onsite'
-                          ? t('common.onSite')
-                          : null
-                  }
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12 bg-neutral-900/30 rounded-xl border border-neutral-800/50">
-              <Briefcase className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
-              <p className="text-neutral-400 mb-4">{t('home.featured.newJobsDaily')}</p>
-              <Link
-                href={addLocalePrefix('/auth/register?role=candidate', locale)}
-                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium"
-              >
-                {t('home.featured.signUpNotified')}
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          )}
         </div>
       </section>
 

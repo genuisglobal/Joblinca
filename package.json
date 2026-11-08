@@ -35,7 +35,8 @@
     "test:e2e:mobile-nav": "node tests/e2e/mobile-nav-drawer.e2e.mjs",
     "test:e2e:dialog": "node tests/e2e/dialog.e2e.mjs",
     "test:e2e:jobs": "node tests/e2e/jobs-mobile.e2e.mjs",
-    "test:e2e:job-detail": "node tests/e2e/job-detail.e2e.mjs"
+    "test:e2e:job-detail": "node tests/e2e/job-detail.e2e.mjs",
+    "test:e2e:shell": "node tests/e2e/shell.e2e.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^10.42.0",
