@@ -441,6 +441,8 @@ const fr: Record<string, string> = {
   "jobDetail.closed":
     "Cette offre est cl\u00f4tur\u00e9e et n'accepte plus de candidatures.",
   "jobDetail.description": "Description du poste",
+  "jobDetail.readMore": "Lire toute la description",
+  "jobDetail.showLess": "Réduire",
   "jobDetail.noDescription": "Aucune description fournie",
   "jobDetail.requirements": "Exigences",
   "jobDetail.benefits": "Avantages",

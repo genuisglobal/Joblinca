@@ -14,6 +14,8 @@ import {
 } from '@/lib/i18n/locale';
 import ApplyOptions from './ApplyOptions';
 import MobileApplyBar from './MobileApplyBar';
+import JobDescription from './JobDescription';
+import { formatJobDescription } from '@/lib/jobs/format-description';
 import {
   describeEligibleRoles,
   getOpportunityTypeLabel,
@@ -400,6 +402,8 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
     { name: job.title, url: jobUrl },
   ]);
 
+  const descriptionBlocks = formatJobDescription(job.description, job.title);
+
   return (
     <>
       <script
@@ -452,9 +456,10 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <div className="mb-6 rounded-lg border border-gray-700 bg-gray-800 p-6">
+        {/* Phones: header card, then apply options, then details. Desktop:
+            two columns (details left, sticky apply sidebar right). */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
+          <div className="rounded-lg border border-gray-700 bg-gray-800 p-5 sm:p-6 lg:col-span-2 lg:row-start-1">
               {job.image_url && (
                 <div className="relative mb-6 h-48 w-full overflow-hidden rounded-lg">
                   <Image
@@ -583,17 +588,78 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
                   )}
                 </p>
               )}
-            </div>
+          </div>
 
-            <div className="mb-6 rounded-lg border border-gray-700 bg-gray-800 p-6">
-              <h2 className="mb-4 text-lg font-semibold text-white">{t('jobDetail.description')}</h2>
-              <div className="prose prose-invert max-w-none text-gray-300">
-                {job.description ? (
-                  <div className="whitespace-pre-wrap">{job.description}</div>
-                ) : (
-                  <p className="italic text-gray-500">{t('jobDetail.noDescription')}</p>
-                )}
+          <div className="lg:col-start-3 lg:row-span-2 lg:row-start-1">
+            <div className="flex flex-col gap-6 lg:sticky lg:top-[calc(var(--site-header-h)+1rem)]">
+              <div className="order-2 rounded-lg border border-gray-700 bg-gray-800 p-5 lg:order-1">
+                <h2 className="mb-4 text-base font-semibold text-white">{t('jobDetail.opportunitySummary')}</h2>
+                <div className="space-y-4 text-sm">
+                  <div>
+                    <p className="text-gray-400">{t('jobDetail.type')}</p>
+                    <p className="text-white">{localizedOpportunityLabel}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">{t('jobDetail.eligibleProfiles')}</p>
+                    <p className="text-white">{localizedEligibleRoleSummary}</p>
+                  </div>
+                  {job.job_type === 'internship' && (
+                    <div>
+                      <p className="text-gray-400">{t('jobDetail.trackIntent')}</p>
+                      <p className="text-white">
+                        {job.internship_track === 'education'
+                          ? t('jobDetail.trackIntentEducation')
+                          : job.internship_track === 'professional'
+                            ? t('jobDetail.trackIntentProfessional')
+                            : t('jobDetail.trackIntentPending')}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              <div id="apply-options" className="order-1 scroll-mt-[calc(var(--site-header-h)+1rem)] lg:order-2">
+              <ApplyOptions
+                job={{
+                  id: job.id,
+                  title: job.title,
+                  company_name: job.company_name,
+                  recruiter_id: job.recruiter_id ?? null,
+                  job_type: job.job_type,
+                  internship_track: job.internship_track,
+                  visibility: job.visibility,
+                  eligible_roles: job.eligible_roles,
+                  apply_method: job.apply_method || 'joblinca',
+                  external_apply_url: job.external_apply_url,
+                  apply_email: job.apply_email,
+                  apply_phone: job.apply_phone,
+                  apply_whatsapp: job.apply_whatsapp,
+                  closes_at: job.closes_at,
+                  origin_type: job.origin_type ?? null,
+                  source_name: (job.source_attribution_json as any)?.source_name ?? null,
+                }}
+                isAuthenticated={!!user}
+                userRole={userRole}
+                existingApplication={existingApplication}
+                isSaved={isSaved}
+                isClosed={!!isClosed}
+              />
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 lg:col-start-1 lg:row-start-2">
+            <div className="mb-6 rounded-lg border border-gray-700 bg-gray-800 p-5 sm:p-6">
+              <h2 className="mb-4 text-lg font-semibold text-white">{t('jobDetail.description')}</h2>
+              {descriptionBlocks.length > 0 ? (
+                <JobDescription
+                  blocks={descriptionBlocks}
+                  moreLabel={t('jobDetail.readMore')}
+                  lessLabel={t('jobDetail.showLess')}
+                />
+              ) : (
+                <p className="italic text-gray-500">{t('jobDetail.noDescription')}</p>
+              )}
             </div>
 
             {/* External source attribution + trust indicator */}
@@ -752,63 +818,6 @@ export default async function JobDetailPage({ params, searchParams }: PageProps)
             )}
           </div>
 
-          <div className="lg:col-span-1">
-            <div className="sticky top-[calc(var(--site-header-h)+1rem)] space-y-6">
-              <div className="rounded-lg border border-gray-700 bg-gray-800 p-5">
-                <h2 className="mb-4 text-base font-semibold text-white">{t('jobDetail.opportunitySummary')}</h2>
-                <div className="space-y-4 text-sm">
-                  <div>
-                    <p className="text-gray-400">{t('jobDetail.type')}</p>
-                    <p className="text-white">{localizedOpportunityLabel}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-400">{t('jobDetail.eligibleProfiles')}</p>
-                    <p className="text-white">{localizedEligibleRoleSummary}</p>
-                  </div>
-                  {job.job_type === 'internship' && (
-                    <div>
-                      <p className="text-gray-400">{t('jobDetail.trackIntent')}</p>
-                      <p className="text-white">
-                        {job.internship_track === 'education'
-                          ? t('jobDetail.trackIntentEducation')
-                          : job.internship_track === 'professional'
-                            ? t('jobDetail.trackIntentProfessional')
-                            : t('jobDetail.trackIntentPending')}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div id="apply-options" className="scroll-mt-[calc(var(--site-header-h)+1rem)]">
-              <ApplyOptions
-                job={{
-                  id: job.id,
-                  title: job.title,
-                  company_name: job.company_name,
-                  recruiter_id: job.recruiter_id ?? null,
-                  job_type: job.job_type,
-                  internship_track: job.internship_track,
-                  visibility: job.visibility,
-                  eligible_roles: job.eligible_roles,
-                  apply_method: job.apply_method || 'joblinca',
-                  external_apply_url: job.external_apply_url,
-                  apply_email: job.apply_email,
-                  apply_phone: job.apply_phone,
-                  apply_whatsapp: job.apply_whatsapp,
-                  closes_at: job.closes_at,
-                  origin_type: job.origin_type ?? null,
-                  source_name: (job.source_attribution_json as any)?.source_name ?? null,
-                }}
-                isAuthenticated={!!user}
-                userRole={userRole}
-                existingApplication={existingApplication}
-                isSaved={isSaved}
-                isClosed={!!isClosed}
-              />
-              </div>
-            </div>
-          </div>
         </div>
       </div>
       {!isClosed && !existingApplication && (
