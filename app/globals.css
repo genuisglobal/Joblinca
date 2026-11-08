@@ -207,3 +207,13 @@ html.dark {
     font-size: 16px;
   }
 }
+
+/* Full-height side drawer. dvh tracks the mobile browser's collapsing URL
+   bar (vh is the fallback); safe-area insets keep the first and last items
+   clear of notches and the home indicator in standalone/PWA mode. */
+.drawer-panel {
+  height: 100vh;
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}

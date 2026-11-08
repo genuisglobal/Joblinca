@@ -67,7 +67,7 @@ export default function LocalePreferencePrompt({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-dialog flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
       <div className="modal-panel w-full max-w-xl rounded-3xl border border-neutral-800 bg-neutral-950 shadow-2xl">
         <div className="rounded-t-3xl border-b border-neutral-800 bg-gradient-to-r from-blue-950/80 to-emerald-950/70 px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center gap-3">

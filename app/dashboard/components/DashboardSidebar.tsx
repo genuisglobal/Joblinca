@@ -363,14 +363,14 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
       {/* Overlay for mobile */}
       {isOpen && (
         <div
-          className="lg:hidden fixed inset-0 bg-black/50 z-[55]"
+          className="lg:hidden fixed inset-0 bg-black/50 z-drawer-backdrop"
           onClick={() => setIsOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-[56] lg:z-auto w-64 max-w-[85vw] bg-gray-800 border-r border-gray-700 transform transition-transform duration-200 ease-in-out ${
+        className={`fixed lg:static inset-y-0 left-0 z-drawer lg:z-auto w-64 max-w-[85vw] bg-gray-800 border-r border-gray-700 transform transition-transform duration-200 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >

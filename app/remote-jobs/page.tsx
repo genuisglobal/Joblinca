@@ -198,7 +198,7 @@ export default function RemoteJobsPage() {
       </section>
 
       {/* Search & Filters - sticks just below the site header */}
-      <section className="sticky top-[var(--site-header-h)] z-30 bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-800/50">
+      <section className="sticky top-[var(--site-header-h)] z-sticky bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-800/50">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
           {/* Search Bar */}
           <form onSubmit={handleSearch} className="flex gap-2 mb-4">

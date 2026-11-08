@@ -8,6 +8,16 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      // Stacking scale for page-level layers. Use these names instead of
+      // ad-hoc z-[NN] values so overlapping layers stay predictable.
+      zIndex: {
+        sticky: '30', // in-page sticky bars (filters, etc.)
+        'mobile-bar': '40', // fixed bottom action bars on phones
+        header: '50', // sticky site header
+        'drawer-backdrop': '60', // dim layer behind a side drawer
+        drawer: '61', // side drawers (site menu, dashboard sidebar)
+        dialog: '70', // blocking prompts that must cover drawers
+      },
       colors: {
         // Primary brand colors
         primary: {

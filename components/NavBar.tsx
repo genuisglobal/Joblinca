@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -27,6 +27,10 @@ export default function NavBar() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerWasOpenRef = useRef(false);
 
   const fetchUserAndRole = useCallback(async (skipLoading = false) => {
     if (!skipLoading) setLoading(true);
@@ -156,6 +160,57 @@ export default function NavBar() {
     };
   }, [mobileMenuOpen]);
 
+  // Dialog behaviour: move focus into the drawer, close on Escape, keep Tab
+  // inside it while open, and hand focus back to the menu button on close.
+  useEffect(() => {
+    if (!mobileMenuOpen) {
+      if (drawerWasOpenRef.current) {
+        drawerWasOpenRef.current = false;
+        menuButtonRef.current?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    drawerWasOpenRef.current = true;
+    closeButtonRef.current?.focus({ preventScroll: true });
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileMenuOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || !drawerRef.current) return;
+      const focusable = Array.from(
+        drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled])")
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !drawerRef.current.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !drawerRef.current.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    // The drawer is lg:hidden; if the window grows to desktop width while it
+    // is open, close it so the scroll lock and focus trap are released.
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const onDesktop = (event: MediaQueryListEvent) => {
+      if (event.matches) setMobileMenuOpen(false);
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    desktop.addEventListener?.("change", onDesktop);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      desktop.removeEventListener?.("change", onDesktop);
+    };
+  }, [mobileMenuOpen]);
+
   if (loading) {
     return (
       <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 h-[72px]" />
@@ -279,11 +334,14 @@ export default function NavBar() {
 
         {/* Mobile Menu Toggle */}
         <button
+          ref={menuButtonRef}
           type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
           className="lg:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
           aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
           aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-nav-drawer"
+          aria-haspopup="dialog"
         >
           {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
@@ -293,19 +351,27 @@ export default function NavBar() {
       {/* Mobile Navigation Overlay */}
       {mobileMenuOpen && (
         <div
-          className="lg:hidden fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-drawer-backdrop bg-black/60 backdrop-blur-sm"
           onClick={closeMobileMenu}
+          aria-hidden="true"
+          data-testid="mobile-nav-backdrop"
         />
       )}
 
-      {/* Mobile Navigation Panel */}
+      {/* Mobile Navigation Panel. Hidden with `invisible` when closed so its
+          links leave the tab order and the accessibility tree. */}
       <div
-        className={`lg:hidden fixed inset-y-0 right-0 z-[61] w-[280px] max-w-[85vw] bg-gray-900 border-l border-gray-800 shadow-2xl transform transition-transform duration-300 ease-in-out ${
-          mobileMenuOpen ? "translate-x-0" : "translate-x-full"
+        ref={drawerRef}
+        id="mobile-nav-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("nav.navigate")}
+        className={`drawer-panel lg:hidden fixed top-0 right-0 z-drawer flex w-[280px] max-w-[85vw] flex-col bg-gray-900 border-l border-gray-800 shadow-2xl transform transition-[transform,visibility] duration-300 ease-in-out ${
+          mobileMenuOpen ? "translate-x-0 visible" : "translate-x-full invisible"
         }`}
       >
         {/* Mobile Menu Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-800">
+        <div className="flex shrink-0 items-center justify-between p-4 border-b border-gray-800">
           <Link href={localizedHref("/")} onClick={closeMobileMenu} className="flex items-center gap-2">
             <Image
               src="/joblinca-logo.png"
@@ -317,6 +383,7 @@ export default function NavBar() {
             <span className="font-bold text-white">JobLinca</span>
           </Link>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={closeMobileMenu}
             className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
@@ -326,8 +393,8 @@ export default function NavBar() {
           </button>
         </div>
 
-        {/* Mobile Menu Content */}
-        <div className="flex flex-col h-[calc(100%-64px)] overflow-y-auto">
+        {/* Mobile Menu Content (scrolls on its own; header stays put) */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
           {/* Navigation Links */}
           <nav className="flex-1 p-4">
             <div className="space-y-1">

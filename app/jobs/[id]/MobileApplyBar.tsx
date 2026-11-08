@@ -35,7 +35,7 @@ export default function MobileApplyBar({ targetId, title, company, label }: Mobi
 
   return (
     <div
-      className={`lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-gray-700 bg-gray-900/95 backdrop-blur px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-200 ${
+      className={`lg:hidden fixed inset-x-0 bottom-0 z-mobile-bar border-t border-gray-700 bg-gray-900/95 backdrop-blur px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] transition-transform duration-200 ${
         targetVisible ? 'translate-y-full' : 'translate-y-0'
       }`}
       aria-hidden={targetVisible}

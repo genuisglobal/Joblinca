@@ -73,7 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           initialLocale={locale}
           initialHasExplicitLocalePreference={hasExplicitLocalePreferenceCookie}
         >
-          <header className="sticky top-0 w-full z-50 bg-neutral-950/90 backdrop-blur-lg border-b border-neutral-800/50">
+          <header className="sticky top-0 w-full z-header bg-neutral-950/90 backdrop-blur-lg border-b border-neutral-800/50">
             <ErrorBoundary label="navbar" fallback={null}>
               <NavBar />
             </ErrorBoundary>
