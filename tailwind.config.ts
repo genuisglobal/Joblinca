@@ -19,6 +19,34 @@ const config: Config = {
         dialog: '70', // blocking prompts that must cover drawers
       },
       colors: {
+        // Semantic dark-theme tokens (values live in app/globals.css :root).
+        surface: {
+          DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
+          raised: 'rgb(var(--surface-raised) / <alpha-value>)',
+          overlay: 'rgb(var(--surface-overlay) / <alpha-value>)',
+        },
+        line: {
+          DEFAULT: 'rgb(var(--line) / <alpha-value>)',
+          strong: 'rgb(var(--line-strong) / <alpha-value>)',
+        },
+        fg: {
+          DEFAULT: 'rgb(var(--fg) / <alpha-value>)',
+          muted: 'rgb(var(--fg-muted) / <alpha-value>)',
+          subtle: 'rgb(var(--fg-subtle) / <alpha-value>)',
+        },
+        focus: 'rgb(var(--focus) / <alpha-value>)',
+        danger: {
+          DEFAULT: 'rgb(var(--danger) / <alpha-value>)',
+          fg: 'rgb(var(--danger-fg) / <alpha-value>)',
+        },
+        success: {
+          DEFAULT: 'rgb(var(--success) / <alpha-value>)',
+          fg: 'rgb(var(--success-fg) / <alpha-value>)',
+        },
+        warning: {
+          DEFAULT: 'rgb(var(--warning) / <alpha-value>)',
+          fg: 'rgb(var(--warning-fg) / <alpha-value>)',
+        },
         // Primary brand colors
         primary: {
           50: '#eff6ff',

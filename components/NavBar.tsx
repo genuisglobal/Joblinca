@@ -11,6 +11,8 @@ import { useTranslation } from "@/lib/i18n";
 import { addLocalePrefix, stripLocalePrefix } from "@/lib/i18n/locale";
 import { Menu, X, Briefcase, Users, Building2, Globe, FileText, LayoutDashboard, LogOut, LogIn, UserPlus, Languages } from "lucide-react";
 import NotificationBell from "@/components/NotificationBell";
+import { useFocusTrap } from "@/lib/hooks/useFocusTrap";
+import { useScrollLock } from "@/lib/hooks/useScrollLock";
 
 type Role = "job_seeker" | "talent" | "recruiter" | "field_agent" | "admin" | "staff" | null;
 
@@ -30,7 +32,6 @@ export default function NavBar() {
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const drawerWasOpenRef = useRef(false);
 
   const fetchUserAndRole = useCallback(async (skipLoading = false) => {
     if (!skipLoading) setLoading(true);
@@ -150,65 +151,26 @@ export default function NavBar() {
     setPortalReady(true);
   }, []);
 
-  // Stop the page scrolling behind the open menu.
+  // Dialog behaviour (shared hooks): lock page scroll, move focus to the
+  // close button, keep Tab inside, close on Escape, and return focus to the
+  // menu button on close.
+  useScrollLock(mobileMenuOpen);
+  useFocusTrap(drawerRef, mobileMenuOpen, {
+    initialFocusRef: closeButtonRef,
+    returnFocusRef: menuButtonRef,
+    onEscape: closeMobileMenu,
+  });
+
+  // The drawer is lg:hidden; if the window grows to desktop width while it
+  // is open, close it so the scroll lock and focus trap are released.
   useEffect(() => {
     if (!mobileMenuOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [mobileMenuOpen]);
-
-  // Dialog behaviour: move focus into the drawer, close on Escape, keep Tab
-  // inside it while open, and hand focus back to the menu button on close.
-  useEffect(() => {
-    if (!mobileMenuOpen) {
-      if (drawerWasOpenRef.current) {
-        drawerWasOpenRef.current = false;
-        menuButtonRef.current?.focus({ preventScroll: true });
-      }
-      return;
-    }
-    drawerWasOpenRef.current = true;
-    closeButtonRef.current?.focus({ preventScroll: true });
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setMobileMenuOpen(false);
-        return;
-      }
-      if (event.key !== "Tab" || !drawerRef.current) return;
-      const focusable = Array.from(
-        drawerRef.current.querySelectorAll<HTMLElement>("a[href], button:not([disabled])")
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (event.shiftKey && (active === first || !drawerRef.current.contains(active))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (active === last || !drawerRef.current.contains(active))) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-
-    // The drawer is lg:hidden; if the window grows to desktop width while it
-    // is open, close it so the scroll lock and focus trap are released.
     const desktop = window.matchMedia("(min-width: 1024px)");
     const onDesktop = (event: MediaQueryListEvent) => {
       if (event.matches) setMobileMenuOpen(false);
     };
-
-    document.addEventListener("keydown", onKeyDown);
     desktop.addEventListener?.("change", onDesktop);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      desktop.removeEventListener?.("change", onDesktop);
-    };
+    return () => desktop.removeEventListener?.("change", onDesktop);
   }, [mobileMenuOpen]);
 
   if (loading) {

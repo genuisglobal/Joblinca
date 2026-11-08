@@ -2,7 +2,9 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useFocusTrap } from '@/lib/hooks/useFocusTrap';
+import { useScrollLock } from '@/lib/hooks/useScrollLock';
 import { useTranslation } from '@/lib/i18n/context';
 import { addLocalePrefix, stripLocalePrefix } from '@/lib/i18n/locale';
 
@@ -318,6 +320,8 @@ const fieldAgentNav: NavItem[] = [
 
 /** Fired by the menu button in DashboardHeader to open/close the mobile drawer. */
 export const DASHBOARD_NAV_TOGGLE_EVENT = 'joblinca:dashboard-nav-toggle';
+/** id of the menu button in DashboardHeader; focus returns there on close. */
+export const DASHBOARD_NAV_TOGGLE_ID = 'dashboard-nav-toggle';
 
 interface DashboardSidebarProps {
   role: Role;
@@ -328,9 +332,15 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const normalizedPathname = stripLocalePrefix(pathname || '/');
+  const asideRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const toggleButtonRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const toggle = () => setIsOpen((open) => !open);
+    const toggle = () => {
+      toggleButtonRef.current = document.getElementById(DASHBOARD_NAV_TOGGLE_ID);
+      setIsOpen((open) => !open);
+    };
     window.addEventListener(DASHBOARD_NAV_TOGGLE_EVENT, toggle);
     return () => window.removeEventListener(DASHBOARD_NAV_TOGGLE_EVENT, toggle);
   }, []);
@@ -340,13 +350,23 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
     setIsOpen(false);
   }, [pathname]);
 
+  // Mobile drawer behaviour (isOpen is only ever true below lg).
+  useScrollLock(isOpen);
+  useFocusTrap(asideRef, isOpen, {
+    initialFocusRef: closeButtonRef,
+    returnFocusRef: toggleButtonRef,
+    onEscape: () => setIsOpen(false),
+  });
+
+  // At lg+ the sidebar is static; release the lock/trap if the window grows.
   useEffect(() => {
     if (!isOpen) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previous;
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const onDesktop = (event: MediaQueryListEvent) => {
+      if (event.matches) setIsOpen(false);
     };
+    desktop.addEventListener?.('change', onDesktop);
+    return () => desktop.removeEventListener?.('change', onDesktop);
   }, [isOpen]);
 
   const navItems =
@@ -365,13 +385,21 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
         <div
           className="lg:hidden fixed inset-0 bg-black/50 z-drawer-backdrop"
           onClick={() => setIsOpen(false)}
+          aria-hidden="true"
         />
       )}
 
       {/* Sidebar */}
+      {/* Below lg this is an off-canvas drawer: `invisible` while closed keeps
+          its links out of the tab order and the accessibility tree. */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-drawer lg:z-auto w-64 max-w-[85vw] bg-gray-800 border-r border-gray-700 transform transition-transform duration-200 ease-in-out ${
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        ref={asideRef}
+        id="dashboard-sidebar"
+        role={isOpen ? 'dialog' : undefined}
+        aria-modal={isOpen ? true : undefined}
+        aria-label={isOpen ? t('nav.navigate') : undefined}
+        className={`fixed lg:static inset-y-0 left-0 z-drawer lg:z-auto w-64 max-w-[85vw] bg-gray-800 border-r border-gray-700 transform transition-[transform,visibility] duration-200 ease-in-out ${
+          isOpen ? 'translate-x-0 visible' : '-translate-x-full max-lg:invisible lg:translate-x-0'
         }`}
       >
         <div className="h-full flex flex-col">
@@ -381,6 +409,7 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
               <span className="text-2xl font-bold text-blue-500">Joblinca</span>
             </Link>
             <button
+              ref={closeButtonRef}
               type="button"
               onClick={() => setIsOpen(false)}
               className="lg:hidden -mr-2 p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700"
