@@ -1,6 +1,5 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
-import { unstable_noStore as noStore } from 'next/cache';
 import { ArrowRight, Briefcase, Rocket } from 'lucide-react';
 import {
   describeEligibleRoles,
@@ -95,8 +94,12 @@ const FILTERS: OpportunityBrowseFilter[] = [
 
 type PostedDateFilter = '24h' | '3d' | '1w' | '1m' | 'anytime';
 
-export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+// The page is still rendered per request (searchParams, admin cookies), but
+// it no longer forces every fetch to skip the cache: fetches default to
+// no-store, and only the public /api/jobs listing below opts into a 60s cache
+// (keyed by its full URL, i.e. per search/filter/page/language).
+export const fetchCache = 'default-no-store';
+const PUBLIC_JOBS_REVALIDATE_SECONDS = 60;
 
 export function generateMetadata() {
   const locale = getRequestLocale();
@@ -320,8 +323,6 @@ function contentStatusClassName(status: ContentStatus) {
 }
 
 export default async function JobsPage({ searchParams }: JobsPageProps) {
-  noStore();
-
   const query = await searchParams;
   const preferredLocale = getRequestLocale();
   const t = getServerT(preferredLocale);
@@ -405,7 +406,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
     }
 
     const response = await fetch(`${getRequestBaseUrl()}/api/jobs?${jobsParams.toString()}`, {
-      cache: 'no-store',
+      next: { revalidate: PUBLIC_JOBS_REVALIDATE_SECONDS },
     });
 
     if (!response.ok) {

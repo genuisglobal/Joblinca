@@ -30,6 +30,7 @@ import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
 import { fetchPublicOpportunityTotal } from '@/lib/jobs/public-count';
 import { getRequestBaseUrl } from '@/lib/app-url';
+import { unstable_cache } from 'next/cache';
 import JobCard from '@/components/jobs/JobCard';
 import { addLocalePrefix } from '@/lib/i18n/locale';
 import { getRequestLocale } from '@/lib/i18n/server';
@@ -102,7 +103,7 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
+async function loadHomeDataUncached(baseUrl: string): Promise<{ jobs: Job[]; totalJobCount: number }> {
   try {
     const supabase = createServiceSupabaseClient();
 
@@ -122,7 +123,7 @@ async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
         .eq('approval_status', 'approved')
         .order('created_at', { ascending: false })
         .limit(6),
-      fetchPublicOpportunityTotal(getRequestBaseUrl()),
+      fetchPublicOpportunityTotal(baseUrl),
     ]);
 
     const jobs = (fetchedJobs || []).filter((job) => isJobPubliclyListable(job));
@@ -132,6 +133,18 @@ async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
   } catch {
     return { jobs: [], totalJobCount: 0 };
   }
+}
+
+// The page reads the request locale (cookies/headers), so it renders per
+// request and `revalidate = 300` alone did not cache anything. The data
+// itself is public (service client, no user input), so cache it for the
+// same 5 minutes. baseUrl is part of the cache key.
+const loadHomeDataCached = unstable_cache(loadHomeDataUncached, ['home-data-v1'], {
+  revalidate: 300,
+});
+
+function loadHomeData() {
+  return loadHomeDataCached(getRequestBaseUrl());
 }
 
 function HomeJsonLd({ totalJobCount }: { totalJobCount: number }) {
