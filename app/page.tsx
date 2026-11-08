@@ -4,7 +4,6 @@ import Image from 'next/image';
 import {
   Briefcase,
   MapPin,
-  Clock,
   Users,
   FileText,
   CheckCircle,
@@ -29,6 +28,9 @@ import {
 } from 'lucide-react';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { fetchPublicOpportunityTotal } from '@/lib/jobs/public-count';
+import { getRequestBaseUrl } from '@/lib/app-url';
+import JobCard from '@/components/jobs/JobCard';
 import { addLocalePrefix } from '@/lib/i18n/locale';
 import { getRequestLocale } from '@/lib/i18n/server';
 import { getServerT } from '@/lib/i18n/server-t';
@@ -104,7 +106,7 @@ async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
   try {
     const supabase = createServiceSupabaseClient();
 
-    const [{ count }, { data: fetchedJobs }] = await Promise.all([
+    const [{ count }, { data: fetchedJobs }, publicTotal] = await Promise.all([
       supabase
         .from('jobs')
         .select('*', { count: 'exact', head: true })
@@ -120,10 +122,13 @@ async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
         .eq('approval_status', 'approved')
         .order('created_at', { ascending: false })
         .limit(6),
+      fetchPublicOpportunityTotal(getRequestBaseUrl()),
     ]);
 
     const jobs = (fetchedJobs || []).filter((job) => isJobPubliclyListable(job));
-    return { jobs, totalJobCount: count || 0 };
+    // Same number /jobs shows; the direct count (which also includes expired
+    // or removed jobs still marked live) is only a fallback.
+    return { jobs, totalJobCount: publicTotal ?? count ?? 0 };
   } catch {
     return { jobs: [], totalJobCount: 0 };
   }
@@ -536,47 +541,23 @@ export default async function HomePage() {
           {jobs.length > 0 ? (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {jobs.map((job) => (
-                <Link
+                <JobCard
                   key={job.id}
+                  headingLevel="h3"
                   href={addLocalePrefix(`/jobs/${job.id}`, locale)}
-                  className="group bg-neutral-900/50 border border-neutral-800 rounded-xl p-5 sm:p-6 hover:border-primary-600/50 hover:bg-neutral-800/50 transition-all"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center">
-                      <Briefcase className="w-6 h-6 text-primary-400" />
-                    </div>
-                    {job.work_type === 'remote' && (
-                      <span className="px-2.5 py-1 text-xs font-medium bg-green-500/10 text-green-400 rounded-full">
-                        {t('home.featured.remote')}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-lg font-semibold mb-2 group-hover:text-primary-400 transition-colors line-clamp-1">
-                    {job.title}
-                  </h3>
-                  {job.company_name && (
-                    <p className="text-neutral-400 text-sm mb-3">{job.company_name}</p>
-                  )}
-                  <div className="flex flex-wrap gap-3 text-sm text-neutral-500">
-                    {job.location && (
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-4 h-4" />
-                        <span>{job.location}</span>
-                      </div>
-                    )}
-                    {job.job_type && (
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        <span className="capitalize">{job.job_type}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-neutral-800">
-                    <span className="text-primary-400 text-sm font-medium group-hover:underline">
-                      {t('home.featured.viewDetails')}
-                    </span>
-                  </div>
-                </Link>
+                  title={job.title}
+                  company={job.company_name}
+                  location={job.location}
+                  workType={
+                    job.work_type === 'remote'
+                      ? t('common.remote')
+                      : job.work_type === 'hybrid'
+                        ? t('common.hybrid')
+                        : job.work_type === 'onsite'
+                          ? t('common.onSite')
+                          : null
+                  }
+                />
               ))}
             </div>
           ) : (

@@ -1,15 +1,7 @@
 import { Suspense } from 'react';
 import Link from 'next/link';
 import { unstable_noStore as noStore } from 'next/cache';
-import {
-  ArrowRight,
-  Briefcase,
-  Building2,
-  Clock,
-  GraduationCap,
-  MapPin,
-  Rocket,
-} from 'lucide-react';
+import { ArrowRight, Briefcase, Rocket } from 'lucide-react';
 import {
   describeEligibleRoles,
   getOpportunityTypeLabel,
@@ -26,6 +18,11 @@ import { getServerT } from '@/lib/i18n/server-t';
 import { addLocalePrefix, normalizeLocale, type Locale } from '@/lib/i18n/locale';
 import ContentJobActions from '@/app/admin/content-jobs/ContentJobActions';
 import JobSearchBar from './JobSearchBar';
+import JobCard, { type JobCardBadge } from '@/components/jobs/JobCard';
+import EmptyState from '@/components/ui/EmptyState';
+import { ButtonLink } from '@/components/ui/Button';
+import type { BadgeTone } from '@/components/ui/Badge';
+import { summarizeDescription } from '@/lib/jobs/summary';
 
 interface Job {
   id: string;
@@ -169,20 +166,10 @@ function formatCompensation(
   return t('jobs.compensationUndisclosed');
 }
 
-function badgeClasses(label: string) {
-  if (label === 'Educational Internship') {
-    return 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30';
-  }
-
-  if (label === 'Professional Internship') {
-    return 'bg-sky-500/10 text-sky-300 border border-sky-500/30';
-  }
-
-  if (label === 'Gig') {
-    return 'bg-amber-500/10 text-amber-300 border border-amber-500/30';
-  }
-
-  return 'bg-primary-600/10 text-primary-300 border border-primary-600/30';
+function opportunityTone(label: string): BadgeTone {
+  if (label === 'Educational Internship') return 'success';
+  if (label === 'Gig') return 'warning';
+  return 'primary';
 }
 
 function getLanguageBadge(locale: Locale | null, preferredLocale: Locale) {
@@ -290,19 +277,6 @@ function getWorkTypeLabel(
       return t('common.onSite');
     default:
       return t('common.notSpecified');
-  }
-}
-
-function getWorkTypeBadgeClasses(workType: string | null) {
-  switch (workType) {
-    case 'remote':
-      return 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-    case 'hybrid':
-      return 'border border-amber-500/30 bg-amber-500/10 text-amber-300';
-    case 'onsite':
-      return 'border border-neutral-700 bg-neutral-800 text-neutral-300';
-    default:
-      return 'border border-neutral-700 bg-neutral-800 text-neutral-300';
   }
 }
 
@@ -503,66 +477,48 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-neutral-950">
-      <section className="border-b border-neutral-800 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_30%),linear-gradient(180deg,_#101826_0%,_#09090b_100%)]">
-        <div className="mx-auto max-w-6xl px-6 py-12">
-          <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-2xl">
-              <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-neutral-700 bg-neutral-900/70 px-3 py-1 text-xs uppercase tracking-[0.22em] text-neutral-300">
-                <Rocket className="h-3.5 w-3.5" />
-                {t('jobs.marketplaceBadge')}
-              </p>
-              <h1 className="text-3xl font-bold text-white sm:text-4xl">{t('jobs.marketplaceTitle')}</h1>
-              <p className="mt-3 text-neutral-300">
-                {t('jobs.marketplaceSubtitle')}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:w-auto w-full">
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/80 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-neutral-500 truncate">{t('jobs.stats.jobs')}</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{counts.job}</p>
-              </div>
-              <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-emerald-300 truncate">{t('jobs.stats.internshipsEdu')}</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{counts.internship_education}</p>
-              </div>
-              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/5 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-sky-300 truncate">{t('jobs.stats.internshipsPro')}</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{counts.internship_professional}</p>
-              </div>
-              <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 min-w-0">
-                <p className="text-[10px] uppercase tracking-[0.15em] text-amber-300 truncate">{t('jobs.stats.gigs')}</p>
-                <p className="mt-1 text-2xl font-semibold text-white">{counts.gig}</p>
-              </div>
-            </div>
+    <main className="min-h-screen bg-surface">
+      <section className="border-b border-line bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_30%),linear-gradient(180deg,_#101826_0%,_#09090b_100%)]">
+        <div className="mx-auto max-w-6xl px-4 pb-4 pt-5 sm:px-6 sm:pb-6 sm:pt-10">
+          <div className="max-w-2xl">
+            <p className="mb-3 hidden items-center gap-2 rounded-full border border-line-strong bg-surface-raised/70 px-3 py-1 text-xs uppercase tracking-[0.22em] text-fg-muted sm:inline-flex">
+              <Rocket className="h-3.5 w-3.5" aria-hidden="true" />
+              {t('jobs.marketplaceBadge')}
+            </p>
+            <h1 className="text-2xl font-bold text-fg sm:text-4xl">{t('jobs.marketplaceTitle')}</h1>
+            <p className="mt-3 hidden text-fg-muted sm:block">{t('jobs.marketplaceSubtitle')}</p>
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-2">
-            {FILTERS.map((filter) => {
-              const isActive = activeFilter === filter;
-              const href = buildJobsHref({
-                type: filter !== 'all' ? filter : null,
-                page: null,
-              });
-              const count = counts[filter];
+          {/* One row of browse tabs with counts (replaces the count tiles,
+              which repeated the same numbers). Scrolls sideways on phones. */}
+          <nav aria-label={t('jobs.browseTabsLabel')} className="-mx-4 mt-4 sm:mx-0 sm:mt-6">
+            <ul className="flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:flex-wrap sm:overflow-visible sm:px-0 [&::-webkit-scrollbar]:hidden">
+              {FILTERS.map((filter) => {
+                const isActive = activeFilter === filter;
+                const href = buildJobsHref({
+                  type: filter !== 'all' ? filter : null,
+                  page: null,
+                });
 
-              return (
-                <Link
-                  key={filter}
-                  href={href}
-                  className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                    isActive
-                      ? 'border border-primary-500/40 bg-primary-600/15 text-primary-200'
-                      : 'border border-neutral-700 bg-neutral-900/80 text-neutral-400 hover:border-neutral-500 hover:text-white'
-                  }`}
-                >
-                  <span>{getFilterLabel(filter, t)}</span>
-                  <span className="rounded-full bg-black/20 px-2 py-0.5 text-xs">{count}</span>
-                </Link>
-              );
-            })}
-          </div>
+                return (
+                  <li key={filter} className="shrink-0">
+                    <Link
+                      href={href}
+                      aria-current={isActive ? 'page' : undefined}
+                      className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-medium transition-colors ${
+                        isActive
+                          ? 'border border-primary-500/40 bg-primary-600/15 text-primary-200'
+                          : 'border border-line-strong bg-surface-raised/80 text-fg-muted hover:border-fg-subtle hover:text-fg'
+                      }`}
+                    >
+                      <span>{getFilterLabel(filter, t)}</span>
+                      <span className="rounded-full bg-black/25 px-2 py-0.5 text-xs tabular-nums">{counts[filter]}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
 
           <Suspense>
             <JobSearchBar />
@@ -570,33 +526,34 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-6 py-10">
+      <section className="mx-auto max-w-6xl px-4 py-5 sm:px-6 sm:py-10">
         {error && (
-          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4" role="alert">
             <p className="text-red-400">{error.message}</p>
           </div>
         )}
 
         {!filteredJobs.length ? (
-          <div className="py-20 text-center">
-            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-neutral-800">
-              <Briefcase className="h-10 w-10 text-neutral-600" />
-            </div>
-            <h2 className="mb-3 text-2xl font-bold text-white">{t('jobs.noMatchesTitle')}</h2>
-            <p className="mx-auto mb-8 max-w-md text-neutral-400">
-              {t('jobs.noMatchesDescription')}
-            </p>
-            <Link
-              href={addLocalePrefix('/auth/register?role=candidate', preferredLocale)}
-              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-6 py-3 font-semibold text-white transition-all hover:bg-primary-700"
-            >
-              {t('jobs.getAlerts')}
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </div>
+          <EmptyState
+            className="my-6"
+            icon={<Briefcase className="h-6 w-6" />}
+            title={t('jobs.noMatchesTitle')}
+            description={t('jobs.noMatchesDescription')}
+            action={
+              <ButtonLink
+                href={addLocalePrefix('/auth/register?role=candidate', preferredLocale)}
+                rightIcon={<ArrowRight className="h-4 w-4" aria-hidden="true" />}
+              >
+                {t('jobs.getAlerts')}
+              </ButtonLink>
+            }
+          />
         ) : (
           <>
-            <div className="space-y-4">
+            <p className="mb-3 text-sm text-fg-subtle">
+              {t('jobs.resultsCount', { count: totalCount })}
+            </p>
+            <div className="space-y-3 sm:space-y-4">
               {filteredJobs.map((job) => {
                 const opportunityLabel = getOpportunityTypeLabel(job.job_type, job.internship_track);
                 const eligibleRoleSummary = describeEligibleRoles(
@@ -605,143 +562,65 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                   job.internship_track,
                   job.visibility
                 );
-                const localizedOpportunityLabel = translateOpportunityLabel(opportunityLabel, t);
-                const localizedEligibleRoleSummary = translateEligibleRoleSummary(
-                  eligibleRoleSummary,
-                  t
-                );
                 const languageBadge = getLanguageBadge(job.language, preferredLocale);
-
-                const jobHref = addLocalePrefix(`/jobs/${job.id}`, preferredLocale);
+                const isExternal = job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered';
+                const trust = job.source_attribution_json?.trust_score;
+                const compensation = formatCompensation(job, preferredLocale, t);
                 const contentStatus = contentStatusByJobId.get(job.id) || 'not_started';
 
+                const badges: JobCardBadge[] = [
+                  { label: translateOpportunityLabel(opportunityLabel, t), tone: opportunityTone(opportunityLabel) },
+                  isExternal
+                    ? {
+                        label:
+                          trust == null
+                            ? t('jobs.external')
+                            : `${t('jobs.external')} · ${t(trust >= 80 ? 'jobs.highTrust' : trust >= 60 ? 'jobs.moderateTrust' : 'jobs.lowTrust')}`,
+                        tone: trust == null ? 'warning' : trust >= 80 ? 'success' : trust >= 60 ? 'warning' : 'danger',
+                      }
+                    : { label: t('jobs.joblinca'), tone: 'primary' },
+                ];
+                if (languageBadge) {
+                  badges.push({
+                    label: languageBadge.label,
+                    title: t(languageBadge.descriptionKey),
+                    tone: 'neutral',
+                    desktopOnly: true,
+                  });
+                }
+
                 return (
-                  <div
+                  <JobCard
                     key={job.id}
-                    className="group block rounded-2xl border border-neutral-800 bg-neutral-900 p-6 transition-all hover:border-primary-600/40 hover:bg-neutral-900/90"
-                  >
-                    <div className="flex flex-col gap-4 md:flex-row md:items-start">
-                      <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl border border-neutral-700 bg-neutral-800">
-                        {opportunityLabel === 'Educational Internship' ? (
-                          <GraduationCap className="h-7 w-7 text-emerald-300" />
-                        ) : (
-                          <Building2 className="h-7 w-7 text-primary-400" />
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-3 flex flex-wrap items-center gap-2">
-                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${badgeClasses(opportunityLabel)}`}>
-                            {localizedOpportunityLabel}
-                          </span>
-                          {languageBadge && (
+                    href={addLocalePrefix(`/jobs/${job.id}`, preferredLocale)}
+                    title={job.title}
+                    company={job.company_name}
+                    location={job.location}
+                    workType={job.work_type ? getWorkTypeLabel(job.work_type, t) : null}
+                    postedLabel={formatDate(job.created_at, preferredLocale, t)}
+                    compensation={compensation === t('jobs.compensationUndisclosed') ? null : compensation}
+                    summary={summarizeDescription(job.description)}
+                    secondaryMeta={translateEligibleRoleSummary(eligibleRoleSummary, t)}
+                    icon={opportunityLabel === 'Educational Internship' ? 'education' : 'company'}
+                    badges={badges}
+                    actions={
+                      canManageContent ? (
+                        <div className="flex flex-col gap-3 rounded-xl border border-line bg-surface/70 p-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-fg-subtle">
+                              Content workflow
+                            </p>
                             <span
-                              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${languageBadge.className}`}
-                              title={t(languageBadge.descriptionKey)}
+                              className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${contentStatusClassName(contentStatus)}`}
                             >
-                              {languageBadge.label}
+                              {contentStatusLabel(contentStatus)}
                             </span>
-                          )}
-                          {job.work_type && (
-                            <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getWorkTypeBadgeClasses(job.work_type)}`}>
-                              {getWorkTypeLabel(job.work_type, t)}
-                            </span>
-                          )}
-                          {/* Origin badge: Joblinca vs External */}
-                          {job.origin_type === 'admin_import' || job.origin_type === 'claimed_discovered' ? (
-                            <>
-                              <span className="inline-flex items-center gap-1 rounded-full bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-300 border border-orange-500/20">
-                                {t('jobs.external')}
-                              </span>
-                              {(() => {
-                                const trust = job.source_attribution_json?.trust_score;
-                                if (trust == null) return null;
-                                if (trust >= 80) return (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-green-500/10 px-2.5 py-1 text-xs font-medium text-green-400 border border-green-500/20">
-                                    {t('jobs.highTrust')}
-                                  </span>
-                                );
-                                if (trust >= 60) return (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-500/10 px-2.5 py-1 text-xs font-medium text-yellow-400 border border-yellow-500/20">
-                                    {t('jobs.moderateTrust')}
-                                  </span>
-                                );
-                                return (
-                                  <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2.5 py-1 text-xs font-medium text-red-400 border border-red-500/20">
-                                    {t('jobs.lowTrust')}
-                                  </span>
-                                );
-                              })()}
-                            </>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300 border border-blue-500/20">
-                              {t('jobs.joblinca')}
-                            </span>
-                          )}
-                        </div>
-
-                        <Link href={jobHref} className="inline-block">
-                          <h2 className="text-xl font-semibold text-white transition-colors hover:text-primary-300">
-                            {job.title}
-                          </h2>
-                        </Link>
-                        {job.company_name && (
-                          <p className="mt-1 font-medium text-neutral-300">{job.company_name}</p>
-                        )}
-
-                        <p className="mt-3 line-clamp-2 text-sm text-neutral-400">
-                          {job.description || t('jobs.noDescriptionYet')}
-                        </p>
-
-                        <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-neutral-500">
-                          {job.location && (
-                            <div className="flex items-center gap-1.5">
-                              <MapPin className="h-4 w-4" />
-                              <span>{job.location}</span>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-1.5">
-                            <Briefcase className="h-4 w-4" />
-                            <span>{localizedEligibleRoleSummary}</span>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <Clock className="h-4 w-4" />
-                            <span>{formatDate(job.created_at, preferredLocale, t)}</span>
-                          </div>
+                          <ContentJobActions jobId={job.id} currentStatus={contentStatus} />
                         </div>
-
-                        <p className="mt-4 text-sm font-medium text-neutral-300">
-                          {formatCompensation(job, preferredLocale, t)}
-                        </p>
-                      </div>
-
-                      <div className="flex-shrink-0 md:text-right">
-                        <Link
-                          href={jobHref}
-                          className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 font-medium text-white transition-all hover:bg-primary-500"
-                        >
-                          {t('jobs.viewOpportunity')}
-                          <ArrowRight className="h-4 w-4" />
-                        </Link>
-                      </div>
-                    </div>
-
-                    {canManageContent && (
-                      <div className="mt-5 flex flex-col gap-3 rounded-xl border border-neutral-800 bg-neutral-950/70 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-neutral-500">
-                            Content workflow
-                          </p>
-                          <span
-                            className={`mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${contentStatusClassName(contentStatus)}`}
-                          >
-                            {contentStatusLabel(contentStatus)}
-                          </span>
-                        </div>
-                        <ContentJobActions jobId={job.id} currentStatus={contentStatus} />
-                      </div>
-                    )}
-                  </div>
+                      ) : undefined
+                    }
+                  />
                 );
               })}
             </div>
@@ -757,28 +636,29 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
                 });
               }
 
+              const pagerLink =
+                'inline-flex min-h-11 items-center rounded-lg border border-line-strong bg-surface-raised px-4 text-sm text-fg-muted transition-colors hover:bg-surface-overlay hover:text-fg';
+
               return (
-                <nav className="mt-10 flex items-center justify-center gap-2" aria-label="Pagination">
-                  {currentPage > 1 && (
-                    <Link
-                      href={buildPageUrl(currentPage - 1)}
-                      className="px-4 py-2 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 text-sm"
-                    >
+                <nav className="mt-8 flex items-center justify-between gap-2 sm:mt-10 sm:justify-center" aria-label="Pagination">
+                  {currentPage > 1 ? (
+                    <Link href={buildPageUrl(currentPage - 1)} className={pagerLink} rel="prev">
                       {t('jobs.previous')}
                     </Link>
+                  ) : (
+                    <span aria-hidden="true" />
                   )}
-                  <span className="px-3 py-2 text-sm text-neutral-400">
+                  <span className="px-3 py-2 text-sm text-fg-muted">
                     {preferredLocale === 'fr'
                       ? `Page ${currentPage} sur ${totalPages}`
                       : `Page ${currentPage} of ${totalPages}`}
                   </span>
-                  {currentPage < totalPages && (
-                    <Link
-                      href={buildPageUrl(currentPage + 1)}
-                      className="px-4 py-2 rounded-lg border border-neutral-700 bg-neutral-900 text-neutral-300 hover:bg-neutral-800 text-sm"
-                    >
+                  {currentPage < totalPages ? (
+                    <Link href={buildPageUrl(currentPage + 1)} className={pagerLink} rel="next">
                       {t('jobs.next')}
                     </Link>
+                  ) : (
+                    <span aria-hidden="true" />
                   )}
                 </nav>
               );
