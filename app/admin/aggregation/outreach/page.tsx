@@ -150,12 +150,20 @@ export default async function OutreachPage({
             Contact job posters about Joblinca candidates for externally scraped jobs.
           </p>
         </div>
-        <Link
-          href="/admin/aggregation"
-          className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
-        >
-          Back to Control Room
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/admin/aggregation/facebook-leads"
+            className="px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white rounded-lg text-sm"
+          >
+            Facebook Page leads
+          </Link>
+          <Link
+            href="/admin/aggregation"
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm"
+          >
+            Back to Control Room
+          </Link>
+        </div>
       </div>
 
       {/* Stats cards */}
