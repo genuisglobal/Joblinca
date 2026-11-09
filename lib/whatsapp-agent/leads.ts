@@ -31,6 +31,8 @@ export interface WaLeadRow {
   pending_apply_job_id: string | null;
   pending_apply_job_public_id: string | null;
   last_seen_at: string;
+  /** Last confidently detected reply language. Null until a message reads as one. */
+  language: 'en' | 'fr' | null;
 }
 
 export interface WaTalentProfileRow {
@@ -207,6 +209,38 @@ export async function updateLeadState(
       updated_at: new Date().toISOString(),
     })
     .eq('id', leadId);
+}
+
+/**
+ * Persist a newly detected reply language.
+ *
+ * Only called when a message actually read as one language or the other, so a
+ * stored preference survives menu digits and one-word replies. Skips the write
+ * when nothing changed -- most messages in a thread repeat the same language.
+ */
+export async function setLeadLanguage(
+  lead: Pick<WaLeadRow, 'id' | 'language'>,
+  language: 'en' | 'fr'
+): Promise<void> {
+  if (lead.language === language) return;
+
+  const { error } = await leadDb
+    .from('wa_leads')
+    .update({ language, updated_at: new Date().toISOString() })
+    .eq('id', lead.id);
+
+  // Deliberately non-fatal. If migration 20260826000100 has not been applied
+  // yet, this column does not exist and every write fails -- the agent should
+  // degrade to answering in English, not drop the conversation. Logged rather
+  // than swallowed so the cause is visible instead of looking like the
+  // detector is broken.
+  if (error) {
+    console.warn('[wa-leads] could not persist lead language', {
+      leadId: lead.id,
+      language,
+      error: error.message,
+    });
+  }
 }
 
 export async function updateLeadStateWithoutTouch(

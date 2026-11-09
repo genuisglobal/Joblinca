@@ -109,10 +109,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Fetch partner profiles
+  // Fetch partner profiles. Service client: profiles RLS is self-or-admin, so
+  // the caller's session cannot read the people they are talking to. The ids
+  // come only from messages the caller can already see.
   const partnerIds = Array.from(conversations.keys());
   const { data: profiles } = partnerIds.length > 0
-    ? await supabase
+    ? await createServiceSupabaseClient()
         .from('profiles')
         .select('id, full_name, avatar_url, role')
         .in('id', partnerIds)
@@ -181,8 +183,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Verify receiver exists
-  const { data: receiver } = await supabase
+  // Verify receiver exists. Service client for the same reason as above:
+  // under profiles RLS the sender's session cannot see the receiver's row.
+  const { data: receiver } = await createServiceSupabaseClient()
     .from('profiles')
     .select('id, role')
     .eq('id', receiverId)

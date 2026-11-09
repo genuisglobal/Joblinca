@@ -14,6 +14,7 @@ import { JobInCamerScraper } from './providers/jobincamer';
 import { EmploiCmScraper } from './providers/emploicm';
 import { WorkConnectScraper } from './providers/workconnect';
 import { KmerJobsScraper } from './providers/kmerjobs';
+import { AfricarrieresScraper } from './providers/africarrieres';
 import { CareerPagesScraper } from './providers/careerpages';
 import { FacebookScraper } from './providers/facebook';
 import { BaseScraper } from './base';
@@ -42,6 +43,7 @@ const SCRAPER_FACTORIES: Record<
   emploicm: (config) => new EmploiCmScraper(config),
   workconnect: (config) => new WorkConnectScraper(config),
   kmerjobs: (config) => new KmerJobsScraper(config),
+  africarrieres: (config) => new AfricarrieresScraper(config),
   careerpages: (config) => new CareerPagesScraper(config),
   facebook: (config) => new FacebookScraper(config),
 };
