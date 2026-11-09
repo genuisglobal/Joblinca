@@ -46,6 +46,17 @@ export default function DashboardPage() {
           return;
         }
 
+        // Active admins go straight to /admin, before the onboarding check and
+        // regardless of `role` (a promoted job seeker keeps role=job_seeker).
+        const isActiveAdmin = Boolean(
+          profile.admin_type &&
+          ACTIVE_ADMIN_TYPES.includes(profile.admin_type as AdminType)
+        );
+        if (isActiveAdmin) {
+          router.replace(localizedPath('/admin'));
+          return;
+        }
+
         // Check if onboarding is completed or skipped
         const hasCompletedOnboarding = profile.onboarding_completed || profile.onboarding_skipped;
 
@@ -56,11 +67,7 @@ export default function DashboardPage() {
 
         // Redirect to role-specific dashboard
         if (profile.role === 'admin') {
-          const isActiveAdmin = Boolean(
-            profile.admin_type &&
-            ACTIVE_ADMIN_TYPES.includes(profile.admin_type as AdminType)
-          );
-          router.replace(localizedPath(isActiveAdmin ? '/admin' : '/jobs'));
+          router.replace(localizedPath('/jobs'));
         } else if (profile.role === 'field_agent') {
           router.replace(localizedPath('/dashboard/field-agent'));
         } else if (profile.role === 'recruiter') {

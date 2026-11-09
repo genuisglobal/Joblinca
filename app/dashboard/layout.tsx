@@ -36,9 +36,14 @@ export default async function DashboardLayout({
     ACTIVE_ADMIN_TYPES.includes(profile.admin_type as AdminType)
   );
 
-  // Admins should never access /dashboard/* - redirect them to /admin
+  // Admins should never access /dashboard/* - redirect them to /admin.
+  // An active admin_type wins even when `role` was left at its old value
+  // (e.g. a job seeker promoted by setting admin_type only).
+  if (isActiveAdmin) {
+    redirect(addLocalePrefix('/admin', locale));
+  }
   if (rawRole === 'admin') {
-    redirect(addLocalePrefix(isActiveAdmin ? '/admin' : '/jobs', locale));
+    redirect(addLocalePrefix('/jobs', locale));
   }
 
   // For non-admin users, cast to the expected role type
