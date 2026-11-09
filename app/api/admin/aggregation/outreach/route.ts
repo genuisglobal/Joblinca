@@ -42,7 +42,9 @@ export async function GET(request: NextRequest) {
       contact_whatsapp,
       recruiter_name,
       trust_score,
+      scam_score,
       ingestion_status,
+      verification_status,
       discovered_at,
       posted_at,
       expires_at
@@ -75,7 +77,7 @@ export async function GET(request: NextRequest) {
   if (jobIds.length > 0) {
     const { data: leadsData } = await supabase
       .from('recruiter_outreach_leads')
-      .select('id, discovered_job_id, status, channel, notes, last_contact_at, seeker_count, created_at')
+      .select('id, discovered_job_id, status, channel, notes, last_contact_at, seeker_count, created_at, owner_admin_id, follow_up_at')
       .in('discovered_job_id', jobIds);
 
     if (leadsData) {
@@ -143,16 +145,21 @@ export async function POST(request: NextRequest) {
     notes,
     status: outreachStatus,
     seeker_count,
+    follow_up_at,
   } = body as {
     discovered_job_id: string;
     channel?: 'email' | 'phone' | 'whatsapp' | 'manual';
     notes?: string;
     status?: string;
     seeker_count?: number;
+    follow_up_at?: string | null;
   };
 
   if (!discovered_job_id) {
     return NextResponse.json({ error: 'discovered_job_id is required' }, { status: 400 });
+  }
+  if (follow_up_at != null && !/^\d{4}-\d{2}-\d{2}$/.test(follow_up_at)) {
+    return NextResponse.json({ error: 'follow_up_at must be a YYYY-MM-DD date' }, { status: 400 });
   }
 
   const supabase = createServerSupabaseClient();
@@ -171,7 +178,7 @@ export async function POST(request: NextRequest) {
   // Check for existing lead
   const { data: existing } = await supabase
     .from('recruiter_outreach_leads')
-    .select('id')
+    .select('id, owner_admin_id')
     .eq('discovered_job_id', discovered_job_id)
     .maybeSingle();
 
@@ -182,6 +189,8 @@ export async function POST(request: NextRequest) {
     if (channel) updates.channel = channel;
     if (notes !== undefined) updates.notes = notes;
     if (seeker_count !== undefined) updates.seeker_count = seeker_count;
+    if (follow_up_at !== undefined) updates.follow_up_at = follow_up_at;
+    if (!existing.owner_admin_id) updates.owner_admin_id = admin.userId;
     if (outreachStatus === 'contacted' || outreachStatus === 'responded') {
       updates.last_contact_at = new Date().toISOString();
     }
@@ -211,6 +220,7 @@ export async function POST(request: NextRequest) {
       status: outreachStatus || 'queued',
       notes: notes || null,
       seeker_count: seeker_count || 0,
+      follow_up_at: follow_up_at || null,
       owner_admin_id: admin.userId,
       last_contact_at: outreachStatus === 'contacted' ? new Date().toISOString() : null,
     })

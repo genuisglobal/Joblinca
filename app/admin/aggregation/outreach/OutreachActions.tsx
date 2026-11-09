@@ -9,6 +9,7 @@ type OutreachLead = {
   notes?: string;
   last_contact_at?: string;
   seeker_count?: number;
+  follow_up_at?: string;
 } | null;
 
 export function LogOutreachButton({
@@ -22,6 +23,7 @@ export function LogOutreachButton({
   const [channel, setChannel] = useState<string>(outreach?.channel || 'email');
   const [notes, setNotes] = useState(outreach?.notes || '');
   const [seekerCount, setSeekerCount] = useState(outreach?.seeker_count || 0);
+  const [followUpAt, setFollowUpAt] = useState(outreach?.follow_up_at || '');
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(status: string) {
@@ -36,6 +38,7 @@ export function LogOutreachButton({
           notes,
           status,
           seeker_count: seekerCount,
+          follow_up_at: followUpAt || null,
         }),
       });
       setOpen(false);
@@ -87,6 +90,16 @@ export function LogOutreachButton({
               min={0}
               value={seekerCount}
               onChange={(e) => setSeekerCount(parseInt(e.target.value) || 0)}
+              className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Follow-up date</label>
+            <input
+              type="date"
+              value={followUpAt}
+              onChange={(e) => setFollowUpAt(e.target.value)}
               className="w-full bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white text-sm"
             />
           </div>
