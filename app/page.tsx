@@ -4,7 +4,6 @@ import Image from 'next/image';
 import {
   Briefcase,
   MapPin,
-  Clock,
   Users,
   FileText,
   CheckCircle,
@@ -29,6 +28,10 @@ import {
 } from 'lucide-react';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { isJobPubliclyListable } from '@/lib/jobs/lifecycle';
+import { fetchPublicOpportunityTotal } from '@/lib/jobs/public-count';
+import { getRequestBaseUrl } from '@/lib/app-url';
+import { unstable_cache } from 'next/cache';
+import JobCard from '@/components/jobs/JobCard';
 import { addLocalePrefix } from '@/lib/i18n/locale';
 import { getRequestLocale } from '@/lib/i18n/server';
 import { getServerT } from '@/lib/i18n/server-t';
@@ -100,11 +103,11 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
+async function loadHomeDataUncached(baseUrl: string): Promise<{ jobs: Job[]; totalJobCount: number }> {
   try {
     const supabase = createServiceSupabaseClient();
 
-    const [{ count }, { data: fetchedJobs }] = await Promise.all([
+    const [{ count }, { data: fetchedJobs }, publicTotal] = await Promise.all([
       supabase
         .from('jobs')
         .select('*', { count: 'exact', head: true })
@@ -120,13 +123,28 @@ async function loadHomeData(): Promise<{ jobs: Job[]; totalJobCount: number }> {
         .eq('approval_status', 'approved')
         .order('created_at', { ascending: false })
         .limit(6),
+      fetchPublicOpportunityTotal(baseUrl),
     ]);
 
     const jobs = (fetchedJobs || []).filter((job) => isJobPubliclyListable(job));
-    return { jobs, totalJobCount: count || 0 };
+    // Same number /jobs shows; the direct count (which also includes expired
+    // or removed jobs still marked live) is only a fallback.
+    return { jobs, totalJobCount: publicTotal ?? count ?? 0 };
   } catch {
     return { jobs: [], totalJobCount: 0 };
   }
+}
+
+// The page reads the request locale (cookies/headers), so it renders per
+// request and `revalidate = 300` alone did not cache anything. The data
+// itself is public (service client, no user input), so cache it for the
+// same 5 minutes. baseUrl is part of the cache key.
+const loadHomeDataCached = unstable_cache(loadHomeDataUncached, ['home-data-v1'], {
+  revalidate: 300,
+});
+
+function loadHomeData() {
+  return loadHomeDataCached(getRequestBaseUrl());
 }
 
 function HomeJsonLd({ totalJobCount }: { totalJobCount: number }) {
@@ -185,12 +203,12 @@ export default async function HomePage() {
       <HomeJsonLd totalJobCount={totalJobCount} />
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <section className="relative min-h-[92vh] flex items-center overflow-hidden">
+      <section className="relative flex items-center overflow-hidden lg:min-h-[92vh]">
         <div className="absolute inset-0 bg-gradient-to-br from-neutral-950 via-neutral-900/80 to-neutral-950" />
         <div className="absolute top-1/4 left-0 w-[600px] h-[600px] bg-primary-600/6 rounded-full blur-[120px]" />
         <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-accent-500/6 rounded-full blur-[120px]" />
 
-        <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-16 lg:py-20">
+        <div className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-16 lg:py-20">
           <div className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center">
             <div>
               <div className="flex mb-6">
@@ -312,6 +330,69 @@ export default async function HomePage() {
               <p className="text-sm text-neutral-400">{t('home.stats.payment')}</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* ── FEATURED JOBS (server-rendered) ──────────────────────────────── */}
+      <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-950">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
+            <div>
+              <h2 className="text-2xl sm:text-3xl font-bold mb-2">
+                {totalJobCount <= 10 ? t('home.featured.allAvailable') : t('home.featured.todaysFeatured')}
+              </h2>
+              <p className="text-neutral-400">
+                {totalJobCount <= 10
+                  ? t('home.featured.rolesFromVerified', { count: totalJobCount, label: featuredRoleLabel })
+                  : t('home.featured.freshPicks')}
+              </p>
+            </div>
+            {totalJobCount > 10 && (
+              <Link
+                href={addLocalePrefix('/jobs', locale)}
+                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium transition-colors"
+              >
+                {t('home.featured.viewAll', { count: totalJobCount })}
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            )}
+          </div>
+
+          {jobs.length > 0 ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {jobs.map((job) => (
+                <JobCard
+                  key={job.id}
+                  headingLevel="h3"
+                  href={addLocalePrefix(`/jobs/${job.id}`, locale)}
+                  title={job.title}
+                  company={job.company_name}
+                  location={job.location}
+                  workType={
+                    job.work_type === 'remote'
+                      ? t('common.remote')
+                      : job.work_type === 'hybrid'
+                        ? t('common.hybrid')
+                        : job.work_type === 'onsite'
+                          ? t('common.onSite')
+                          : null
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-neutral-900/30 rounded-xl border border-neutral-800/50">
+              <Briefcase className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
+              <p className="text-neutral-400 mb-4">{t('home.featured.newJobsDaily')}</p>
+              <Link
+                href={addLocalePrefix('/auth/register?role=candidate', locale)}
+                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium"
+              >
+                {t('home.featured.signUpNotified')}
+                <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
+          )}
         </div>
       </section>
 
@@ -505,93 +586,6 @@ export default async function HomePage() {
               </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ── FEATURED JOBS (server-rendered) ──────────────────────────────── */}
-      <section className="py-16 sm:py-20 px-4 sm:px-6 bg-neutral-950">
-        <div className="max-w-6xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-10">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold mb-2">
-                {totalJobCount <= 10 ? t('home.featured.allAvailable') : t('home.featured.todaysFeatured')}
-              </h2>
-              <p className="text-neutral-400">
-                {totalJobCount <= 10
-                  ? t('home.featured.rolesFromVerified', { count: totalJobCount, label: featuredRoleLabel })
-                  : t('home.featured.freshPicks')}
-              </p>
-            </div>
-            {totalJobCount > 10 && (
-              <Link
-                href={addLocalePrefix('/jobs', locale)}
-                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium transition-colors"
-              >
-                {t('home.featured.viewAll', { count: totalJobCount })}
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            )}
-          </div>
-
-          {jobs.length > 0 ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-              {jobs.map((job) => (
-                <Link
-                  key={job.id}
-                  href={addLocalePrefix(`/jobs/${job.id}`, locale)}
-                  className="group bg-neutral-900/50 border border-neutral-800 rounded-xl p-5 sm:p-6 hover:border-primary-600/50 hover:bg-neutral-800/50 transition-all"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="w-12 h-12 rounded-lg bg-neutral-800 flex items-center justify-center">
-                      <Briefcase className="w-6 h-6 text-primary-400" />
-                    </div>
-                    {job.work_type === 'remote' && (
-                      <span className="px-2.5 py-1 text-xs font-medium bg-green-500/10 text-green-400 rounded-full">
-                        {t('home.featured.remote')}
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-lg font-semibold mb-2 group-hover:text-primary-400 transition-colors line-clamp-1">
-                    {job.title}
-                  </h3>
-                  {job.company_name && (
-                    <p className="text-neutral-400 text-sm mb-3">{job.company_name}</p>
-                  )}
-                  <div className="flex flex-wrap gap-3 text-sm text-neutral-500">
-                    {job.location && (
-                      <div className="flex items-center gap-1">
-                        <MapPin className="w-4 h-4" />
-                        <span>{job.location}</span>
-                      </div>
-                    )}
-                    {job.job_type && (
-                      <div className="flex items-center gap-1">
-                        <Clock className="w-4 h-4" />
-                        <span className="capitalize">{job.job_type}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-neutral-800">
-                    <span className="text-primary-400 text-sm font-medium group-hover:underline">
-                      {t('home.featured.viewDetails')}
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-12 bg-neutral-900/30 rounded-xl border border-neutral-800/50">
-              <Briefcase className="w-10 h-10 text-neutral-600 mx-auto mb-3" />
-              <p className="text-neutral-400 mb-4">{t('home.featured.newJobsDaily')}</p>
-              <Link
-                href={addLocalePrefix('/auth/register?role=candidate', locale)}
-                className="inline-flex items-center gap-2 text-primary-400 hover:text-primary-300 font-medium"
-              >
-                {t('home.featured.signUpNotified')}
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
-          )}
         </div>
       </section>
 

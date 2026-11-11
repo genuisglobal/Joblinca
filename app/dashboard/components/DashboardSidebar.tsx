@@ -337,8 +337,11 @@ export default function DashboardSidebar({ role }: DashboardSidebarProps) {
   const toggleButtonRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const toggle = () => {
-      toggleButtonRef.current = document.getElementById(DASHBOARD_NAV_TOGGLE_ID);
+    // Callers may pass { returnFocusId } so focus goes back to the button
+    // that opened the drawer (header menu button or bottom-nav "More").
+    const toggle = (event: Event) => {
+      const returnFocusId = (event as CustomEvent<{ returnFocusId?: string }>).detail?.returnFocusId;
+      toggleButtonRef.current = document.getElementById(returnFocusId || DASHBOARD_NAV_TOGGLE_ID);
       setIsOpen((open) => !open);
     };
     window.addEventListener(DASHBOARD_NAV_TOGGLE_EVENT, toggle);
