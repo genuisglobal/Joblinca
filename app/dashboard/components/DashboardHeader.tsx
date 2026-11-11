@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import VerificationBadge from './VerificationBadge';
-import { DASHBOARD_NAV_TOGGLE_EVENT } from './DashboardSidebar';
+import { DASHBOARD_NAV_TOGGLE_EVENT, DASHBOARD_NAV_TOGGLE_ID } from './DashboardSidebar';
 import Link from 'next/link';
 import { useTranslation } from '@/lib/i18n/context';
 import { addLocalePrefix } from '@/lib/i18n/locale';
@@ -114,8 +114,10 @@ export default function DashboardHeader() {
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
           <button
+            id={DASHBOARD_NAV_TOGGLE_ID}
             type="button"
             onClick={() => window.dispatchEvent(new Event(DASHBOARD_NAV_TOGGLE_EVENT))}
+            aria-controls="dashboard-sidebar"
             className="lg:hidden shrink-0 p-2 -ml-1 rounded-lg bg-gray-700 text-white hover:bg-gray-600"
             aria-label={t('nav.openMenu')}
           >

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Dialog from '@/components/ui/Dialog';
 import Image from 'next/image';
 import { useTranslation } from '@/lib/i18n';
 import { addLocalePrefix } from '@/lib/i18n/locale';
@@ -298,18 +299,28 @@ export default function PaymentModal({
     }
   }
 
+  // Same rule as before: no closing while a payment is being sent or
+  // confirmed. The shared Dialog also blocks Escape/backdrop in that state.
+  const isBusy = status === 'processing' || status === 'polling';
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="modal-panel bg-gray-800 rounded-xl border border-gray-700 w-full max-w-md mx-4 shadow-2xl">
+    <Dialog
+      open
+      onClose={onClose}
+      dismissible={!isBusy}
+      title={t('payment.completePayment')}
+      labelledBy="payment-dialog-title"
+      variant="sheet"
+    >
         <div className="flex items-center justify-between p-5 border-b border-gray-700">
-          <h2 className="text-lg font-semibold text-white">{t('payment.completePayment')}</h2>
+          <h2 id="payment-dialog-title" className="text-lg font-semibold text-white">{t('payment.completePayment')}</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
-            disabled={status === 'processing' || status === 'polling'}
+            className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-700 hover:text-white transition-colors disabled:opacity-40"
+            disabled={isBusy}
             aria-label={t('common.close')}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -387,7 +398,7 @@ export default function PaymentModal({
           ) : (
             <>
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">
+                <label htmlFor="payment-phone" className="block text-sm text-gray-400 mb-1.5">
                   {t('payment.phoneNumber')}
                 </label>
                 <div className="flex items-center gap-2">
@@ -395,7 +406,10 @@ export default function PaymentModal({
                     +237
                   </span>
                   <input
+                    id="payment-phone"
                     type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel-national"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value.replace(/[^0-9]/g, ''))}
                     placeholder="6XXXXXXXX"
@@ -412,11 +426,12 @@ export default function PaymentModal({
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1.5">
+                <label htmlFor="payment-promo" className="block text-sm text-gray-400 mb-1.5">
                   {t('payment.promoCodeOptional')}
                 </label>
                 <div className="flex gap-2">
                   <input
+                    id="payment-promo"
                     type="text"
                     value={promoCode}
                     onChange={(e) => {
@@ -430,7 +445,7 @@ export default function PaymentModal({
                   <button
                     onClick={validatePromo}
                     disabled={!promoCode.trim() || promoLoading || status === 'processing'}
-                    className="px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                    className="min-h-11 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     {promoLoading ? t('payment.checking') : t('payment.apply')}
                   </button>
@@ -530,7 +545,6 @@ export default function PaymentModal({
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

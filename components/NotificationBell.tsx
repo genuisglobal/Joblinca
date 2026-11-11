@@ -1,6 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Bell } from 'lucide-react';
+import Dialog from '@/components/ui/Dialog';
+import { useTranslation } from '@/lib/i18n';
 
 interface Notification {
   id: string;
@@ -11,22 +14,32 @@ interface Notification {
   created_at: string;
 }
 
-function timeAgo(dateStr: string): string {
+type TranslateFn = (key: string, vars?: Record<string, string | number>) => string;
+
+function timeAgo(dateStr: string, t: TranslateFn): string {
   const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
+  if (seconds < 60) return t('notifications.justNow');
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t('notifications.minutesAgo', { count: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (hours < 24) return t('notifications.hoursAgo', { count: hours });
+  return t('notifications.daysAgo', { count: Math.floor(hours / 24) });
 }
 
+/**
+ * Bell + notification list. Desktop (lg+): dropdown under the bell.
+ * Phones: a bottom sheet (shared Dialog), since a 320px dropdown pinned to
+ * the bell does not fit next to the menu button. Render one instance only:
+ * each instance polls /api/notifications every 60s.
+ */
 export default function NotificationBell() {
+  const { t } = useTranslation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
+  const [asSheet, setAsSheet] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const fetchNotifications = useCallback(async () => {
     try {
@@ -47,16 +60,27 @@ export default function NotificationBell() {
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
-  // Close on outside click
+  // Close the desktop dropdown on outside click or Escape.
   useEffect(() => {
+    if (!open || asSheet) return;
     function handleClick(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false);
       }
     }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    }
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open, asSheet]);
 
   async function markAllRead() {
     try {
@@ -72,74 +96,92 @@ export default function NotificationBell() {
     }
   }
 
+  function toggle() {
+    if (!open) setAsSheet(!window.matchMedia('(min-width: 1024px)').matches);
+    setOpen(!open);
+  }
+
+  const markAllButton = unreadCount > 0 && (
+    <button
+      type="button"
+      onClick={markAllRead}
+      className="min-h-9 rounded-lg px-2 text-xs font-medium text-blue-400 hover:bg-gray-700 hover:text-blue-300"
+    >
+      {t('notifications.markAllRead')}
+    </button>
+  );
+
+  const list =
+    notifications.length === 0 ? (
+      <div className="px-4 py-8 text-center text-sm text-gray-400">{t('notifications.empty')}</div>
+    ) : (
+      <ul>
+        {notifications.map((n) => (
+          <li
+            key={n.id}
+            className={`border-b border-gray-700/50 px-4 py-3 last:border-0 ${n.read ? '' : 'bg-blue-900/10'}`}
+          >
+            <div className="flex items-start gap-2">
+              {!n.read && <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" aria-hidden="true" />}
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-white">{n.title}</p>
+                {n.body && <p className="mt-0.5 line-clamp-2 text-xs text-gray-400">{n.body}</p>}
+                <p className="mt-1 text-xs text-gray-400">{timeAgo(n.created_at, t)}</p>
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
+
   return (
     <div className="relative" ref={ref}>
       <button
+        ref={buttonRef}
         type="button"
-        onClick={() => setOpen(!open)}
-        className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-        aria-label="Notifications"
+        onClick={toggle}
+        className="relative inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+        aria-label={
+          unreadCount > 0 ? t('notifications.titleWithCount', { count: unreadCount }) : t('notifications.title')
+        }
+        aria-expanded={open}
+        aria-haspopup="dialog"
       >
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-          />
-        </svg>
+        <Bell className="h-5 w-5" aria-hidden="true" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          <span
+            className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white"
+            aria-hidden="true"
+          >
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
       </button>
 
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto rounded-xl border border-gray-700 bg-gray-800 shadow-2xl z-50">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-            <span className="text-sm font-semibold text-white">Notifications</span>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="text-xs text-blue-400 hover:text-blue-300"
-              >
-                Mark all read
-              </button>
-            )}
+      {open && !asSheet && (
+        <div
+          role="dialog"
+          aria-label={t('notifications.title')}
+          className="absolute right-0 top-full z-50 mt-2 max-h-96 w-80 overflow-y-auto rounded-xl border border-gray-700 bg-gray-800 shadow-2xl"
+        >
+          <div className="flex items-center justify-between border-b border-gray-700 px-4 py-3">
+            <span className="text-sm font-semibold text-white">{t('notifications.title')}</span>
+            {markAllButton}
           </div>
-
-          {notifications.length === 0 ? (
-            <div className="px-4 py-8 text-center text-gray-500 text-sm">
-              No notifications yet
-            </div>
-          ) : (
-            <ul>
-              {notifications.map((n) => (
-                <li
-                  key={n.id}
-                  className={`px-4 py-3 border-b border-gray-700/50 last:border-0 ${
-                    n.read ? '' : 'bg-blue-900/10'
-                  }`}
-                >
-                  <div className="flex items-start gap-2">
-                    {!n.read && (
-                      <span className="mt-1.5 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-white truncate">{n.title}</p>
-                      {n.body && (
-                        <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{n.body}</p>
-                      )}
-                      <p className="text-xs text-gray-500 mt-1">{timeAgo(n.created_at)}</p>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
+          {list}
         </div>
       )}
+
+      <Dialog
+        open={open && asSheet}
+        onClose={() => setOpen(false)}
+        title={t('notifications.title')}
+        variant="sheet"
+        returnFocusRef={buttonRef}
+        footer={markAllButton || undefined}
+      >
+        <div className="-mx-5 sm:-mx-6">{list}</div>
+      </Dialog>
     </div>
   );
 }

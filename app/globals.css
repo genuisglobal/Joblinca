@@ -217,3 +217,29 @@ html.dark {
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* ── Design tokens (dark theme) ─────────────────────────────────────────
+   Semantic colours as "R G B" channels so Tailwind opacity modifiers work
+   (bg-surface/80). Exposed in tailwind.config.ts as surface, line, fg,
+   focus, danger, success, warning. tests/design-tokens.test.js checks
+   every text/background pair listed there for WCAG contrast, so keep the
+   two in sync when changing a value. Existing gray-/neutral-/blue- classes
+   remain valid; new components use these names. */
+:root {
+  --surface: 10 10 10; /* page background (neutral-950) */
+  --surface-raised: 23 23 23; /* cards, panels (neutral-900) */
+  --surface-overlay: 28 28 28; /* dialogs, sheets, menus */
+  --line: 38 38 38; /* default borders (neutral-800) */
+  --line-strong: 105 105 105; /* input and control borders; >= 3:1 on surface and raised */
+  --fg: 245 245 245; /* primary text (neutral-100) */
+  --fg-muted: 163 163 163; /* secondary text (neutral-400) */
+  --fg-subtle: 138 138 138; /* tertiary text; >= 4.5:1 on raised */
+  --focus: 96 165 250; /* focus ring (primary-400) */
+  --danger: 220 38 38; /* destructive fills (red-600) */
+  --danger-fg: 248 113 113; /* error text (red-400) */
+  --success: 22 163 74; /* success fills (green-600) */
+  --success-fg: 74 222 128; /* success text (green-400) */
+  --warning: 217 119 6; /* warning fills (amber-600) */
+  --warning-fg: 251 191 36; /* warning text (amber-400) */
+}
+

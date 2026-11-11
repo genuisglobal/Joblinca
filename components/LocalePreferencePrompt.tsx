@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Languages } from 'lucide-react';
+import Dialog from '@/components/ui/Dialog';
 import { useTranslation } from '@/lib/i18n';
 import {
   LOCALE_PREFERENCE_COOKIE_NAME,
@@ -62,20 +63,23 @@ export default function LocalePreferencePrompt({
     }
   }
 
-  if (!isOpen) {
-    return null;
-  }
-
+  // A required choice: not dismissible (no close button, Escape or backdrop).
   return (
-    <div className="fixed inset-0 z-dialog flex items-center justify-center bg-black/65 p-4 backdrop-blur-sm">
-      <div className="modal-panel w-full max-w-xl rounded-3xl border border-neutral-800 bg-neutral-950 shadow-2xl">
-        <div className="rounded-t-3xl border-b border-neutral-800 bg-gradient-to-r from-blue-950/80 to-emerald-950/70 px-5 py-4 sm:px-6 sm:py-5">
+    <Dialog
+      open={isOpen}
+      onClose={() => {}}
+      dismissible={false}
+      title={t('localePrompt.title')}
+      labelledBy="locale-prompt-title"
+      size="lg"
+    >
+        <div className="rounded-t-2xl border-b border-neutral-800 bg-gradient-to-r from-blue-950/80 to-emerald-950/70 px-5 py-4 sm:px-6 sm:py-5">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
-              <Languages className="h-5 w-5 text-blue-200" />
+              <Languages className="h-5 w-5 text-blue-200" aria-hidden="true" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white">
+              <h2 id="locale-prompt-title" className="text-lg font-semibold text-white">
                 {t('localePrompt.title')}
               </h2>
               <p className="mt-1 text-sm text-neutral-300">
@@ -124,11 +128,10 @@ export default function LocalePreferencePrompt({
         </div>
 
         <div className="border-t border-neutral-800 px-6 py-4">
-          <p className="text-xs text-neutral-500">
+          <p className="text-xs text-fg-subtle">
             {pendingLocale ? t('localePrompt.saving') : t('localePrompt.note')}
           </p>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }
