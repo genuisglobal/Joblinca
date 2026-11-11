@@ -14,6 +14,14 @@ const en: Record<string, string> = {
   "nav.getStarted": "Get Started",
   "nav.dashboard": "Dashboard",
   "nav.logout": "Logout",
+  "notifications.title": "Notifications",
+  "notifications.titleWithCount": "Notifications, {count} unread",
+  "notifications.markAllRead": "Mark all read",
+  "notifications.empty": "No notifications yet",
+  "notifications.justNow": "just now",
+  "notifications.minutesAgo": "{count}m ago",
+  "notifications.hoursAgo": "{count}h ago",
+  "notifications.daysAgo": "{count}d ago",
   "nav.navigate": "Navigate",
   "nav.learnMore": "Learn More",
   "nav.browseJobs": "Browse Jobs",
@@ -436,6 +444,8 @@ const en: Record<string, string> = {
   "jobDetail.closed":
     "This job posting has closed and is no longer accepting applications.",
   "jobDetail.description": "Job Description",
+  "jobDetail.readMore": "Read the full description",
+  "jobDetail.showLess": "Show less",
   "jobDetail.noDescription": "No description provided",
   "jobDetail.requirements": "Requirements",
   "jobDetail.benefits": "Benefits",
@@ -1103,6 +1113,8 @@ const en: Record<string, string> = {
   // Shared Dashboard Shell
   // ---------------------------------------------------------------------------
   "dashboardNav.overview": "Overview",
+  "dashboardNav.more": "More",
+  "dashboardNav.bottomNavLabel": "Dashboard shortcuts",
   "dashboardNav.applications": "Applications",
   "dashboardNav.candidateSearch": "Candidate Search",
   "dashboardNav.messages": "Messages",

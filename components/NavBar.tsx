@@ -29,6 +29,9 @@ export default function NavBar() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
+  // Which breakpoint we are at, so the notification bell renders in exactly
+  // one place (each instance polls the API).
+  const [isDesktop, setIsDesktop] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -173,9 +176,30 @@ export default function NavBar() {
     return () => desktop.removeEventListener?.("change", onDesktop);
   }, [mobileMenuOpen]);
 
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    setIsDesktop(desktop.matches);
+    const onChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
+    desktop.addEventListener?.("change", onChange);
+    return () => desktop.removeEventListener?.("change", onChange);
+  }, []);
+
+  const logo = (
+    <Link href={localizedHref("/")} className="flex items-center">
+      <Image
+        src="/assets/header-logo.png"
+        alt="JobLinca"
+        width={180}
+        height={48}
+        priority
+        className="object-contain"
+      />
+    </Link>
+  );
+
   if (loading) {
     return (
-      <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 h-[72px]" />
+      <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 h-[72px]">{logo}</nav>
     );
   }
 
@@ -184,16 +208,7 @@ export default function NavBar() {
       {/* Main Navigation Bar (height mirrored by --site-header-h in globals.css) */}
       <nav className="max-w-7xl mx-auto flex items-center justify-between px-4 h-[72px]">
         {/* Logo */}
-        <Link href={localizedHref("/")} className="flex items-center">
-          <Image
-            src="/assets/header-logo.png"
-            alt="JobLinca"
-            width={180}
-            height={48}
-            priority
-            className="object-contain"
-          />
-        </Link>
+        {logo}
 
         {/* Desktop Navigation */}
         <ul className="hidden lg:flex items-center space-x-6 text-sm font-medium">
@@ -261,7 +276,7 @@ export default function NavBar() {
 
           {isAuthenticated ? (
             <>
-              <NotificationBell />
+              {isDesktop && <NotificationBell />}
               <Link
                 href={localizedHref(dashboardPath)}
                 className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors"
@@ -294,12 +309,14 @@ export default function NavBar() {
           )}
         </div>
 
-        {/* Mobile Menu Toggle */}
+        {/* Mobile: notification bell (signed in) + menu toggle */}
+        <div className="flex items-center gap-1 lg:hidden">
+        {isAuthenticated && !isDesktop && <NotificationBell />}
         <button
           ref={menuButtonRef}
           type="button"
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="lg:hidden p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
           aria-label={mobileMenuOpen ? t("nav.closeMenu") : t("nav.openMenu")}
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-nav-drawer"
@@ -307,6 +324,7 @@ export default function NavBar() {
         >
           {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </button>
+        </div>
       </nav>
 
       {portalReady && createPortal(<>

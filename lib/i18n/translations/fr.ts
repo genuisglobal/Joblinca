@@ -14,6 +14,14 @@ const fr: Record<string, string> = {
   "nav.getStarted": "Commencer",
   "nav.dashboard": "Tableau de bord",
   "nav.logout": "D\u00e9connexion",
+  "notifications.title": "Notifications",
+  "notifications.titleWithCount": "Notifications, {count} non lues",
+  "notifications.markAllRead": "Tout marquer comme lu",
+  "notifications.empty": "Aucune notification pour le moment",
+  "notifications.justNow": "à l'instant",
+  "notifications.minutesAgo": "il y a {count} min",
+  "notifications.hoursAgo": "il y a {count} h",
+  "notifications.daysAgo": "il y a {count} j",
   "nav.navigate": "Naviguer",
   "nav.learnMore": "En savoir plus",
   "nav.browseJobs": "Parcourir les emplois",
@@ -441,6 +449,8 @@ const fr: Record<string, string> = {
   "jobDetail.closed":
     "Cette offre est cl\u00f4tur\u00e9e et n'accepte plus de candidatures.",
   "jobDetail.description": "Description du poste",
+  "jobDetail.readMore": "Lire toute la description",
+  "jobDetail.showLess": "Réduire",
   "jobDetail.noDescription": "Aucune description fournie",
   "jobDetail.requirements": "Exigences",
   "jobDetail.benefits": "Avantages",
@@ -1102,6 +1112,8 @@ const fr: Record<string, string> = {
   // Shared Dashboard Shell
   // ---------------------------------------------------------------------------
   "dashboardNav.overview": "Vue d'ensemble",
+  "dashboardNav.more": "Plus",
+  "dashboardNav.bottomNavLabel": "Raccourcis du tableau de bord",
   "dashboardNav.applications": "Candidatures",
   "dashboardNav.candidateSearch": "Recherche de candidats",
   "dashboardNav.messages": "Messages",
