@@ -33,6 +33,9 @@ export interface WaLeadRow {
   last_seen_at: string;
   /** Last confidently detected reply language. Null until a message reads as one. */
   language: 'en' | 'fr' | null;
+  /** Human handoff: the bot stays silent until then. Absent before migration 20261002000400. */
+  agent_paused_until?: string | null;
+  handoff_reason?: string | null;
 }
 
 export interface WaTalentProfileRow {
@@ -111,6 +114,28 @@ export async function findWaLeadByPhone(phone: string): Promise<WaLeadRow | null
   }
 
   return ensureLeadMonthlyReset(data as WaLeadRow);
+}
+
+/** True while a human has this conversation. */
+export function isLeadPaused(lead: Pick<WaLeadRow, 'agent_paused_until'>, now = Date.now()): boolean {
+  if (!lead.agent_paused_until) return false;
+  const until = new Date(lead.agent_paused_until).getTime();
+  return Number.isFinite(until) && until > now;
+}
+
+/** Start (until = ISO time) or end (until = null) a human handoff. */
+export async function setLeadPause(
+  leadId: string,
+  until: string | null,
+  reason: string | null = null
+): Promise<void> {
+  const { error } = await leadDb
+    .from('wa_leads')
+    .update({ agent_paused_until: until, handoff_reason: reason, updated_at: new Date().toISOString() })
+    .eq('id', leadId);
+  if (error) {
+    throw new Error(`setLeadPause failed: ${error.message}`);
+  }
 }
 
 export async function ensureLeadMonthlyReset(lead: WaLeadRow): Promise<WaLeadRow> {

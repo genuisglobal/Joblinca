@@ -79,6 +79,7 @@ export default async function AdminLayout({
               <NavLink href={localize('/admin/recruiters')} icon={<BuildingIcon />} label="Recruiters" />
               <NavLink href={localize('/admin/applications')} icon={<DocumentIcon />} label="Applications" />
               <NavLink href={localize('/admin/whatsapp/blast')} icon={<MegaphoneIcon />} label="WhatsApp Blast" />
+              <NavLink href={localize('/admin/whatsapp/agent')} icon={<MegaphoneIcon />} label="WhatsApp Agent" />
 
               <div className="pt-4 mt-4 border-t border-gray-700">
                 <p className="text-xs text-gray-500 uppercase mb-2 px-3">Aggregation</p>

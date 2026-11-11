@@ -37,6 +37,13 @@ function run() {
   assert.equal(sm.parseLanguageSelection('spanish'), null);
   console.log('ok - parseLanguageSelection');
 
+  // "non" is a French yes/no answer, not a request to abandon the application
+  assert.equal(sm.isCancelIntent('non'), false);
+  assert.equal(sm.parseYesNo('non'), false);
+  assert.equal(sm.isCancelIntent('annuler'), true);
+  assert.equal(sm.isCancelIntent('STOP'), true);
+  console.log('ok - isCancelIntent keeps French "non" as an answer');
+
   // parseApplyIntent extracts UUID job reference
   const intent = sm.parseApplyIntent(
     'APPLY 123e4567-e89b-12d3-a456-426614174000',

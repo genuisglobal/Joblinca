@@ -45,6 +45,10 @@
       "schedule": "30 9 * * *"
     },
     {
+      "path": "/api/cron/wa-signup-reminders",
+      "schedule": "15 10 * * *"
+    },
+    {
       "path": "/api/cron/daily-quiz-drill",
       "schedule": "0 6 * * *"
     }

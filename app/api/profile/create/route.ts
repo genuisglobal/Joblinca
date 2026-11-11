@@ -252,10 +252,11 @@ export async function POST(request: Request) {
           completedUserId: userId,
         });
 
-        if (completedLead?.officer_code_snapshot) {
-          officerCodeToClaim = completedLead.officer_code_snapshot;
-        } else {
+        if (!completedLead) {
           warnings.push('Registration invite token was invalid or already claimed.');
+        } else if (completedLead.officer_code_snapshot) {
+          // Self-service WhatsApp leads have no officer to credit.
+          officerCodeToClaim = completedLead.officer_code_snapshot;
         }
       } catch (leadCompletionError) {
         warnings.push(

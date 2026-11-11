@@ -2,21 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { rateLimit, getRateLimitIdentifier } from '@/lib/rate-limit';
-import { recordCompanyEvent } from '@/lib/aggregation/company-reputation';
-
-/** Distinct reporters needed before a job is auto-unpublished for review */
-const AUTO_UNPUBLISH_THRESHOLD = 3;
-
-const VALID_REASONS = [
-  'scam',
-  'misleading',
-  'duplicate',
-  'offensive',
-  'wrong_info',
-  'other',
-] as const;
-
-type ReportReason = (typeof VALID_REASONS)[number];
+import {
+  REPORTS_PER_HOUR,
+  escalateJobReport,
+  isReportReason,
+} from '@/lib/jobs/report-job';
 
 export async function POST(
   request: NextRequest,
@@ -41,7 +31,7 @@ export async function POST(
   // Rate limit: 5 reports per hour per user
   const rateLimitResult = await rateLimit(
     getRateLimitIdentifier(request, user.id),
-    { requests: 5, window: '1h' }
+    { requests: REPORTS_PER_HOUR, window: '1h' }
   );
   if (!rateLimitResult.allowed) {
     return NextResponse.json(
@@ -51,12 +41,12 @@ export async function POST(
   }
 
   const body = await request.json();
-  const reason = body.reason as ReportReason;
+  const reason = body.reason;
   const description = typeof body.description === 'string'
     ? body.description.trim().slice(0, 1000)
     : null;
 
-  if (!reason || !VALID_REASONS.includes(reason)) {
+  if (!isReportReason(reason)) {
     return NextResponse.json(
       { error: 'Invalid report reason' },
       { status: 400 }
@@ -111,53 +101,8 @@ export async function POST(
     );
   }
 
-  // ── Escalation loop (service role: reputation + auto-unpublish) ───────────
-  try {
-    const service = createServiceSupabaseClient();
-
-    const { data: reportedJob } = await service
-      .from('jobs')
-      .select('id, published, company_name, origin_type, origin_discovered_job_id')
-      .eq('id', jobId)
-      .maybeSingle();
-
-    // Scam reports count against the company's reputation
-    if (reason === 'scam' && reportedJob?.company_name) {
-      await recordCompanyEvent(service, reportedJob.company_name, 'scam_report');
-    }
-
-    // Enough distinct reporters → pull the job down and send it back to review
-    const { count } = await service
-      .from('job_reports')
-      .select('id', { count: 'exact', head: true })
-      .eq('job_id', jobId)
-      .neq('status', 'dismissed');
-
-    if ((count ?? 0) >= AUTO_UNPUBLISH_THRESHOLD && reportedJob?.published) {
-      const { error: unpubErr } = await service
-        .from('jobs')
-        .update({ published: false, lifecycle_status: 'removed' })
-        .eq('id', jobId);
-
-      if (!unpubErr) {
-        console.log(
-          `[report] Job ${jobId} auto-unpublished after ${count} reports (latest: ${reason})`
-        );
-        if (reportedJob.origin_discovered_job_id) {
-          await service
-            .from('discovered_jobs')
-            .update({
-              verification_status: 'suspicious',
-              ingestion_status: 'review_required',
-            })
-            .eq('id', reportedJob.origin_discovered_job_id);
-        }
-      }
-    }
-  } catch (escalationErr) {
-    // The report itself succeeded — escalation is best-effort
-    console.error('[report] Escalation failed (non-fatal):', escalationErr);
-  }
+  // Reputation + auto-unpublish (service role, best-effort)
+  await escalateJobReport(createServiceSupabaseClient(), jobId, reason);
 
   return NextResponse.json({ success: true });
 }
