@@ -48,8 +48,21 @@ const PAGE_DETAILS_PER_RUN = () => envInt('APIFY_FB_PAGE_DETAILS_MAX', 60, 5, 30
 /** Pages seen within this many days are not re-scraped. */
 const PAGE_REFRESH_DAYS = 60;
 
+/**
+ * Public base URL Apify calls back. Never trust the incoming request's host in
+ * production: a Vercel cron (or its "Run" button) can arrive on an internal
+ * deployment URL that Apify cannot reach or that Deployment Protection blocks.
+ */
+export function apifyWebhookBase(requestOrigin: string): string {
+  const configured = (process.env.APIFY_WEBHOOK_BASE_URL || '').trim();
+  const base =
+    configured ||
+    (process.env.VERCEL_ENV === 'production' ? 'https://joblinca.com' : requestOrigin);
+  return base.replace(/\/+$/, '');
+}
+
 function webhookUrl(origin: string, kind: ApifyRunKind): string {
-  return `${origin.replace(/\/$/, '')}/api/webhooks/apify?kind=${kind}`;
+  return `${apifyWebhookBase(origin)}/api/webhooks/apify?kind=${kind}`;
 }
 
 async function recordRun(
