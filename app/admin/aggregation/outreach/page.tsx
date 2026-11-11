@@ -5,6 +5,7 @@ import {
   isMissingAggregationRelationError,
 } from '@/lib/aggregation/admin';
 import { LogOutreachButton, StatusBadge, SourceFilter } from './OutreachActions';
+import { OutreachExportButton } from './OutreachExportButton';
 
 type OutreachFilter = 'all' | 'new' | 'queued' | 'contacted' | 'responded';
 
@@ -20,7 +21,9 @@ type DiscoveredJobWithContact = {
   contact_whatsapp: string | null;
   recruiter_name: string | null;
   trust_score: number;
+  scam_score: number;
   ingestion_status: string;
+  verification_status: string;
   discovered_at: string;
   posted_at: string | null;
   expires_at: string | null;
@@ -35,6 +38,16 @@ type OutreachLead = {
   last_contact_at: string | null;
   seeker_count: number;
   created_at: string;
+  owner_admin_id: string | null;
+  follow_up_at: string | null;
+};
+
+type OutreachExportRow = {
+  company: string; job_title: string; contact_name: string; email: string;
+  phone: string; whatsapp: string; source: string; source_url: string;
+  location: string; found_at: string; trust_score: number; scam_score: number;
+  qualification: string; qualification_reason: string; status: string;
+  assigned_admin: string; assigned_admin_id: string; follow_up_at: string; notes: string;
 };
 
 const filterLabels: Record<OutreachFilter, string> = {
@@ -79,7 +92,9 @@ export default async function OutreachPage({
       contact_whatsapp,
       recruiter_name,
       trust_score,
+      scam_score,
       ingestion_status,
+      verification_status,
       discovered_at,
       posted_at,
       expires_at
@@ -110,7 +125,7 @@ export default async function OutreachPage({
   if (jobIds.length > 0) {
     const { data: leadsData } = await supabase
       .from('recruiter_outreach_leads')
-      .select('id, discovered_job_id, status, channel, notes, last_contact_at, seeker_count, created_at')
+      .select('id, discovered_job_id, status, channel, notes, last_contact_at, seeker_count, created_at, owner_admin_id, follow_up_at')
       .in('discovered_job_id', jobIds);
 
     if (leadsData) {
@@ -118,6 +133,13 @@ export default async function OutreachPage({
         leadsMap[lead.discovered_job_id] = lead;
       }
     }
+  }
+
+  const ownerIds = [...new Set(Object.values(leadsMap).map((lead) => lead.owner_admin_id).filter(Boolean))] as string[];
+  const ownerNames: Record<string, string> = {};
+  if (ownerIds.length > 0) {
+    const { data: owners } = await supabase.from('profiles').select('id, full_name, email').in('id', ownerIds);
+    for (const owner of owners || []) ownerNames[owner.id] = owner.full_name || owner.email || owner.id;
   }
 
   // Apply filter
@@ -140,6 +162,38 @@ export default async function OutreachPage({
   const notContacted = jobs.filter((j) => !leadsMap[j.id]).length;
   const contacted = jobs.filter((j) => leadsMap[j.id]?.status === 'contacted').length;
   const responded = jobs.filter((j) => leadsMap[j.id]?.status === 'responded').length;
+  const exportRows: OutreachExportRow[] = filteredJobs.map((job) => {
+    const hasContact = Boolean(job.contact_email || job.contact_phone || job.contact_whatsapp);
+    const notFlagged = !['suspicious', 'rejected'].includes(job.ingestion_status)
+      && !['suspicious', 'rejected'].includes(job.verification_status);
+    const current = !job.expires_at || new Date(job.expires_at).getTime() > Date.now();
+    const verificationCurrent = job.verification_status !== 'expired';
+    const trustPass = job.trust_score >= 50;
+    const scamPass = job.scam_score < 50;
+    const qualified = hasContact && notFlagged && current && verificationCurrent && trustPass && scamPass;
+    const reasons = [
+      !hasContact ? 'No contact details' : null,
+      !notFlagged ? 'Flagged suspicious or rejected' : null,
+      !current ? 'Expired' : null,
+      !verificationCurrent ? 'Marked expired' : null,
+      !trustPass ? 'Trust score below 50' : null,
+      !scamPass ? 'Scam score 50 or higher' : null,
+    ].filter(Boolean);
+    const lead = leadsMap[job.id];
+    return {
+      company: job.company_name || '', job_title: job.title,
+      contact_name: job.recruiter_name || '', email: job.contact_email || '',
+      phone: job.contact_phone || '', whatsapp: job.contact_whatsapp || '',
+      source: job.source_name, source_url: job.original_job_url || '',
+      location: job.location || '', found_at: job.discovered_at,
+      trust_score: job.trust_score, scam_score: job.scam_score,
+      qualification: qualified ? 'Qualified' : 'Review',
+      qualification_reason: qualified ? 'Contact found; current; trust >= 50; scam < 50; not flagged' : reasons.join('; '),
+      status: lead?.status || 'new', assigned_admin_id: lead?.owner_admin_id || '',
+      assigned_admin: lead?.owner_admin_id ? ownerNames[lead.owner_admin_id] || lead.owner_admin_id : '',
+      follow_up_at: lead?.follow_up_at || '', notes: lead?.notes || '',
+    };
+  });
 
   return (
     <div className="p-6">
@@ -188,6 +242,7 @@ export default async function OutreachPage({
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
+        <OutreachExportButton rows={exportRows} />
         <div className="flex flex-wrap gap-2">
           {(Object.keys(filterLabels) as OutreachFilter[]).map((entry) => (
             <Link
@@ -267,6 +322,16 @@ export default async function OutreachPage({
                     <p className="text-sm text-gray-400">
                       {job.company_name || 'Unknown company'}
                     </p>
+                    {(() => {
+                      const hasContact = Boolean(job.contact_email || job.contact_phone || job.contact_whatsapp);
+                      const current = !job.expires_at || new Date(job.expires_at).getTime() > Date.now();
+                      const flagged = ['suspicious', 'rejected'].includes(job.ingestion_status)
+                        || ['suspicious', 'rejected'].includes(job.verification_status);
+                      const verificationCurrent = job.verification_status !== 'expired';
+                      const qualified = hasContact && current && verificationCurrent && !flagged && job.trust_score >= 50 && job.scam_score < 50;
+                      const reason = !hasContact ? 'No contact' : !current || !verificationCurrent ? 'Expired' : flagged ? 'Flagged' : job.trust_score < 50 ? 'Trust < 50' : job.scam_score >= 50 ? 'Scam ≥ 50' : '';
+                      return <p className={`text-xs mt-1 ${qualified ? 'text-green-400' : 'text-amber-400'}`} title={reason}>{qualified ? 'Qualified for outreach' : `Review: ${reason}`}</p>;
+                    })()}
                     {job.location && (
                       <p className="text-xs text-gray-500">{job.location}</p>
                     )}
@@ -332,6 +397,8 @@ export default async function OutreachPage({
                         Last: {formatShortDate(lead.last_contact_at)}
                       </p>
                     )}
+                    {lead?.owner_admin_id && <p className="text-xs text-gray-500 mt-1">Owner: {ownerNames[lead.owner_admin_id] || lead.owner_admin_id}</p>}
+                    {lead?.follow_up_at && <p className="text-xs text-amber-300 mt-1">Follow up: {lead.follow_up_at}</p>}
                   </td>
                   <td className="p-4">
                     <LogOutreachButton
@@ -342,6 +409,7 @@ export default async function OutreachPage({
                         channel: lead.channel,
                         notes: lead.notes || undefined,
                         seeker_count: lead.seeker_count,
+                        follow_up_at: lead.follow_up_at || undefined,
                       } : null}
                     />
                   </td>
