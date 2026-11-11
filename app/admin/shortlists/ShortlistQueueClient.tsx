@@ -21,6 +21,15 @@ const STATUS_STYLES: Record<string, string> = {
   cancelled: 'bg-neutral-500/10 text-neutral-400 border-neutral-500/30',
 };
 
+const BILLING_LABELS: Record<string, string> = {
+  prepaid: 'Prepaid',
+  pay_per_result: 'Pay-per-result',
+  success_fee: 'Success fee',
+  free: 'Free',
+};
+
+type RequestType = 'free_trial' | 'manual' | 'success_fee';
+
 const SOURCE_LABELS: Record<string, string> = {
   payment: 'Paid',
   backfill: 'Paid (earlier)',
@@ -40,7 +49,8 @@ export default function ShortlistQueueClient({
   const router = useRouter();
   const [view, setView] = useState<'open' | 'mine' | 'done'>('open');
   const [jobRef, setJobRef] = useState('');
-  const [source, setSource] = useState<'free_trial' | 'manual'>('free_trial');
+  const [source, setSource] = useState<RequestType>('free_trial');
+  const [feePercent, setFeePercent] = useState(50);
   const [size, setSize] = useState(3);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +66,13 @@ export default function ShortlistQueueClient({
       const res = await fetch('/api/admin/shortlists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobRef, source, shortlistSize: size }),
+        body: JSON.stringify({
+          jobRef,
+          source: source === 'free_trial' ? 'free_trial' : 'manual',
+          billingModel: source === 'success_fee' ? 'success_fee' : 'prepaid',
+          successFeePercent: source === 'success_fee' ? feePercent : undefined,
+          shortlistSize: size,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not create the request');
@@ -88,7 +104,7 @@ export default function ShortlistQueueClient({
           <select
             value={source}
             onChange={(e) => {
-              const next = e.target.value as 'free_trial' | 'manual';
+              const next = e.target.value as RequestType;
               setSource(next);
               setSize(next === 'free_trial' ? 3 : 5);
             }}
@@ -96,8 +112,22 @@ export default function ShortlistQueueClient({
           >
             <option value="free_trial">Free first shortlist</option>
             <option value="manual">Manual (paid offline)</option>
+            <option value="success_fee">Success fee (pay on hire)</option>
           </select>
         </label>
+        {source === 'success_fee' && (
+          <label>
+            <span className="block text-xs text-neutral-400 mb-1">% of first month</span>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={feePercent}
+              onChange={(e) => setFeePercent(Number(e.target.value))}
+              className="w-20 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-white"
+            />
+          </label>
+        )}
         <label>
           <span className="block text-xs text-neutral-400 mb-1">Candidates</span>
           <input
@@ -167,6 +197,10 @@ export default function ShortlistQueueClient({
                   </span>
                   <span className="rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs text-neutral-300">
                     {r.shortlist_size} candidates
+                  </span>
+                  <span className="rounded-full bg-neutral-800 px-2.5 py-0.5 text-xs text-neutral-300">
+                    {BILLING_LABELS[r.billing_model] ?? r.billing_model}
+                    {r.billing_model === 'success_fee' && r.success_fee_percent ? ` · ${r.success_fee_percent}%` : ''}
                   </span>
                 </div>
                 <h3 className="font-semibold text-white">{r.job?.title ?? 'Unknown job'}</h3>

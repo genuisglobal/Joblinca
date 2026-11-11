@@ -21,6 +21,10 @@ interface PaymentModalProps {
   plan: Plan;
   jobId?: string;
   addOnSlugs?: string[];
+  /** Pay a shortlist hire fee instead of a plan (fixed amount, no promo code). */
+  hireFeeId?: string;
+  /** Where to go after a confirmed payment (default: the subscription page). */
+  successHref?: string;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -55,6 +59,8 @@ export default function PaymentModal({
   plan,
   jobId,
   addOnSlugs,
+  hireFeeId,
+  successHref,
   onClose,
   onSuccess,
 }: PaymentModalProps) {
@@ -121,13 +127,17 @@ export default function PaymentModal({
   }, [locale]);
 
   const goToSubscriptionActivePage = useCallback((txId: string) => {
+    if (successHref) {
+      window.location.assign(addLocalePrefix(successHref, locale));
+      return;
+    }
     window.location.assign(
       addLocalePrefix(
         `/payment/subscription-active?tx=${encodeURIComponent(txId)}`,
         locale
       )
     );
-  }, [locale]);
+  }, [locale, successHref]);
 
   useEffect(() => {
     return () => {
@@ -265,6 +275,9 @@ export default function PaymentModal({
       }
       if (jobId) {
         body.job_id = jobId;
+      }
+      if (hireFeeId) {
+        body.hire_fee_id = hireFeeId;
       }
       if (addOnSlugs && addOnSlugs.length > 0) {
         body.add_on_slugs = addOnSlugs;
@@ -411,6 +424,7 @@ export default function PaymentModal({
                 )}
               </div>
 
+              {!hireFeeId && (
               <div>
                 <label className="block text-sm text-gray-400 mb-1.5">
                   {t('payment.promoCodeOptional')}
@@ -449,6 +463,7 @@ export default function PaymentModal({
                   </p>
                 )}
               </div>
+              )}
 
               {error && (
                 <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 space-y-2">

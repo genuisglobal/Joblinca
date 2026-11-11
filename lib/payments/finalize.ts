@@ -1,6 +1,8 @@
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { grantReferralReward } from '@/lib/referral-rewards';
 import { createShortlistRequestForPayment } from '@/lib/vetting/service';
+import { markHireFeePaid } from '@/lib/vetting/hires';
+import { PAY_PER_RESULT_PLAN_SLUG, SHORTLIST_PLAN_SLUG } from '@/lib/vetting/billing';
 
 type FinalizeSource = 'webhook' | 'status_poll';
 
@@ -175,7 +177,9 @@ async function applyJobTierEffects(
   const isFeatured = addOnSlugs.includes('job_tier1_featured');
   const socialPromotion = addOnSlugs.includes('job_tier1_social');
   const hiringTier =
-    plan.slug === 'job_tier2_shortlist' ? 'tier2_shortlist' : 'tier1_diy';
+    plan.slug === SHORTLIST_PLAN_SLUG || plan.slug === PAY_PER_RESULT_PLAN_SLUG
+      ? 'tier2_shortlist'
+      : 'tier1_diy';
 
   await supabase
     .from('jobs')
@@ -309,6 +313,15 @@ export async function finalizeSuccessfulPayment(params: FinalizeSuccessParams) {
 
     if (plan.plan_type === 'per_job') {
       await applyJobTierEffects(transaction as Record<string, unknown>, plan);
+    }
+  }
+
+  // Hire fees (pay-per-result balance, success fee) have no plan.
+  if (meta.flow === 'hire_fee' && typeof meta.hire_fee_id === 'string') {
+    try {
+      await markHireFeePaid(supabase, meta.hire_fee_id, transaction.id as string);
+    } catch (err) {
+      console.error('Hire fee update failed (non-blocking)', err);
     }
   }
 

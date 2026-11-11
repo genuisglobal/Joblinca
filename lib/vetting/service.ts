@@ -7,6 +7,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sendAdminWhatsAppAlert } from '@/lib/admin-alerts';
 import { notifyRecruiterViaWhatsApp } from '@/lib/jobs/recruiter-notify';
+import { billingModelForPlan, DEFAULT_SUCCESS_FEE_PERCENT, type BillingModel } from './billing';
 import {
   buildShortlistDeliveredMessage,
   computeDueAt,
@@ -71,12 +72,24 @@ export async function createShortlistRequestForPayment(
   supabase: SupabaseClient,
   params: { transactionId: string; jobId: string }
 ): Promise<string | null> {
-  const { data: job } = await supabase
-    .from('jobs')
-    .select('id, title, recruiter_id, company_name')
-    .eq('id', params.jobId)
-    .maybeSingle();
+  const [{ data: job }, { data: transaction }] = await Promise.all([
+    supabase
+      .from('jobs')
+      .select('id, title, recruiter_id, company_name')
+      .eq('id', params.jobId)
+      .maybeSingle(),
+    supabase
+      .from('transactions')
+      .select('id, pricing_plans(slug)')
+      .eq('id', params.transactionId)
+      .maybeSingle(),
+  ]);
   if (!job) return null;
+
+  const plan = single(
+    (transaction?.pricing_plans ?? null) as { slug: string } | { slug: string }[] | null
+  );
+  const billingModel = billingModelForPlan(plan?.slug ?? '');
 
   const { data, error } = await supabase
     .from('vetting_requests')
@@ -86,6 +99,7 @@ export async function createShortlistRequestForPayment(
       package: 'basic',
       status: 'pending',
       source: 'payment',
+      billing_model: billingModel,
       transaction_id: params.transactionId,
       due_at: computeDueAt(new Date()).toISOString(),
     })
@@ -101,6 +115,7 @@ export async function createShortlistRequestForPayment(
       .from('vetting_requests')
       .update({
         source: 'payment',
+        billing_model: billingModel,
         transaction_id: params.transactionId,
         shortlist_size: 5,
         updated_at: new Date().toISOString(),
@@ -114,7 +129,7 @@ export async function createShortlistRequestForPayment(
   }
 
   await sendAdminWhatsAppAlert(
-    `New paid shortlist: "${job.title}"${job.company_name ? ` (${job.company_name})` : ''}. ` +
+    `New ${billingModel === 'pay_per_result' ? 'pay-per-result' : 'paid'} shortlist: "${job.title}"${job.company_name ? ` (${job.company_name})` : ''}. ` +
       `Due in 72h. ${APP_URL}/admin/shortlists/${data.id}`
   ).catch(() => undefined);
 
@@ -163,9 +178,14 @@ export async function createManualShortlistRequest(
     source: Extract<VettingSource, 'manual' | 'free_trial'>;
     shortlistSize: number;
     createdBy: string;
+    /** Manual requests only: 'prepaid' (paid offline) or 'success_fee'. */
+    billingModel?: Extract<BillingModel, 'prepaid' | 'success_fee'>;
+    successFeePercent?: number | null;
   }
 ): Promise<string> {
   const job = await resolveJob(supabase, params.jobRef);
+  const billingModel: BillingModel =
+    params.source === 'free_trial' ? 'free' : params.billingModel ?? 'prepaid';
   const { data, error } = await supabase
     .from('vetting_requests')
     .insert({
@@ -174,6 +194,11 @@ export async function createManualShortlistRequest(
       package: 'basic',
       status: 'pending',
       source: params.source,
+      billing_model: billingModel,
+      success_fee_percent:
+        billingModel === 'success_fee'
+          ? params.successFeePercent ?? DEFAULT_SUCCESS_FEE_PERCENT
+          : null,
       shortlist_size: params.shortlistSize,
       assigned_to: params.createdBy,
       due_at: computeDueAt(new Date()).toISOString(),
@@ -200,6 +225,8 @@ export interface VettingRequestRow {
   recruiter_id: string;
   status: string;
   source: string;
+  billing_model: BillingModel;
+  success_fee_percent: number | null;
   shortlist_size: number;
   due_at: string | null;
   assigned_to: string | null;
@@ -221,7 +248,7 @@ export interface VettingRequestRow {
 }
 
 const REQUEST_SELECT = `
-  id, job_id, recruiter_id, status, source, shortlist_size, due_at, assigned_to,
+  id, job_id, recruiter_id, status, source, billing_model, success_fee_percent, shortlist_size, due_at, assigned_to,
   officer_notes, delivered_at, cancelled_reason, created_at,
   job:jobs!job_id (id, title, company_name, location, public_id, published, approval_status),
   assignee:profiles!assigned_to (full_name, email)
@@ -583,20 +610,30 @@ export async function deliverShortlist(
 // Recruiter view
 // ---------------------------------------------------------------------------
 
+export interface RecruiterShortlistCandidate {
+  applicationId: string;
+  candidateId: string;
+  rank: number;
+  note: string | null;
+  fullName: string | null;
+  location: string | null;
+  hire: {
+    id: string;
+    status: string;
+    amountXaf: number | null;
+    hiredAt: string;
+  } | null;
+}
+
 export interface RecruiterShortlist {
   id: string;
   status: string;
+  billingModel: BillingModel;
   dueAt: string | null;
   deliveredAt: string | null;
   createdAt: string;
   job: { id: string; title: string } | null;
-  candidates: Array<{
-    applicationId: string;
-    rank: number;
-    note: string | null;
-    fullName: string | null;
-    location: string | null;
-  }>;
+  candidates: RecruiterShortlistCandidate[];
 }
 
 export async function listRecruiterShortlists(
@@ -605,7 +642,7 @@ export async function listRecruiterShortlists(
 ): Promise<RecruiterShortlist[]> {
   const { data: requests, error } = await supabase
     .from('vetting_requests')
-    .select('id, status, due_at, delivered_at, created_at, job:jobs!job_id (id, title)')
+    .select('id, status, billing_model, due_at, delivered_at, created_at, job:jobs!job_id (id, title)')
     .eq('recruiter_id', recruiterId)
     .neq('status', 'cancelled')
     .order('created_at', { ascending: false })
@@ -617,27 +654,49 @@ export async function listRecruiterShortlists(
     .filter((r) => r.status === 'delivered' || r.status === 'completed')
     .map((r) => r.id as string);
 
-  const resultsByRequest = new Map<string, RecruiterShortlist['candidates']>();
+  const resultsByRequest = new Map<string, RecruiterShortlistCandidate[]>();
   if (deliveredIds.length > 0) {
-    const { data: results, error: resultsError } = await supabase
-      .from('vetting_results')
-      .select('vetting_request_id, application_id, rank, officer_note, candidate:profiles!candidate_id (full_name, residence_location)')
-      .in('vetting_request_id', deliveredIds)
-      .order('rank', { ascending: true });
+    const [{ data: results, error: resultsError }, { data: hires, error: hiresError }] =
+      await Promise.all([
+        supabase
+          .from('vetting_results')
+          .select('vetting_request_id, application_id, candidate_id, rank, officer_note, candidate:profiles!candidate_id (full_name, residence_location)')
+          .in('vetting_request_id', deliveredIds)
+          .order('rank', { ascending: true }),
+        supabase
+          .from('shortlist_hires')
+          .select('id, vetting_request_id, candidate_id, status, amount_xaf, hired_at')
+          .in('vetting_request_id', deliveredIds),
+      ]);
     if (resultsError) throw new VettingError(resultsError.message, 500);
+    if (hiresError) throw new VettingError(hiresError.message, 500);
+
+    const hireByKey = new Map(
+      (hires ?? []).map((h) => [`${h.vetting_request_id}:${h.candidate_id}`, h])
+    );
 
     for (const r of results ?? []) {
       if (!r.application_id) continue;
       const candidate = single(
         r.candidate as unknown as { full_name: string | null; residence_location: string | null } | null
       );
+      const hire = hireByKey.get(`${r.vetting_request_id}:${r.candidate_id}`);
       const list = resultsByRequest.get(r.vetting_request_id as string) ?? [];
       list.push({
         applicationId: r.application_id as string,
+        candidateId: r.candidate_id as string,
         rank: (r.rank as number | null) ?? list.length + 1,
         note: (r.officer_note as string | null) ?? null,
         fullName: candidate?.full_name ?? null,
         location: candidate?.residence_location ?? null,
+        hire: hire
+          ? {
+              id: hire.id as string,
+              status: hire.status as string,
+              amountXaf: (hire.amount_xaf as number | null) ?? null,
+              hiredAt: hire.hired_at as string,
+            }
+          : null,
       });
       resultsByRequest.set(r.vetting_request_id as string, list);
     }
@@ -646,10 +705,38 @@ export async function listRecruiterShortlists(
   return rows.map((r) => ({
     id: r.id as string,
     status: r.status as string,
+    billingModel: r.billing_model as BillingModel,
     dueAt: (r.due_at as string | null) ?? null,
     deliveredAt: (r.delivered_at as string | null) ?? null,
     createdAt: r.created_at as string,
     job: single(r.job as unknown as { id: string; title: string } | null),
     candidates: resultsByRequest.get(r.id as string) ?? [],
   }));
+}
+
+/** The recruiter's live jobs that have no open shortlist request: what they can buy one for. */
+export async function listShortlistableJobs(
+  supabase: SupabaseClient,
+  recruiterId: string
+): Promise<Array<{ id: string; title: string }>> {
+  const [{ data: jobs, error }, { data: open }] = await Promise.all([
+    supabase
+      .from('jobs')
+      .select('id, title')
+      .eq('recruiter_id', recruiterId)
+      .eq('published', true)
+      .is('removed_at', null)
+      .order('created_at', { ascending: false })
+      .limit(50),
+    supabase
+      .from('vetting_requests')
+      .select('job_id')
+      .eq('recruiter_id', recruiterId)
+      .in('status', ['pending', 'in_review']),
+  ]);
+  if (error) throw new VettingError(error.message, 500);
+  const busy = new Set((open ?? []).map((r) => r.job_id as string));
+  return (jobs ?? [])
+    .filter((j) => !busy.has(j.id as string))
+    .map((j) => ({ id: j.id as string, title: j.title as string }));
 }

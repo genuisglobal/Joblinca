@@ -23,7 +23,13 @@ interface Plan {
 type DurationFilter = 'monthly' | 'quarterly' | 'biannual';
 type RoleFilter = 'job_seeker' | 'talent' | 'recruiter' | null;
 
-const RECRUITER_BASE_PLAN_SLUGS = new Set(['job_tier1_diy', 'job_tier2_shortlist']);
+const RECRUITER_BASE_PLAN_SLUGS = new Set([
+  'job_tier1_diy',
+  'job_tier2_shortlist',
+  'job_tier2_pay_per_result',
+]);
+// Shortlist plans are bought per job from the recruiter's Shortlists page.
+const SHORTLIST_PLAN_SLUGS = new Set(['job_tier2_shortlist', 'job_tier2_pay_per_result']);
 const RECRUITER_FEATURED_ADD_ON_SLUG = 'job_tier1_featured';
 
 function normalizeRoleFilter(raw: string | null): RoleFilter {
@@ -76,7 +82,12 @@ export default function PricingPage() {
 
   function handleSubscribe(plan: Plan) {
     if (plan.plan_type === 'per_job') {
-      router.push(addLocalePrefix('/jobs/new', locale));
+      router.push(
+        addLocalePrefix(
+          SHORTLIST_PLAN_SLUGS.has(plan.slug) ? '/dashboard/recruiter/shortlists' : '/jobs/new',
+          locale
+        )
+      );
       return;
     }
 
@@ -227,7 +238,7 @@ export default function PricingPage() {
             <p className="text-gray-400 mb-6">
               {t('pricing.recruiterDescription')}
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {recruiterBasePlans.map((plan) => (
                 <PlanCard
                   key={plan.id}
@@ -237,7 +248,7 @@ export default function PricingPage() {
                 />
               ))}
               {recruiterBasePlans.length === 0 && (
-                <p className="text-gray-500 col-span-2">{t('pricing.noRecruiterPlans')}</p>
+                <p className="text-gray-500 col-span-3">{t('pricing.noRecruiterPlans')}</p>
               )}
             </div>
           </section>

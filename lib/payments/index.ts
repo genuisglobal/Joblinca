@@ -19,6 +19,7 @@ import {
   calculateChargeBreakdown,
   getProcessingFeePercentServer,
 } from './fees';
+import { getPayableHireFee } from '@/lib/vetting/hires';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,15 +74,17 @@ export interface DiscountResult {
 const RECRUITER_PER_JOB_BASE_PLAN_SLUGS = new Set([
   'job_tier1_diy',
   'job_tier2_shortlist',
+  'job_tier2_pay_per_result',
 ]);
 
 const ALLOWED_ADD_ONS_BY_BASE_PLAN: Record<string, string[]> = {
   job_tier1_diy: ['job_tier1_featured'],
   job_tier2_shortlist: [],
+  job_tier2_pay_per_result: [],
 };
 
 function logHostedCheckoutFallback(
-  flow: 'subscription' | 'job_tier',
+  flow: 'subscription' | 'job_tier' | 'hire_fee',
   internalTransactionId: string,
   payunitTransactionId: string,
   gateway: string,
@@ -517,16 +520,102 @@ export async function initiateJobTierPayment(
     throw new Error('Final amount must be greater than zero');
   }
 
-  // 5. Create pending transaction
+  return chargeWithPayunit({
+    flow: 'job_tier',
+    userId: params.userId,
+    phoneNumber: params.phoneNumber,
+    gateway: params.gateway,
+    charge,
+    originalAmount,
+    discountAmount,
+    transaction: {
+      description: `Job Tier: ${plan.name}`,
+      plan_id: plan.id,
+      job_id: params.jobId,
+      promo_code_id: promoResult.valid ? promoResult.promo_code_id : null,
+    },
+    metadata: {
+      plan_slug: params.planSlug,
+      plan_type: plan.plan_type,
+      role: plan.role,
+      add_on_slugs: requestedAddOnSlugs,
+      add_on_ids: addOnIds,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Pay a hire fee (pay-per-result balance or success fee)
+// ---------------------------------------------------------------------------
+
+export interface HireFeePaymentParams {
+  userId: string;
+  hireFeeId: string;
+  phoneNumber: string;
+  gateway?: string;
+}
+
+export async function initiateHireFeePayment(
+  params: HireFeePaymentParams
+): Promise<PaymentResult> {
+  const fee = await getPayableHireFee(
+    createServiceSupabaseClient(),
+    params.hireFeeId,
+    params.userId
+  );
+
+  const charge = calculateChargeBreakdown(fee.amountXaf, getProcessingFeePercentServer());
+
+  return chargeWithPayunit({
+    flow: 'hire_fee',
+    userId: params.userId,
+    phoneNumber: params.phoneNumber,
+    gateway: params.gateway,
+    charge,
+    originalAmount: fee.amountXaf,
+    discountAmount: 0,
+    transaction: {
+      description:
+        fee.feeType === 'success_fee' ? 'Success fee: shortlist hire' : 'Pay-per-result balance',
+      job_id: fee.jobId,
+    },
+    metadata: {
+      flow: 'hire_fee',
+      hire_fee_id: fee.id,
+      fee_type: fee.feeType,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Shared PayUnit charge: pending transaction, initialise, mobile money push
+// (hosted checkout fallback). Used by job tiers and hire fees.
+// ---------------------------------------------------------------------------
+
+interface PayunitChargeParams {
+  flow: 'job_tier' | 'hire_fee';
+  userId: string;
+  phoneNumber: string;
+  gateway?: string;
+  charge: ReturnType<typeof calculateChargeBreakdown>;
+  originalAmount: number;
+  discountAmount: number;
+  /** Extra transaction columns (description, plan_id, job_id, promo_code_id). */
+  transaction: Record<string, unknown>;
+  /** Flow-specific metadata; billing and payunit details are added here. */
+  metadata: Record<string, unknown>;
+}
+
+async function chargeWithPayunit(params: PayunitChargeParams): Promise<PaymentResult> {
+  const supabase = createServiceSupabaseClient();
+  const charge = params.charge;
+  const originalAmount = params.originalAmount;
+  const discountAmount = params.discountAmount;
   const phone = normalizePhone(params.phoneNumber);
   const gateway = resolveGateway(phone, params.gateway);
   const payunitRuntime = getPayunitRuntimeInfo();
   const metadata = {
-    plan_slug: params.planSlug,
-    plan_type: plan.plan_type,
-    role: plan.role,
-    add_on_slugs: requestedAddOnSlugs,
-    add_on_ids: addOnIds,
+    ...params.metadata,
     billing: {
       subtotal_amount: charge.subtotalAmount,
       processing_fee_percent: charge.processingFeePercent,
@@ -548,15 +637,12 @@ export async function initiateJobTierPayment(
   const { data: transaction, error: txError } = await supabase
     .from('transactions')
     .insert({
+      ...params.transaction,
       user_id: params.userId,
       amount: charge.totalAmount,
       currency: 'XAF',
-      description: `Job Tier: ${plan.name}`,
       status: 'pending',
       provider: 'payunit',
-      plan_id: plan.id,
-      job_id: params.jobId,
-      promo_code_id: promoResult.valid ? promoResult.promo_code_id : null,
       payment_phone: phone,
       original_amount: originalAmount,
       discount_amount: discountAmount,
@@ -676,7 +762,7 @@ export async function initiateJobTierPayment(
 
     if (initResult.transaction_url && shouldUseHostedCheckoutFallback(error)) {
       logHostedCheckoutFallback(
-        'job_tier',
+        params.flow,
         transaction.id,
         payunitTransactionId,
         gateway,

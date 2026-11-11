@@ -4,6 +4,8 @@ import {
   requireRecruiterOwnedApplication,
 } from '@/lib/hiring-pipeline/server';
 import { moveApplicationToStage } from '@/lib/hiring-pipeline/transitions';
+import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import { recordHireFromApplication } from '@/lib/vetting/hires';
 
 export async function POST(
   request: NextRequest,
@@ -40,6 +42,11 @@ export async function POST(
       reason,
       trigger: 'applications_stage_route',
     });
+
+    if (transition.toStage.stage_type === 'hire') {
+      // Candidates Joblinca introduced on a shortlist may carry a hire fee.
+      await recordHireFromApplication(createServiceSupabaseClient(), params.id);
+    }
 
     return NextResponse.json({
       application: transition.application,
