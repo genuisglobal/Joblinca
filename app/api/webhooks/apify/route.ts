@@ -43,14 +43,19 @@ function safeCompare(a: string, b: string): boolean {
  */
 export async function POST(request: NextRequest) {
   // Auth check — secret is REQUIRED
-  const secret = process.env.APIFY_WEBHOOK_SECRET;
+  // Trimmed exactly like lib/apify/client.ts, which sends this value to Apify;
+  // a trailing space or newline pasted into Vercel must not make them differ.
+  const secret = (process.env.APIFY_WEBHOOK_SECRET || '').trim();
   if (!secret) {
     console.error('[apify-webhook] APIFY_WEBHOOK_SECRET is not configured — rejecting request');
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
   }
 
-  const provided = request.headers.get('x-apify-secret') || '';
+  const provided = (request.headers.get('x-apify-secret') || '').trim();
   if (!provided || !safeCompare(provided, secret)) {
+    console.warn(
+      `[apify-webhook] rejected: secret mismatch (provided length ${provided.length}, expected ${secret.length}), kind=${request.nextUrl.searchParams.get('kind')}`
+    );
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
