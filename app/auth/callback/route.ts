@@ -47,27 +47,27 @@ export async function GET(request: NextRequest) {
 
   const user = data.session.user;
 
-  // Check if a profile already exists for this user
+  // Every account has a profiles row. (This used to look for a seeker row or
+  // recruiters.user_id -- a column that doesn't exist -- so returning
+  // recruiters looked brand-new and were re-provisioned as job seekers.)
   const { data: existingProfile } = await supabase
-    .from('job_seeker_profiles')
+    .from('profiles')
     .select('id')
-    .eq('user_id', user.id)
-    .maybeSingle();
-
-  const { data: existingRecruiter } = await supabase
-    .from('recruiters')
-    .select('id')
-    .eq('user_id', user.id)
+    .eq('id', user.id)
     .maybeSingle();
 
   // If no profile exists, create one (first-time OAuth user)
-  if (!existingProfile && !existingRecruiter) {
+  if (!existingProfile) {
     const validRole = ['job_seeker', 'talent', 'recruiter'].includes(role) ? role : 'job_seeker';
 
     try {
       const profileRes = await fetch(new URL('/api/profile/create', origin), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // This server-side fetch carries no cookies; prove who we are.
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
         body: JSON.stringify({
           userId: user.id,
           role: validRole,
