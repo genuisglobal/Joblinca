@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import DashboardSidebar from './components/DashboardSidebar';
 import DashboardHeader from './components/DashboardHeader';
+import SeekerBottomNav from './components/SeekerBottomNav';
 import RegistrationOfficerPrompt from './components/RegistrationOfficerPrompt';
 import { getRequestLocale } from '@/lib/i18n/server';
 import { addLocalePrefix } from '@/lib/i18n/locale';
@@ -49,7 +50,8 @@ export default async function DashboardLayout({
       <div className="flex-1 min-w-0 flex flex-col min-h-screen lg:ml-0">
         <DashboardHeader />
         {role !== 'field_agent' && <RegistrationOfficerPrompt />}
-        <main className="flex-1 p-4 sm:p-6 overflow-auto">{children}</main>
+        <main className={`flex-1 p-4 sm:p-6 overflow-auto ${role === 'job_seeker' ? 'pb-24 lg:pb-6' : ''}`}>{children}</main>
+        {role === 'job_seeker' && <SeekerBottomNav />}
       </div>
     </div>
   );
