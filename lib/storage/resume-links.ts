@@ -1,5 +1,15 @@
 export const APPLICATION_CV_BUCKET = 'application-cvs';
 
+/**
+ * Profile CVs (job_seeker_profiles / talent_profiles.resume_url). Private:
+ * objects live at `resumes/<userId>/...` and are only ever served through
+ * short-lived signed URLs.
+ */
+export const PROFILE_CV_BUCKET = 'resumes';
+
+/** How long a signed CV link stays valid once handed to a browser. */
+export const CV_SIGNED_URL_TTL_SECONDS = 10 * 60;
+
 export interface StorageObjectReference {
   bucket: string;
   path: string;
@@ -117,6 +127,30 @@ export function getApplicationCvPath(value: unknown, applicantId: string): strin
   }
 
   return null;
+}
+
+/**
+ * Path of a profile CV inside the private `resumes` bucket, only if it sits
+ * in `owner`'s folder. Accepts the stored public URL (what resume_url has
+ * always held), a signed URL, a storage:// reference, or a bare path.
+ */
+export function getProfileCvPath(value: unknown, ownerId: string): string | null {
+  const reference = parseStorageObjectReference(value);
+  const path = reference
+    ? reference.bucket === PROFILE_CV_BUCKET
+      ? reference.path
+      : null
+    : normalizeStoragePath(value);
+  if (!path) return null;
+
+  const segments = path.split('/');
+  return segments[0] === 'resumes' && segments[1] === ownerId && segments.length >= 3 ? path : null;
+}
+
+/** True for URLs into one of our private CV buckets (never safe to hand out raw). */
+export function isPrivateCvReference(value: unknown): boolean {
+  const reference = parseStorageObjectReference(value);
+  return reference?.bucket === PROFILE_CV_BUCKET || reference?.bucket === APPLICATION_CV_BUCKET;
 }
 
 export function getHttpUrl(value: unknown): string | null {
