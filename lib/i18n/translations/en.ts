@@ -1120,6 +1120,7 @@ const en: Record<string, string> = {
   "dashboardNav.bottomNavLabel": "Dashboard shortcuts",
   "dashboardNav.applications": "Applications",
   "dashboardNav.candidateSearch": "Candidate Search",
+  "dashboardNav.shortlists": "Shortlists",
   "dashboardNav.messages": "Messages",
   "dashboardNav.whatsAppScreening": "WhatsApp Screening",
   "dashboardNav.myJobs": "My Jobs",
