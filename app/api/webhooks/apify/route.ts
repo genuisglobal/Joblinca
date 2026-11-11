@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { timingSafeEqual } from 'crypto';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
+import { isApifyRunKind } from '@/lib/apify/client';
+import { handleSucceededRun } from '@/lib/apify/facebook-runs';
 import {
   normalizeApifyFacebookPosts,
   processStoredFacebookPostsByIds,
@@ -28,6 +30,10 @@ function safeCompare(a: string, b: string): boolean {
  *
  * Auth: APIFY_WEBHOOK_SECRET header (required).
  *
+ * With ?kind=fb_groups|fb_search|fb_pages the body is Apify's run
+ * notification ({ eventData: { actorRunId } }); see lib/apify/facebook-runs.ts.
+ * Without it, the legacy items form below is still accepted.
+ *
  * Expected body (Apify dataset items):
  * [
  *   { "postId": "...", "postText": "...", "postUrl": "...", "timestamp": "...", ... }
@@ -37,19 +43,46 @@ function safeCompare(a: string, b: string): boolean {
  */
 export async function POST(request: NextRequest) {
   // Auth check — secret is REQUIRED
-  const secret = process.env.APIFY_WEBHOOK_SECRET;
+  // Trimmed exactly like lib/apify/client.ts, which sends this value to Apify;
+  // a trailing space or newline pasted into Vercel must not make them differ.
+  const secret = (process.env.APIFY_WEBHOOK_SECRET || '').trim();
   if (!secret) {
     console.error('[apify-webhook] APIFY_WEBHOOK_SECRET is not configured — rejecting request');
     return NextResponse.json({ error: 'Webhook not configured' }, { status: 503 });
   }
 
-  const provided = request.headers.get('x-apify-secret') || '';
+  const provided = (request.headers.get('x-apify-secret') || '').trim();
   if (!provided || !safeCompare(provided, secret)) {
+    console.warn(
+      `[apify-webhook] rejected: secret mismatch (provided length ${provided.length}, expected ${secret.length}), kind=${request.nextUrl.searchParams.get('kind')}`
+    );
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const body = await request.json();
+
+    // Runs Joblinca started (lib/apify/facebook-runs.ts) send Apify's standard
+    // run notification; the run is re-read from Apify before any data is used.
+    const kind = request.nextUrl.searchParams.get('kind');
+    if (kind !== null) {
+      if (!isApifyRunKind(kind)) {
+        return NextResponse.json({ error: 'Unknown kind' }, { status: 400 });
+      }
+      const runId = String(body?.eventData?.actorRunId || body?.resource?.id || '');
+      if (!runId) {
+        return NextResponse.json({ error: 'Missing actorRunId' }, { status: 400 });
+      }
+      const outcome = await handleSucceededRun(
+        createServiceSupabaseClient(),
+        kind,
+        runId,
+        request.nextUrl.origin,
+      );
+      return NextResponse.json(outcome);
+    }
+
+    // Legacy: dataset items posted directly in the body.
     const items: any[] = Array.isArray(body) ? body : (body.items || body.data || []);
 
     if (items.length === 0) {
@@ -84,7 +117,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('[apify-webhook] Fatal error:', err);
     return NextResponse.json(
-      { error: 'Webhook processing failed', details: String(err) },
+      { error: 'Webhook processing failed' },
       { status: 500 }
     );
   }

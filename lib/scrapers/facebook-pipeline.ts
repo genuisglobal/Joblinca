@@ -731,6 +731,7 @@ export function normalizeApifyFacebookPosts(items: any[]): FacebookRawPost[] {
         coerceString(
           firstDefined(item, [
             'groupName',
+            'groupTitle',
             'group_name',
             'group.name',
             'group.title',
@@ -746,6 +747,9 @@ export function normalizeApifyFacebookPosts(items: any[]): FacebookRawPost[] {
             'group.link',
             'group.permalink',
             'owner.url',
+            // apify/facebook-groups-scraper: the group URL the run started from
+            'inputUrl',
+            'facebookUrl',
           ])
         ) ||
         (groupId ? `https://www.facebook.com/groups/${groupId}/` : undefined),

@@ -4,10 +4,12 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import {
   APPLICATION_CV_BUCKET,
+  PROFILE_CV_BUCKET,
   getApplicationCvPath,
   getHttpUrl,
   parseStorageObjectReference,
 } from '@/lib/storage/resume-links';
+import { signCvUrl } from '@/lib/storage/sign-cv';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,8 +133,21 @@ export async function GET(
       return redirectNoStore(signed.signedUrl);
     }
 
+    // Applications made with the applicant's profile CV point into the
+    // private resumes bucket; sign those too (they used to redirect to a
+    // public URL).
+    const signedProfileCv = await signCvUrl(
+      createServiceSupabaseClient(),
+      application.resume_url,
+      application.applicant_id,
+      RESUME_URL_TTL_SECONDS
+    );
+    if (signedProfileCv) {
+      return redirectNoStore(signedProfileCv);
+    }
+
     const storageReference = parseStorageObjectReference(application.resume_url);
-    if (storageReference?.bucket === APPLICATION_CV_BUCKET) {
+    if (storageReference?.bucket === APPLICATION_CV_BUCKET || storageReference?.bucket === PROFILE_CV_BUCKET) {
       throw new Error('Resume not found');
     }
 

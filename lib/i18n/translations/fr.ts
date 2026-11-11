@@ -1119,6 +1119,7 @@ const fr: Record<string, string> = {
   "dashboardNav.bottomNavLabel": "Raccourcis du tableau de bord",
   "dashboardNav.applications": "Candidatures",
   "dashboardNav.candidateSearch": "Recherche de candidats",
+  "dashboardNav.shortlists": "Présélections",
   "dashboardNav.messages": "Messages",
   "dashboardNav.whatsAppScreening": "Prescreening WhatsApp",
   "dashboardNav.myJobs": "Mes offres",

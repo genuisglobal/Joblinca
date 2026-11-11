@@ -9,6 +9,7 @@
  */
 
 import { NextResponse, type NextRequest } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import {
   verifySignature,
   markRead,
@@ -28,8 +29,14 @@ import {
 import { sendWhatsappMessage } from '@/lib/messaging/whatsapp';
 import { handleWhatsAppScreeningInbound } from '@/lib/whatsapp-screening/service';
 import { handleWhatsAppJobAgentInbound } from '@/lib/whatsapp-agent/router';
+import { isOptOutCommand } from '@/lib/whatsapp-agent/parser';
 import { handleDailyDrillReply } from '@/lib/skillup/drill-inbound';
 import { maskPII } from '@/lib/pii-mask';
+
+export const runtime = 'nodejs';
+// waitUntil work after the 200 counts against this, so it has to cover
+// routing a whole payload, model calls included.
+export const maxDuration = 60;
 
 function toUnixTimestamp(value: string | undefined): number {
   if (!value) return 0;
@@ -91,7 +98,12 @@ export async function POST(request: NextRequest) {
     return new NextResponse('OK', { status: 200 });
   }
 
-  // 4. Process each entry in delivery order to avoid conversation-state races.
+  // 4. Persist inbound messages before acknowledging. The unique index on
+  //    wa_message_id is what makes Meta's retries harmless, so it must hold
+  //    before we say 200; only messages that are new here get routed.
+  const accepted: AcceptedInbound[] = [];
+  const statuses: WAStatusUpdate[] = [];
+
   for (const entry of payload.entry ?? []) {
     for (const change of entry.changes ?? []) {
       if (change.field !== 'messages') continue;
@@ -106,62 +118,94 @@ export async function POST(request: NextRequest) {
         (a, b) => toUnixTimestamp(a.timestamp) - toUnixTimestamp(b.timestamp)
       );
       for (const msg of orderedMessages) {
-        await handleInboundMessage(msg, contactMap.get(msg.from));
+        const inbound = await acceptInboundMessage(msg, contactMap.get(msg.from));
+        if (inbound) accepted.push(inbound);
       }
 
-      const orderedStatuses = [...(value.statuses ?? [])].sort(
-        (a, b) => toUnixTimestamp(a.timestamp) - toUnixTimestamp(b.timestamp)
+      statuses.push(
+        ...[...(value.statuses ?? [])].sort(
+          (a, b) => toUnixTimestamp(a.timestamp) - toUnixTimestamp(b.timestamp)
+        )
       );
-      for (const status of orderedStatuses) {
-        await handleStatusUpdate(status);
-      }
     }
   }
 
-  // Meta expects a 200 quickly — always return OK
+  // 5. Answer Meta now and do the slow part afterwards. Routing can call the
+  //    model and send several replies; doing that before the 200 made Meta
+  //    time out and redeliver. Messages are still routed one at a time, in
+  //    delivery order, to avoid conversation-state races within a payload.
+  waitUntil(processAccepted(accepted, statuses));
+
   return new NextResponse('OK', { status: 200 });
 }
 
 // ─── Inbound message handler ──────────────────────────────────────────────────
 
-async function handleInboundMessage(
+interface AcceptedInbound {
+  msg: WAInboundMessage;
+  textBody: string | null;
+  conversationId: string;
+  conversationUserId: string | null;
+}
+
+/**
+ * Upsert the conversation and log the message. Returns null for duplicate
+ * deliveries and for failures, which are logged: Meta must still get a 200.
+ */
+async function acceptInboundMessage(
   msg: WAInboundMessage,
   contact: WAContact | undefined
-): Promise<void> {
+): Promise<AcceptedInbound | null> {
   try {
-    // 1. Get/create conversation row
     const conversation = await upsertConversation(msg.from, contact);
 
-    // 2. Extract text (null for media/sticker/unsupported)
+    // Null for media/sticker/unsupported
     const textBody = extractTextBody(msg);
 
-    // 3. Persist (idempotent — duplicate wamids are silently skipped)
+    // Idempotent: duplicate wamids are silently skipped
     const log = await saveInboundMessage(
       msg,
       textBody,
       conversation.id,
       conversation.user_id
     );
+    if (!log) return null;
 
-    if (!log) {
-      // Duplicate delivery from Meta — nothing more to do
-      return;
-    }
-
-    // 4. Mark as read (best-effort)
-    void markRead(msg.id).catch(() => {});
-
-    // 5. Route by message content
-    await routeInboundMessage(
+    return {
       msg,
       textBody,
-      conversation.id,
-      toE164(msg.from),
-      conversation.user_id
-    );
+      conversationId: conversation.id,
+      conversationUserId: conversation.user_id,
+    };
   } catch (err) {
-    // Log but don't re-throw — we must return 200 to Meta
-    console.error('[WA webhook] handleInboundMessage error:', err);
+    console.error('[WA webhook] acceptInboundMessage error:', err);
+    return null;
+  }
+}
+
+async function processAccepted(
+  accepted: AcceptedInbound[],
+  statuses: WAStatusUpdate[]
+): Promise<void> {
+  for (const inbound of accepted) {
+    try {
+      // Best-effort
+      void markRead(inbound.msg.id).catch(() => {});
+
+      await routeInboundMessage(
+        inbound.msg,
+        inbound.textBody,
+        inbound.conversationId,
+        toE164(inbound.msg.from),
+        inbound.conversationUserId
+      );
+    } catch (err) {
+      console.error('[WA webhook] routeInboundMessage error:', err);
+    }
+  }
+
+  for (const status of statuses) {
+    await handleStatusUpdate(status);
   }
 }
 
@@ -221,7 +265,7 @@ async function routeInboundMessage(
   }
 
   // Opt-out keywords (STOP is required by Meta policy)
-  if (['stop', 'unsubscribe', 'non', 'no'].includes(lower)) {
+  if (textBody && isOptOutCommand(textBody)) {
     await setOptIn(phone, false);
     await sendWhatsappMessage(
       phone,

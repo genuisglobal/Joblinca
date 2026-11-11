@@ -168,7 +168,13 @@ async function approvePendingJob(service: SupabaseClient, job: PendingJobRow): P
   await notifyRecruiterViaWhatsApp(
     service,
     job.recruiter_id,
-    `✅ Your job "${job.title}" has been approved and is now live on Joblinca!\n${appUrl}/jobs/${job.id}`
+    `✅ Your job "${job.title}" has been approved and is now live on Joblinca!\n${appUrl}/jobs/${job.id}`,
+    {
+      kind: 'approved',
+      jobId: job.id,
+      jobTitle: job.title,
+      publicId: (approved as { public_id?: string | null }).public_id ?? null,
+    }
   );
 
   return true;

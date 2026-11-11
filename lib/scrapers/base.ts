@@ -346,7 +346,14 @@ export abstract class BaseScraper {
    */
   protected async fetchJobDetails(
     jobUrl: string
-  ): Promise<{ description: string | null; email: string | null; phone: string | null; whatsapp: string | null } | null> {
+  ): Promise<{
+    description: string | null;
+    email: string | null;
+    phone: string | null;
+    whatsapp: string | null;
+    /** Whitespace-collapsed page text (scripts/nav/footer removed), for provider-specific parsing. */
+    pageText: string;
+  } | null> {
     try {
       const res = await this.fetchPage(jobUrl, { retries: 1 });
       const html = await res.text();
@@ -383,6 +390,7 @@ export abstract class BaseScraper {
       return {
         description,
         ...contacts,
+        pageText: bodyText,
       };
     } catch {
       return null;

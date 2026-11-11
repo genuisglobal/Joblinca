@@ -44,12 +44,13 @@
     "@supabase/supabase-js": "^2.39.4",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.36.3",
+    "@vercel/functions": "1.6.0",
     "autoprefixer": "^10.4.15",
     "cheerio": "^1.2.0",
     "framer-motion": "^12.23.26",
     "lucide-react": "^0.260.0",
     "mammoth": "^1.4.21",
-    "next": "14.0.0",
+    "next": "14.2.35",
     "openai": "^6.15.0",
     "p-queue": "^9.1.0",
     "pdf-lib": "^1.17.1",
@@ -67,7 +68,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "eslint": "^8.57.1",
-    "eslint-config-next": "^14.0.0",
+    "eslint-config-next": "^14.2.35",
     "newman": "^6.2.2",
     "typescript": "^5.2.2"
   }

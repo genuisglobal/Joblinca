@@ -45,8 +45,20 @@
       "schedule": "30 9 * * *"
     },
     {
+      "path": "/api/cron/wa-signup-reminders",
+      "schedule": "15 10 * * *"
+    },
+    {
       "path": "/api/cron/daily-quiz-drill",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/apify-facebook?task=jobs",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/apify-facebook?task=leads",
+      "schedule": "0 5 * * 3"
     }
   ]
 }
