@@ -276,6 +276,143 @@ export async function callAiJson<T>(
   };
 }
 
+// ─── Tool calling ─────────────────────────────────────────────────────────────
+
+export interface AiToolDefinition {
+  name: string;
+  description: string;
+  /** JSON Schema for the arguments object. */
+  parameters: Record<string, unknown>;
+}
+
+export interface AiToolCall {
+  id: string;
+  name: string;
+  /** Raw JSON string as the model produced it; validate before use. */
+  arguments: string;
+}
+
+/** Messages for a tool-calling conversation, in OpenAI chat format. */
+export type AiToolLoopMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string | null; toolCalls?: AiToolCall[] }
+  | { role: 'tool'; toolCallId: string; content: string };
+
+export interface AiToolTurnResult {
+  /** Final text, when the model answered instead of calling tools. */
+  text: string | null;
+  toolCalls: AiToolCall[];
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+}
+
+function toOpenAiToolLoopMessages(messages: AiToolLoopMessage[]) {
+  return messages.map((message) => {
+    if (message.role === 'tool') {
+      return { role: 'tool', tool_call_id: message.toolCallId, content: message.content };
+    }
+    if (message.role === 'assistant') {
+      return {
+        role: 'assistant',
+        content: message.content,
+        ...(message.toolCalls && message.toolCalls.length > 0
+          ? {
+              tool_calls: message.toolCalls.map((call) => ({
+                id: call.id,
+                type: 'function',
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            }
+          : {}),
+      };
+    }
+    return { role: message.role, content: message.content };
+  });
+}
+
+/**
+ * One model step of a tool-calling loop: the caller runs any returned tool
+ * calls, appends their results, and calls again. No retries by default -- the
+ * WhatsApp agent falls back to its menu flow instead of making a user wait.
+ */
+export async function callAiToolTurn(options: {
+  messages: AiToolLoopMessage[];
+  tools: AiToolDefinition[];
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+  timeoutMs?: number;
+  retryCount?: number;
+}): Promise<AiToolTurnResult> {
+  return withRetries(options.retryCount ?? 0, isTransientAiError, async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 12000);
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getOpenAiApiKey()}`,
+        },
+        body: JSON.stringify({
+          model: options.model || DEFAULT_OPERATIONAL_MODEL,
+          messages: toOpenAiToolLoopMessages(options.messages),
+          tools: options.tools.map((tool) => ({
+            type: 'function',
+            function: {
+              name: tool.name,
+              description: tool.description,
+              parameters: tool.parameters,
+            },
+          })),
+          tool_choice: 'auto',
+          parallel_tool_calls: false,
+          temperature: options.temperature ?? 0.2,
+          max_tokens: options.maxTokens,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        const error = new Error(`OpenAI call failed (${response.status}): ${text}`);
+        (error as Error & { status?: number }).status = response.status;
+        throw error;
+      }
+
+      const payload = await response.json();
+      const message = payload?.choices?.[0]?.message ?? {};
+      const rawCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+      const toolCalls: AiToolCall[] = rawCalls
+        .filter((call: { type?: string }) => call?.type === 'function')
+        .map((call: { id: string; function: { name: string; arguments?: string } }) => ({
+          id: String(call.id),
+          name: String(call.function?.name || ''),
+          arguments: String(call.function?.arguments || '{}'),
+        }));
+      const text = typeof message.content === 'string' && message.content.trim()
+        ? message.content.trim()
+        : null;
+
+      if (!text && toolCalls.length === 0) {
+        throw new Error('OpenAI returned neither text nor tool calls');
+      }
+
+      return {
+        text,
+        toolCalls,
+        model: (payload?.model as string) || options.model || DEFAULT_OPERATIONAL_MODEL,
+        promptTokens: (payload?.usage?.prompt_tokens as number) || 0,
+        completionTokens: (payload?.usage?.completion_tokens as number) || 0,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
+}
+
 export const nonEmptyTrimmedString = z
   .string()
   .transform((value) => value.trim())

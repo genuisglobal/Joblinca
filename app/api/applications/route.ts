@@ -3,6 +3,8 @@ import { createServiceSupabaseClient } from '@/lib/supabase/service';
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveApplicationPayload } from '@/lib/applications/server';
 import { isJobAcceptingApplications } from '@/lib/jobs/lifecycle';
+import { waitUntil } from '@vercel/functions';
+import { notifyRecruiterOfNewApplication } from '@/lib/jobs/new-applicant-alert';
 import {
   type ApplicationBoostConsumption,
   consumeApplicationBoost,
@@ -362,6 +364,9 @@ export async function POST(request: NextRequest) {
         : resolveApplicationMutationError(error, Boolean(targetDraft));
     return applicationError(failure.error, failure.status, failure.code);
   }
+
+  // Tell the recruiter on WhatsApp (throttled per job); never delays the response.
+  waitUntil(notifyRecruiterOfNewApplication(serviceSupabase, application.id));
 
   return NextResponse.json(
     {

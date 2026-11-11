@@ -91,7 +91,8 @@ export async function POST(
       await notifyRecruiterViaWhatsApp(
         createServiceSupabaseClient(),
         data.recruiter_id,
-        `✅ Your job "${data.title}" has been approved and is now live on Joblinca!\n${new URL(request.url).origin}/jobs/${jobId}`
+        `✅ Your job "${data.title}" has been approved and is now live on Joblinca!\n${new URL(request.url).origin}/jobs/${jobId}`,
+        { kind: 'approved', jobId, jobTitle: data.title, publicId: data.public_id ?? null }
       );
     }
 
