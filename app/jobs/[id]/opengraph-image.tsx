@@ -1,7 +1,10 @@
 import { ImageResponse } from 'next/og';
 import { createServiceSupabaseClient } from '@/lib/supabase/service';
 
-export const runtime = 'edge';
+// Node, not edge: on Next 14 an edge route with a dynamic segment, reached via
+// the middleware's /en|/fr rewrite, fails with "Invariant: no match found" and
+// returns an empty 200 -- shared job links had no preview image.
+export const runtime = 'nodejs';
 export const alt = 'Job posting on Joblinca';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
@@ -44,20 +47,35 @@ function truncate(text: string, max: number) {
 }
 
 export default async function Image({ params }: { params: { id: string } }) {
-  const supabase = createServiceSupabaseClient();
-  const { data: job } = await supabase
-    .from('jobs')
-    .select(
-      'title, company_name, location, work_type, job_type, salary, salary_min, salary_max, salary_currency, salary_period'
-    )
-    .eq('id', params.id)
-    .maybeSingle();
+  // A bad id, a DB hiccup or an odd currency code must still produce the
+  // branded card rather than an empty response.
+  let job: any = null;
+  if (/^[0-9a-f-]{36}$/i.test(params.id)) {
+    try {
+      const supabase = createServiceSupabaseClient();
+      const { data } = await supabase
+        .from('jobs')
+        .select(
+          'title, company_name, location, work_type, job_type, salary, salary_min, salary_max, salary_currency, salary_period'
+        )
+        .eq('id', params.id)
+        .maybeSingle();
+      job = data;
+    } catch (err) {
+      console.error('[og-image] job lookup failed', err instanceof Error ? err.message : err);
+    }
+  }
 
   const title = truncate(job?.title || 'Job Opportunity', 80);
   const company = job?.company_name ? truncate(job.company_name, 50) : null;
   const location =
     job?.work_type === 'remote' ? 'Remote' : job?.location ? truncate(job.location, 30) : 'Cameroon';
-  const salary = job ? formatSalary(job) : null;
+  let salary: string | null = null;
+  try {
+    salary = job ? formatSalary(job) : null;
+  } catch {
+    salary = null;
+  }
   const employmentType = job?.job_type
     ? job.job_type.replace(/_/g, '-').replace(/\b\w/g, (c: string) => c.toUpperCase())
     : null;
