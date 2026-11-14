@@ -148,27 +148,45 @@ export async function extractJobFromPostDetailed(
     return { extraction: null, error: 'text_too_short_or_low_signal', imageCount: 0 };
   }
 
-  try {
-    const result = await callAiJson({
+  const run = (images: string[]) =>
+    callAiJson({
       messages: [
         { role: 'system', content: EXTRACTION_PROMPT },
         {
           role: 'user',
-          content: buildUserContent(normalizedText.slice(0, 3000), normalizedImageUrls, context),
+          content: buildUserContent(normalizedText.slice(0, 3000), images, context),
         },
       ],
       schema: extractedJobSchema,
       model: 'gpt-4o-mini',
       temperature: 0.1,
       maxTokens: 700,
-      timeoutMs: normalizedImageUrls.length > 0 ? 15000 : 10000,
-      retryCount: 2,
+      timeoutMs: images.length > 0 ? 15000 : 10000,
+      retryCount: images.length > 0 ? 1 : 2,
     });
+
+  try {
+    let usedImages = normalizedImageUrls;
+    let result;
+    try {
+      result = await run(normalizedImageUrls);
+    } catch (err) {
+      // Facebook CDN links often expire or refuse the AI provider's fetcher,
+      // which fails the whole request. Retry on the text (incl. flyer text
+      // Facebook already read) rather than losing the post.
+      if (normalizedImageUrls.length === 0 || normalizedText.length < 20) throw err;
+      console.warn(
+        '[facebook-extractor] image request failed, retrying text-only:',
+        err instanceof Error ? err.message : err
+      );
+      usedImages = [];
+      result = await run([]);
+    }
 
     return {
       extraction: result.parsed,
       error: null,
-      imageCount: normalizedImageUrls.length,
+      imageCount: usedImages.length,
     };
   } catch (err) {
     console.error(

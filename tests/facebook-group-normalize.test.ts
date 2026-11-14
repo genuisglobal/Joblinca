@@ -48,6 +48,21 @@ async function main() {
   assert.equal(imageOnly.text, '');
   assert.ok((imageOnly.image_urls || []).length > 0, 'flyer images collected');
   console.log('ok - image-only flyer keeps its images for vision extraction');
+
+  const flyer = {
+    ...photo('903'),
+    ocrText:
+      "May be an image of text that says 'RECRUTEMENT URGENT Une société de Douala recrute 3 caissières. Dépôt CV: 677 00 00 00'",
+  };
+  const people = { ...photo('904'), ocrText: 'May be an image of 2 people and people smiling' };
+  const [withFlyerText, noise] = normalizeApifyFacebookPosts([
+    { ...base, id: 'p4', url: 'https://www.facebook.com/groups/x/permalink/4/', text: '', attachments: [flyer] },
+    { ...base, id: 'p5', url: 'https://www.facebook.com/groups/x/permalink/5/', text: 'Bonjour à tous', attachments: [people] },
+  ]);
+  assert.match(withFlyerText.text, /^\[Text on image\] RECRUTEMENT URGENT .*caissières/);
+  assert.equal(noise.text, 'Bonjour à tous');
+  assert.equal(imageOnly.text, '', 'generic "May be an image of text" adds nothing');
+  console.log('ok - flyer text Facebook read off the image is added; generic alt text is not');
 }
 
 main().catch((err) => {

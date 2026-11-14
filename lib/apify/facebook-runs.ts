@@ -205,6 +205,11 @@ export async function handleSucceededRun(
         posts: posts.length,
         jobs_extracted: pipeline.jobs_extracted,
         jobs_inserted: pipeline.jobs_inserted,
+        non_job_posts: pipeline.non_job_posts,
+        failed_posts: pipeline.failed_posts,
+        skipped_posts: pipeline.skipped_posts,
+        image_assisted_posts: pipeline.image_assisted_posts,
+        outcome_reasons: pipeline.outcome_reasons,
         errors: pipeline.errors.slice(0, 10),
       };
     } else if (kind === 'fb_search') {
