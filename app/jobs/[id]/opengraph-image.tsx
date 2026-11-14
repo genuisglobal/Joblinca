@@ -176,7 +176,9 @@ export default async function Image({ params }: { params: { id: string } }) {
                 fontWeight: 500,
               }}
             >
-              at {company}
+              {/* One string child: Satori rejects a non-flex div with >1 child
+                  ("at " + {company} would be two), failing every job with a company. */}
+              {`at ${company}`}
             </div>
           )}
         </div>
