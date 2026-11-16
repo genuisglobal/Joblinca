@@ -48,6 +48,28 @@ const PAGE_DETAILS_PER_RUN = () => envInt('APIFY_FB_PAGE_DETAILS_MAX', 60, 5, 30
 /** Pages seen within this many days are not re-scraped. */
 const PAGE_REFRESH_DAYS = 60;
 
+async function startGroupRunWithMemoryRetry(
+  input: Record<string, unknown>,
+  origin: string,
+  limit: number,
+) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await startActorRun(APIFY_ACTORS.fb_groups, input, {
+        webhookUrl: webhookUrl(origin, 'fb_groups'),
+        maxTotalChargeUsd: Math.max(0.1, Number((limit * 0.01).toFixed(2))),
+      });
+    } catch (err) {
+      // The free Apify plan allows 16 GB of concurrent Actor memory. Four
+      // group runs can fill it; wait briefly for one to finish before starting
+      // the next group. Do not retry unrelated errors such as exhausted credit.
+      const memoryFull = err instanceof Error && err.message.includes('actor-memory-limit-exceeded');
+      if (!memoryFull || attempt >= 2) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 5_000 * (attempt + 1)));
+    }
+  }
+}
+
 /**
  * Public base URL Apify calls back. Never trust the incoming request's host in
  * production: a Vercel cron (or its "Run" button) can arrive on an internal
@@ -105,11 +127,7 @@ export async function startFacebookGroupRuns(
       onlyPostsNewerThan: '2 days',
     };
     try {
-      const run = await startActorRun(APIFY_ACTORS.fb_groups, input, {
-        webhookUrl: webhookUrl(origin, 'fb_groups'),
-        // ~$0.005/post; cap at 2x the expected cost.
-        maxTotalChargeUsd: Math.max(0.1, Number((limit * 0.01).toFixed(2))),
-      });
+      const run = await startGroupRunWithMemoryRetry(input, origin, limit);
       await recordRun(supabase, run.id, 'fb_groups', input);
       summary.started.push({ run_id: run.id, target: group.url });
     } catch (err) {
