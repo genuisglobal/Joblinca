@@ -27,7 +27,42 @@ type PageLead = {
   first_seen_at: string;
 };
 
-type LastRun = { kind: string; status: string; started_at: string; error: string | null };
+type LastRun = {
+  kind: string;
+  status: string;
+  started_at: string;
+  error: string | null;
+  items_received: number | null;
+  result_json: Record<string, unknown> | null;
+};
+
+/** One line saying what a processed run produced, e.g. "30 posts → 2 jobs · 25 not jobs". */
+function runSummary(run: LastRun): string | null {
+  const r = run.result_json;
+  if (!r || typeof r !== 'object') return null;
+  const n = (key: string) => (typeof r[key] === 'number' ? (r[key] as number) : null);
+  const parts: string[] = [];
+  if (run.kind === 'fb_groups') {
+    parts.push(`${n('posts') ?? run.items_received ?? 0} posts → ${n('jobs_extracted') ?? 0} jobs`);
+    if (n('non_job_posts')) parts.push(`${n('non_job_posts')} not jobs`);
+    if (n('skipped_posts')) parts.push(`${n('skipped_posts')} too short`);
+    if (n('failed_posts')) parts.push(`${n('failed_posts')} failed`);
+  } else if (run.kind === 'fb_search') {
+    parts.push(`${n('pages_found') ?? 0} Pages found, ${n('pages_queued') ?? 0} sent for details`);
+  } else {
+    parts.push(`${n('pages') ?? 0} Pages → ${n('leads_saved') ?? 0} leads`);
+  }
+  const reasons = r.outcome_reasons;
+  if (reasons && typeof reasons === 'object') {
+    const failures = Object.entries(reasons as Record<string, number>)
+      .filter(([reason]) => !['not_job_post', 'text_too_short_and_no_images'].includes(reason))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([reason, count]) => `${count}× ${reason}`);
+    if (failures.length) parts.push(failures.join(', '));
+  }
+  return parts.join(' · ');
+}
 
 function filterHref(status: string, recruitersOnly: boolean) {
   const params = new URLSearchParams();
@@ -71,9 +106,9 @@ export default async function FacebookLeadsPage({
     query,
     supabase
       .from('apify_runs')
-      .select('kind, status, started_at, error')
+      .select('kind, status, started_at, error, items_received, result_json')
       .order('started_at', { ascending: false })
-      .limit(6),
+      .limit(10),
   ]);
   const leads = (data || []) as PageLead[];
 
@@ -132,6 +167,9 @@ export default async function FacebookLeadsPage({
             {(runs as LastRun[]).map((run, i) => (
               <li key={i}>
                 {formatShortDate(run.started_at)} · {run.kind} · {run.status}
+                {run.status === 'processed' && runSummary(run) ? (
+                  <span className="text-gray-400"> · {runSummary(run)}</span>
+                ) : null}
                 {run.error ? <span className="text-red-300"> · {run.error.slice(0, 120)}</span> : null}
               </li>
             ))}

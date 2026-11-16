@@ -92,6 +92,8 @@ export interface FacebookPipelineResult {
   failed_posts: number;
   image_assisted_posts: number;
   errors: string[];
+  /** Count per outcome reason (not_job_post, text_too_short..., AI errors). */
+  outcome_reasons: Record<string, number>;
   duration_ms: number;
   ingestion: {
     runId: string;
@@ -339,6 +341,34 @@ function collectImageUrls(value: unknown, output: Set<string>): void {
       }
     }
   }
+}
+
+/**
+ * Text Facebook read off attached images (Apify's `ocrText`). It is Facebook's
+ * alt text, e.g. `May be an image of text that says 'RECRUTEMENT ...'`; only
+ * the quoted part is useful, and "May be an image of 2 people" is noise.
+ */
+export function extractImageText(item: any): string {
+  const found: string[] = [];
+  const visit = (value: unknown) => {
+    if (!Array.isArray(value)) return;
+    for (const entry of value) {
+      const raw = entry && typeof entry === 'object' ? (entry as any).ocrText : null;
+      if (typeof raw !== 'string') continue;
+      const quoted = raw.match(/that says\s*['"‘“]([\s\S]+)['"’”]\s*$/i)?.[1];
+      const text = (quoted ?? (/^may be /i.test(raw.trim()) ? '' : raw)).replace(/\s+/g, ' ').trim();
+      if (text.length >= 15 && !found.includes(text)) found.push(text);
+    }
+  };
+  for (const candidate of [
+    item?.attachments,
+    item?.media,
+    readPath(item, 'sharedPost.attachments'),
+    readPath(item, 'sharedPost.media'),
+  ]) {
+    visit(candidate);
+  }
+  return found.join('\n').slice(0, 1500);
 }
 
 function extractImageUrls(item: any): string[] {
@@ -684,6 +714,7 @@ export function normalizeApifyFacebookPosts(items: any[]): FacebookRawPost[] {
         ])
       ) || null;
     const groupId = coerceString(firstDefined(item, ['groupId', 'group.id']));
+    const imageText = extractImageText(item);
 
     return {
       id:
@@ -698,7 +729,7 @@ export function normalizeApifyFacebookPosts(items: any[]): FacebookRawPost[] {
         ) ||
         derivePostIdFromUrl(url) ||
         `${Date.now()}-${index}`,
-      text:
+      text: [
         coerceString(
           firstDefined(item, [
             'postText',
@@ -717,6 +748,12 @@ export function normalizeApifyFacebookPosts(items: any[]): FacebookRawPost[] {
             'sharedPost.text',
           ])
         ) || '',
+        // Flyer text lets the AI read image-only posts even when it cannot
+        // download the Facebook image itself.
+        imageText ? `[Text on image] ${imageText}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       url: url || undefined,
       post_url: url || undefined,
       timestamp:
@@ -919,6 +956,7 @@ export async function processFacebookRawPostRows(
       failed_posts: 0,
       image_assisted_posts: 0,
       errors: [],
+      outcome_reasons: {},
       duration_ms: 0,
       ingestion: null,
     };
@@ -1018,6 +1056,13 @@ export async function processFacebookRawPostRows(
     }
   );
 
+  const outcomeReasons: Record<string, number> = {};
+  for (const outcome of outcomes) {
+    if (outcome.status === 'job_extracted') continue;
+    const key = (outcome.reason || outcome.status).slice(0, 80);
+    outcomeReasons[key] = (outcomeReasons[key] || 0) + 1;
+  }
+
   return {
     received: rows.length,
     queued: retryableRows.length,
@@ -1028,6 +1073,7 @@ export async function processFacebookRawPostRows(
     failed_posts: finalStats.failed_posts,
     image_assisted_posts: finalStats.image_assisted_posts,
     errors,
+    outcome_reasons: outcomeReasons,
     duration_ms: scrapeResult.duration_ms,
     ingestion,
   };
