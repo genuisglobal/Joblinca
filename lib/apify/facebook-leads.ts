@@ -34,11 +34,27 @@ export const LEAD_SEARCH_KEYWORDS = [
 
 const NON_PAGE_PATH = /^\/(?:groups|events|watch|reel|reels|photo|photos|videos|marketplace|stories|hashtag|search|share|login|people|profile\.php|permalink\.php|story\.php|[^/]+\/(?:posts|videos|photos|reels))\b/i;
 
+export interface CanonicalPageOptions {
+  /**
+   * Accept the numeric-id address forms. Facebook gives Pages without a
+   * username an address like /people/<Name>/<id> or /profile.php?id=<id> --
+   * the same shapes personal profiles use -- so only enable this for results
+   * that the source already guarantees are Pages (searchType "pages", or the
+   * Pages scraper, which only returns Pages).
+   */
+  allowIdForms?: boolean;
+}
+
 /**
- * Canonical https://www.facebook.com/<slug> for a business Page URL, or null
- * for anything that is not a Page (profiles, groups, posts, other hosts).
+ * Canonical Page URL, or null for anything that is not a Page (profiles,
+ * groups, posts, other hosts). Vanity Pages -> https://www.facebook.com/<slug>;
+ * id-only Pages (with allowIdForms) -> https://www.facebook.com/profile.php?id=<id>
+ * so both address forms of the same Page de-duplicate.
  */
-export function canonicalFacebookPageUrl(raw: unknown): string | null {
+export function canonicalFacebookPageUrl(
+  raw: unknown,
+  options: CanonicalPageOptions = {},
+): string | null {
   if (typeof raw !== 'string' || !raw.trim()) return null;
   let url: URL;
   try {
@@ -51,6 +67,14 @@ export function canonicalFacebookPageUrl(raw: unknown): string | null {
 
   const path = url.pathname.replace(/\/+$/, '');
   if (!path || path === '/') return null;
+
+  if (options.allowIdForms) {
+    const peopleId = path.match(/^\/people\/[^/]+\/(\d{5,25})$/i)?.[1];
+    const phpId = /^\/profile\.php$/i.test(path) ? url.searchParams.get('id') : null;
+    const id = peopleId || (phpId && /^\d{5,25}$/.test(phpId) ? phpId : null);
+    if (id) return `https://www.facebook.com/profile.php?id=${id}`;
+  }
+
   if (NON_PAGE_PATH.test(path)) return null;
 
   // "/pages/Name/123" is the legacy Page form; keep it whole.
@@ -78,8 +102,11 @@ export function extractSearchPageUrls(items: unknown[]): string[] {
     // Skip anything the actor labels as a person.
     const type = String(item.type || item.resultType || '').toLowerCase();
     if (type === 'profile' || type === 'person' || type === 'user') continue;
-    for (const key of ['pageUrl', 'facebookUrl', 'url', 'profileUrl', 'link']) {
-      const page = canonicalFacebookPageUrl(item[key]);
+    // Real output (Nov 2026): searchType "pages" results carry the Page in
+    // `url`, mostly as /people/<Name>/<id>; `facebookUrl` is the search URL.
+    const allowIdForms = String(item.searchType || '').toLowerCase() === 'pages';
+    for (const key of ['pageUrl', 'url', 'facebookUrl', 'profileUrl', 'link']) {
+      const page = canonicalFacebookPageUrl(item[key], { allowIdForms });
       if (page) {
         urls.add(page);
         break;
@@ -128,6 +155,9 @@ function toStringArray(value: unknown): string[] {
   return typeof value === 'string' && value.trim() ? [value.trim()] : [];
 }
 
+// apify/facebook-pages-scraper only returns Pages, so id-form addresses are safe here.
+const PAGES_ONLY: CanonicalPageOptions = { allowIdForms: true };
+
 /**
  * Map one facebook-pages-scraper item to a lead. Returns null when the item is
  * not a Cameroon business Page or has no way to contact it.
@@ -137,9 +167,9 @@ export function mapPageItemToLead(raw: unknown): FacebookPageLead | null {
   const item = raw as Record<string, unknown>;
 
   const pageUrl =
-    canonicalFacebookPageUrl(item.pageUrl) ||
-    canonicalFacebookPageUrl(item.facebookUrl) ||
-    canonicalFacebookPageUrl(item.url);
+    canonicalFacebookPageUrl(item.pageUrl, PAGES_ONLY) ||
+    canonicalFacebookPageUrl(item.facebookUrl, PAGES_ONLY) ||
+    canonicalFacebookPageUrl(item.url, PAGES_ONLY);
   const name = firstString(item, ['title', 'pageName', 'name']);
   if (!pageUrl || !name) return null;
 

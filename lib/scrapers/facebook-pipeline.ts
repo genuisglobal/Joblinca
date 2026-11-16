@@ -354,6 +354,8 @@ function extractImageUrls(item: any): string[] {
     readPath(item, 'post.images'),
     readPath(item, 'attachments.images'),
     readPath(item, 'attachments.media'),
+    readPath(item, 'sharedPost.media'),
+    readPath(item, 'sharedPost.attachments'),
   ]) {
     collectImageUrls(candidate, urls);
   }
@@ -710,6 +712,9 @@ export function normalizeApifyFacebookPosts(items: any[]): FacebookRawPost[] {
             'post.caption',
             'postTextSegments',
             'messageParts',
+            // apify/facebook-groups-scraper: a share has empty `text`; the
+            // content lives on the shared post.
+            'sharedPost.text',
           ])
         ) || '',
       url: url || undefined,

@@ -120,3 +120,43 @@ test('Pages outside Cameroon or with no contact route are dropped', () => {
   );
   assert.equal(mapPageItemToLead({ title: 'No URL', phone: '+237677123456' }), null);
 });
+
+// --- Real apify/facebook-search-scraper output (Nov 2026): Pages without a
+// username come back as /people/<Name>/<id> in `url`; facebookUrl is the
+// search URL. These were all being dropped.
+test('search results with searchType "pages": /people/ and profile.php ids are Pages', () => {
+  const urls = extractSearchPageUrls([
+    { searchType: 'pages', facebookUrl: 'https://www.facebook.com/search/pages?q=recrutement', url: 'https://www.facebook.com/people/Cabinet-RH-Plus/61550123456789/', name: 'Cabinet RH Plus' },
+    { searchType: 'pages', facebookUrl: 'https://www.facebook.com/search/pages?q=recrutement', url: 'https://www.facebook.com/profile.php?id=61550123456789', name: 'Same Page, other form' },
+    { searchType: 'pages', facebookUrl: 'https://www.facebook.com/search/pages?q=recrutement', url: 'https://www.facebook.com/CabinetMusic', name: 'Cabinet Music' },
+  ]);
+  assert.deepEqual(urls, [
+    'https://www.facebook.com/profile.php?id=61550123456789',
+    'https://www.facebook.com/CabinetMusic',
+  ]);
+});
+
+test('id-form addresses stay rejected unless the source guarantees Pages', () => {
+  assert.equal(canonicalFacebookPageUrl('https://www.facebook.com/people/Jane-Doe/100001234567'), null);
+  assert.equal(canonicalFacebookPageUrl('https://www.facebook.com/profile.php?id=100001234567'), null);
+  assert.deepEqual(
+    extractSearchPageUrls([{ searchType: 'profiles', url: 'https://www.facebook.com/people/Jane-Doe/100001234567' }]),
+    [],
+  );
+  assert.equal(
+    canonicalFacebookPageUrl('https://www.facebook.com/people/Jane-Doe/100001234567', { allowIdForms: true }),
+    'https://www.facebook.com/profile.php?id=100001234567',
+  );
+});
+
+test('Pages-scraper item with an id-form address becomes a lead', () => {
+  const lead = mapPageItemToLead({
+    title: 'Cabinet RH Plus',
+    pageUrl: 'https://www.facebook.com/people/Cabinet-RH-Plus/61550123456789/',
+    categories: ['Employment Agency'],
+    phone: '+237 6 99 00 11 22',
+    address: 'Douala',
+  });
+  assert.equal(lead.page_url, 'https://www.facebook.com/profile.php?id=61550123456789');
+  assert.equal(lead.recruiter_signal, true);
+});
