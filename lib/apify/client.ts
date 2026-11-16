@@ -54,7 +54,10 @@ async function apifyFetch<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    throw new Error(`Apify ${init?.method || 'GET'} ${path} failed: ${res.status} ${body.slice(0, 300)}`);
+    // Run-start URLs contain a base64 webhook definition with our secret.
+    // Never include query parameters in logs or an API error response.
+    const safePath = path.split('?')[0];
+    throw new Error(`Apify ${init?.method || 'GET'} ${safePath} failed: ${res.status} ${body.slice(0, 300)}`);
   }
   return (await res.json()) as T;
 }
