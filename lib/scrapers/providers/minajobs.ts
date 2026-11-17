@@ -1,18 +1,29 @@
 /**
  * MinaJobs scraper — Cameroon job board (French-first).
  *
- * Scrapes job listings from minajobs.net using cheerio.
- * The site uses a listings-block layout with <li class="spotlight"> cards.
- * Each card has desktop-listing-content and mobile-listing-content views.
+ * Reads cm.minajobs.net's public JSON API (the same one its own listing page
+ * calls) instead of parsing HTML. See ./minajobs-parse for why: the 2026-11
+ * redesign removed the old markup and the scraper silently returned 0 jobs.
+ *
+ * Listing: GET /api/jobs?page=N&limit=30 (newest first)
+ * Detail:  GET /api/jobs/{slug} -> full description + applyEmail, used for
+ *          the first DETAIL_LIMIT jobs to fill description and contacts.
  */
 
 import { BaseScraper } from '../base';
 import { deriveCategory } from '@/lib/externalJobs';
+import {
+  MINAJOBS_BASE_URL,
+  isListResponse,
+  jobUrl,
+  portableTextToPlain,
+  type MinaJobsDetail,
+  type MinaJobsListItem,
+} from './minajobs-parse';
 import type { ScrapedJob, ScraperConfig } from '../types';
 
-const BASE_URL = 'https://minajobs.net';
-const LISTING_PATH = '/offres-emplois-stages';
-const cheerio = require('cheerio/slim') as typeof import('cheerio');
+const PAGE_SIZE = 30; // server caps `limit` at 30
+const DETAIL_LIMIT = 30;
 
 export class MinaJobsScraper extends BaseScraper {
   constructor(config?: Partial<ScraperConfig>) {
@@ -21,99 +32,38 @@ export class MinaJobsScraper extends BaseScraper {
 
   protected async scrape(): Promise<ScrapedJob[]> {
     const allJobs: ScrapedJob[] = [];
-    const seenUrls = new Set<string>();
+    const slugs = new Map<string, string>(); // external_id -> slug
+    const seen = new Set<number>();
 
     for (let page = 1; page <= this.config.maxPages; page++) {
       const pageStartIndex = allJobs.length;
-      const url = page === 1
-        ? `${BASE_URL}${LISTING_PATH}`
-        : `${BASE_URL}${LISTING_PATH}?p=${page}`;
+      const url = `${MINAJOBS_BASE_URL}/api/jobs?page=${page}&limit=${PAGE_SIZE}`;
 
       try {
-        const res = await this.fetchPage(url);
-        const html = await res.text();
-        const $ = cheerio.load(html);
+        const res = await this.fetchPage(url, { headers: { Accept: 'application/json' } });
+        const body: unknown = await res.json();
+        if (!isListResponse(body)) {
+          this.recordScrapeError(`page ${page}`, new Error('unexpected /api/jobs response shape'));
+          break;
+        }
 
-        // Each job is an <li class="spotlight"> inside <ul class="listings-block">
-        const jobItems = $('ul.listings-block li.spotlight');
-        if (jobItems.length === 0) break;
+        if (body.items.length === 0) {
+          if (page === 1) {
+            this.recordScrapeError('page 1', new Error('API returned no jobs'));
+          }
+          break;
+        }
 
-        jobItems.each((_, el) => {
-          const $el = $(el);
-          const $link = $el.find('> a');
-          const href = $link.attr('href') || '';
-
-          // Use desktop-listing-content for structured data
-          const $desktop = $el.find('.desktop-listing-content');
-          const $content = $desktop.length > 0 ? $desktop : $el;
-
-          // Title from .listing-title (strip "Nouveau" badge, take first text only)
-          const $titleEl = $content.find('.listing-title').first();
-          const titleRaw = this.clean($titleEl.text());
-          const title = titleRaw.replace(/Nouveau\s*/i, '').replace(/New\s*/i, '').trim();
-
-          // Company logo
-          const logoPath = $content.find('.listing-logo img').attr('src') || null;
-
-          // Info spans: company, location, date (in order under .listing-info)
-          const infoSpans: string[] = [];
-          $content.find('.listing-info span.opaque').each((_, span) => {
-            infoSpans.push($(span).text().trim());
-          });
-
-          const company = infoSpans[0] || null;
-          const locationText = infoSpans[1] || null;
-          const dateText = infoSpans[2] || null;
-
-          // Job type from .listing-type span
-          const jobTypeRaw = $content.find('.listing-type span').text().trim() || null;
-
-          if (!title || !href || seenUrls.has(href)) return;
-
-          const fullUrl = href.startsWith('http') ? href : `${BASE_URL}${href}`;
-          seenUrls.add(href);
-
-          // Extract ID from URL path like /emplois-stage-recrutement/26755/slug
-          const idMatch = href.match(/\/(\d+)\//);
-          const externalId = idMatch ? idMatch[1] : href;
-
-          const companyLogo = logoPath
-            ? (logoPath.startsWith('http') ? logoPath : `${BASE_URL}${logoPath}`)
-            : null;
-
-          const location = this.normalizeLocation(locationText);
-
-          allJobs.push({
-            external_id: this.makeId(externalId),
-            source: this.source,
-            title,
-            company_name: company,
-            company_logo: companyLogo,
-            location,
-            salary: null,
-            job_type: this.normalizeJobType(jobTypeRaw),
-            category: deriveCategory(title),
-            description: null,
-            url: fullUrl,
-            region: this.normalizeRegion(locationText),
-            language: this.detectLanguage(title),
-            is_cameroon_local: true,
-            posted_at: this.parseRelativeDate(dateText),
-            closing_at: null,
-            fetched_at: new Date().toISOString(),
-            contact_email: null,
-            contact_phone: null,
-            contact_whatsapp: null,
-          });
-        });
+        for (const item of body.items) {
+          if (!item?.slug || !item.title || typeof item.number !== 'number' || seen.has(item.number)) continue;
+          seen.add(item.number);
+          const job = this.toScrapedJob(item);
+          slugs.set(job.external_id, item.slug);
+          allJobs.push(job);
+        }
 
         if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
-
-        // Check for next page
-        const hasNext = $(`.pagination a[href*="p=${page + 1}"]`).length > 0
-          || $('a.next-page').length > 0
-          || $(`a[href*="p=${page + 1}"]`).length > 0;
-        if (!hasNext) break;
+        if (page * (body.pageSize || PAGE_SIZE) >= body.total) break;
 
         if (page < this.config.maxPages) {
           await this.delay();
@@ -124,19 +74,29 @@ export class MinaJobsScraper extends BaseScraper {
       }
     }
 
-    // Fetch detail pages for contact extraction (limit to first 10)
-    const detailLimit = Math.min(allJobs.length, 30);
+    // Detail API for description + contacts (non-fatal per job)
+    const detailLimit = Math.min(allJobs.length, DETAIL_LIMIT);
     for (let i = 0; i < detailLimit; i++) {
       const job = allJobs[i];
+      const slug = slugs.get(job.external_id);
+      if (!slug) continue;
       try {
-        const details = await this.fetchJobDetails(job.url);
-        if (details) {
-          if (details.description && !job.description) job.description = details.description;
-          if (details.email) job.contact_email = details.email;
-          if (details.phone) job.contact_phone = details.phone;
-          if (details.whatsapp) job.contact_whatsapp = details.whatsapp;
-        }
-        await this.delay(1500);
+        const res = await this.fetchPage(
+          `${MINAJOBS_BASE_URL}/api/jobs/${encodeURIComponent(slug)}`,
+          { headers: { Accept: 'application/json' }, retries: 1 }
+        );
+        const detail = (await res.json()) as MinaJobsDetail;
+        const description = portableTextToPlain(detail.description);
+        if (description) job.description = description.slice(0, 5000);
+
+        const contacts = this.extractContacts(
+          [description, detail.applyInstructions || ''].join('\n')
+        );
+        job.contact_email = detail.applyEmail?.trim() || contacts.email;
+        job.contact_phone = contacts.phone;
+        job.contact_whatsapp = contacts.whatsapp;
+        if (description) job.category = deriveCategory(job.title, detail.category?.title || '', description);
+        await this.delay(1000);
       } catch {
         // Non-fatal
       }
@@ -145,14 +105,30 @@ export class MinaJobsScraper extends BaseScraper {
     return allJobs;
   }
 
-  /** Convert slug-style locations to readable format. */
-  private normalizeLocation(loc: string | null): string | null {
-    if (!loc) return null;
-    return loc
-      .replace(/-/g, ' ')
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-      .replace(/\bCameroun\b/i, 'Cameroon')
-      .trim();
+  private toScrapedJob(item: MinaJobsListItem): ScrapedJob {
+    const cityTitle = item.city?.title?.trim() || null;
+    return {
+      external_id: this.makeId(String(item.number)),
+      source: this.source,
+      title: this.clean(item.title),
+      company_name: item.company?.name?.trim() || null,
+      company_logo: item.company?.logo || null,
+      location: cityTitle,
+      salary: item.salary || null,
+      job_type: this.normalizeJobType(item.type?.title || null),
+      category: deriveCategory(item.title, item.category?.title || ''),
+      description: null,
+      url: jobUrl(item.slug),
+      region: this.normalizeRegion(cityTitle),
+      language: this.detectLanguage(item.title),
+      is_cameroon_local: true,
+      posted_at: toIso(item.publishedAt),
+      closing_at: toIso(item.deadline),
+      fetched_at: new Date().toISOString(),
+      contact_email: null,
+      contact_phone: null,
+      contact_whatsapp: null,
+    };
   }
 
   /** Normalize French job types to a common format. */
@@ -164,58 +140,22 @@ export class MinaJobsScraper extends BaseScraper {
       'temps partiel': 'Part-time',
       'stage': 'Internship',
       'freelance': 'Freelance',
+      'consultance': 'Freelance',
       'cdd': 'Contract',
       'cdi': 'Full-time',
       'bénévolat': 'Volunteer',
       'intérim': 'Temporary',
+      'temporaire': 'Temporary',
     };
-    // Also handle compound class-based types like "list-emplois-temps-complet-cameroun"
     for (const [key, value] of Object.entries(map)) {
-      if (lower.includes(key.replace(/\s+/g, '-')) || lower.includes(key)) {
-        return value;
-      }
+      if (lower.includes(key)) return value;
     }
     return type;
   }
+}
 
-  /** Parse relative dates like "11 hours ago" or "il y a 2 jours" to ISO strings. */
-  private parseRelativeDate(text: string | null): string | null {
-    if (!text) return null;
-
-    const now = Date.now();
-    const lower = text.toLowerCase().trim();
-
-    // English patterns
-    let match = lower.match(/(\d+)\s*(minute|hour|day|week|month)s?\s*ago/);
-    if (!match) {
-      // French patterns: "il y a 2 jours", "il y a 3 heures"
-      match = lower.match(/il\s+y\s+a\s+(\d+)\s*(minute|heure|jour|semaine|mois)/);
-    }
-    if (!match) {
-      // Simple French: "2 jours", "3 heures"
-      match = lower.match(/(\d+)\s*(minute|heure|jour|semaine|mois)/);
-    }
-
-    if (!match) return null;
-
-    const amount = parseInt(match[1], 10);
-    const unit = match[2];
-
-    const msMap: Record<string, number> = {
-      'minute': 60 * 1000,
-      'hour': 3600 * 1000,
-      'heure': 3600 * 1000,
-      'day': 86400 * 1000,
-      'jour': 86400 * 1000,
-      'week': 7 * 86400 * 1000,
-      'semaine': 7 * 86400 * 1000,
-      'month': 30 * 86400 * 1000,
-      'mois': 30 * 86400 * 1000,
-    };
-
-    const ms = msMap[unit];
-    if (!ms) return null;
-
-    return new Date(now - amount * ms).toISOString();
-  }
+function toIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? null : d.toISOString();
 }

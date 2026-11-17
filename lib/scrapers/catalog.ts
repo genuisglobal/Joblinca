@@ -43,7 +43,7 @@ export const SCRAPER_SOURCE_CATALOG = [
     slug: 'minajobs',
     label: 'MinaJobs',
     sourceType: 'html',
-    baseUrl: 'https://minajobs.net',
+    baseUrl: 'https://cm.minajobs.net',
     trustTier: 60,
     executionKind: 'site',
     retireLegacyExternalFeed: true,

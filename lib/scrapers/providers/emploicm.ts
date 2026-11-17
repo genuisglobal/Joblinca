@@ -1,12 +1,11 @@
 /**
- * Emploi.cm scraper — Cameroon's largest French-language job board (Drupal 7).
+ * Emploi.cm scraper — Cameroon's largest French-language job board.
  *
  * Scrapes job listings from /recherche-jobs-cameroun?page=N.
- * Each card is a .views-row containing structured job details.
+ * Card parsing lives in ./emploicm-parse (see there for the 2026-11 layout).
  *
- * NOTE: Cloudflare challenge is active and blocks simple fetch requests.
- * This scraper will gracefully skip if a Cloudflare challenge is detected.
- * For production use, requires one of:
+ * NOTE: Cloudflare may serve a blocking challenge to some IPs. The scraper
+ * records an error and stops if a real challenge page is detected. To bypass:
  *   1. A Cloudflare-bypass proxy service (e.g., ScraperAPI, Bright Data)
  *   2. Playwright with stealth plugin (run on a server with a real browser)
  *   3. Set SCRAPER_API_KEY env var to use ScraperAPI as a proxy
@@ -16,12 +15,11 @@
 
 import { BaseScraper } from '../base';
 import { deriveCategory } from '@/lib/externalJobs';
-import type { Cheerio, CheerioAPI } from 'cheerio';
+import { isCloudflareChallenge, parseEmploiCmListing } from './emploicm-parse';
 import type { ScrapedJob, ScraperConfig } from '../types';
 
 const BASE_URL = 'https://www.emploi.cm';
 const LISTING_PATH = '/recherche-jobs-cameroun';
-const cheerio = require('cheerio/slim') as typeof import('cheerio');
 
 export class EmploiCmScraper extends BaseScraper {
   constructor(config?: Partial<ScraperConfig>) {
@@ -55,8 +53,10 @@ export class EmploiCmScraper extends BaseScraper {
 
         const html = await res.text();
 
-        // Detect Cloudflare challenge
-        if (html.includes('cf-browser-verification') || html.includes('challenge-platform') || html.includes('cf-challenge')) {
+        // Only a real interstitial counts — every page loads CF's passive
+        // challenge-platform beacon, which the old substring check mistook
+        // for a block and failed every run.
+        if (isCloudflareChallenge(html)) {
           this.recordScrapeError(
             `page ${page}`,
             new Error('Cloudflare challenge — set SCRAPER_API_KEY to bypass')
@@ -64,86 +64,47 @@ export class EmploiCmScraper extends BaseScraper {
           break;
         }
 
-        const $ = cheerio.load(html);
+        const { cards, hasNext } = parseEmploiCmListing(html);
+        if (cards.length === 0) {
+          if (page === 0) {
+            this.recordScrapeError('page 0', new Error('no job cards found — listing layout may have changed'));
+          }
+          break;
+        }
 
-        const cards = $('.view-content .views-row');
-        if (cards.length === 0) break;
+        for (const card of cards) {
+          if (seenUrls.has(card.url)) continue;
+          seenUrls.add(card.url);
 
-        cards.each((_, el) => {
-          const $card = $(el);
-
-          // Title and URL
-          const $titleLink = $card.find('h2.node-title a');
-          const title = this.clean($titleLink.text());
-          const href = $titleLink.attr('href') || '';
-          if (!title || !href || seenUrls.has(href)) return;
-          seenUrls.add(href);
-
-          const jobUrl = href.startsWith('http') ? href : `${BASE_URL}${href}`;
-
-          // Extract job ID from URL slug: /offre-emploi-cameroun/slug-123456
-          const idMatch = href.match(/-(\d+)$/);
-          const jobId = idMatch ? idMatch[1] : href;
-
-          // Company
-          const company = this.clean($card.find('span.company-name a').text()) || null;
-
-          // Logo
-          const logoSrc = $card.find('.field-name-field-offre-image img').attr('src') || null;
-          const logo = logoSrc
-            ? (logoSrc.startsWith('http') ? logoSrc : `${BASE_URL}${logoSrc}`)
-            : null;
-
-          // Description excerpt
-          const description = this.clean($card.find('.field-name-body .field-item').text()).slice(0, 500) || null;
-
-          // Posted date (DD.MM.YYYY format)
-          const dateStr = $card.find('.posted-on').text().trim();
-          const postedAt = this.parseDotDate(dateStr);
-
-          // Structured details from <ul class="job-details">
-          const details = this.parseJobDetails($card, $);
-
-          // Location from Region field
-          const location = details.region
-            ? `${details.region}, Cameroon`
-            : 'Cameroon';
-
-          // Extract contacts from card text
-          const cardText = $card.text();
-          const cardContacts = this.extractContacts(cardText);
+          const location = card.region ? `${card.region}, Cameroon` : 'Cameroon';
+          const cardContacts = this.extractContacts(card.description || '');
 
           allJobs.push({
-            external_id: this.makeId(jobId),
+            external_id: this.makeId(card.jobId),
             source: this.source,
-            title,
-            company_name: company,
-            company_logo: logo,
+            title: card.title,
+            company_name: card.company,
+            company_logo: card.logo,
             location,
             salary: null,
-            job_type: this.normalizeContractType(details.contract),
-            category: deriveCategory(title, '', description || ''),
-            description,
-            url: jobUrl,
-            region: this.normalizeRegion(details.region || location),
+            job_type: this.normalizeContractType(card.contract),
+            category: deriveCategory(card.title, card.skills || '', card.description || ''),
+            description: card.description,
+            url: card.url,
+            region: this.normalizeRegion(card.region || location),
             language: 'fr', // Emploi.cm is French-first
             is_cameroon_local: true,
-            posted_at: postedAt,
+            posted_at: card.postedDate ? new Date(`${card.postedDate}T00:00:00Z`).toISOString() : null,
             closing_at: null,
             fetched_at: new Date().toISOString(),
             contact_email: cardContacts.email,
             contact_phone: cardContacts.phone,
             contact_whatsapp: cardContacts.whatsapp,
           });
-        });
+        }
 
         if (this.shouldStopAfterPage(allJobs.slice(pageStartIndex))) break;
-
-        // Check for next page
-        const hasNext = $('li.pager__item--next a').length > 0
-          || $('a[title*="next"]').length > 0
-          || $('a[title*="suivant"]').length > 0;
-        if (!hasNext && page > 0) break;
+        if (!hasNext) break;
 
         if (page < this.config.maxPages - 1) {
           await this.delay();
@@ -164,49 +125,6 @@ export class EmploiCmScraper extends BaseScraper {
     }
 
     return allJobs;
-  }
-
-  /** Parse structured details from the job-details list. */
-  private parseJobDetails(
-    $card: Cheerio<any>,
-    $: CheerioAPI
-  ): { education?: string; experience?: string; contract?: string; region?: string; skills?: string } {
-    const result: Record<string, string> = {};
-
-    $card.find('.job-details li, ul.job-details li').each((_, li) => {
-      const $li = $(li);
-      const fullText = $li.text().trim().toLowerCase();
-      const value = $li.find('strong').text().trim();
-
-      if (fullText.includes('etudes') || fullText.includes('études')) {
-        result.education = value;
-      } else if (fullText.includes('experience') || fullText.includes('expérience')) {
-        result.experience = value;
-      } else if (fullText.includes('contrat')) {
-        result.contract = value;
-      } else if (fullText.includes('region') || fullText.includes('région')) {
-        result.region = value;
-      } else if (fullText.includes('competence') || fullText.includes('compétence')) {
-        result.skills = value;
-      }
-    });
-
-    return result;
-  }
-
-  /** Parse DD.MM.YYYY date format. */
-  private parseDotDate(dateStr: string): string | null {
-    if (!dateStr) return null;
-    const match = dateStr.match(/(\d{2})\.(\d{2})\.(\d{4})/);
-    if (!match) return null;
-    const [, day, month, year] = match;
-    try {
-      const d = new Date(`${year}-${month}-${day}`);
-      if (isNaN(d.getTime())) return null;
-      return d.toISOString();
-    } catch {
-      return null;
-    }
   }
 
   /** Normalize French contract types. */
