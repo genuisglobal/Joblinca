@@ -47,11 +47,10 @@ async function main() {
     {
       name: 'MinaJobs',
       run: async () => {
-        const html = await fetchHtml('https://minajobs.net/offres-emplois-stages', 'MinaJobs');
-        if (!html) return false;
-        const $ = cheerio.load(html);
-        const count = $('ul.listings-block li.spotlight').length;
-        console.log(`   ✓ ${count} spotlight items`);
+        const body = await fetchHtml('https://cm.minajobs.net/api/jobs?page=1&limit=30', 'MinaJobs', { Accept: 'application/json' });
+        if (!body) return false;
+        const count = (JSON.parse(body).items || []).length;
+        console.log(`   ✓ ${count} API items`);
         return count > 0;
       },
     },
@@ -82,13 +81,13 @@ async function main() {
       run: async () => {
         const html = await fetchHtml('https://www.emploi.cm/recherche-jobs-cameroun?page=0', 'Emploi.cm');
         if (!html) return false;
-        if (html.includes('cf-browser-verification') || html.includes('challenge-platform')) {
+        if (/<title>\s*Just a moment/i.test(html) || html.includes('window._cf_chl_opt')) {
           console.log('   ⚠ Cloudflare challenge — needs SCRAPER_API_KEY proxy');
           return 'skip';
         }
         const $ = cheerio.load(html);
-        const count = $('.view-content .views-row').length;
-        console.log(`   ✓ ${count} views-row cards`);
+        const count = $('.card-job').length;
+        console.log(`   ✓ ${count} job cards`);
         return count > 0;
       },
     },
