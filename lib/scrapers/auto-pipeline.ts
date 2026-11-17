@@ -268,15 +268,21 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
   // Load admin-configurable thresholds (falls back to 60/30 defaults)
   const { trustMin, scamMax } = await loadPublishThresholds(supabase);
 
-  // Find jobs eligible for auto-publish
+  // Find jobs eligible for auto-publish.
+  //
+  // Newest first, and never review_required: those need a human (AI-flagged,
+  // watch-listed company, or no usable description). Previously this ordered
+  // by trust_score only and re-selected review_required rows, so ~100 old
+  // high-trust jobs that could never publish (no description, watch company)
+  // filled every batch and freshly scraped jobs were never even considered.
   const { data: candidates } = await supabase
     .from('discovered_jobs')
     .select('*')
     .is('native_job_id', null)
     .gte('trust_score', trustMin)
     .lt('scam_score', scamMax)
-    .not('ingestion_status', 'in', '("published","hidden")')
-    .order('trust_score', { ascending: false })
+    .not('ingestion_status', 'in', '("published","hidden","review_required")')
+    .order('discovered_at', { ascending: false })
     .limit(100);
 
   if (!candidates || candidates.length === 0) return stats;
@@ -353,6 +359,16 @@ async function autoPublishDiscoveredJobs(supabase: SupabaseClient) {
       // Prefer the AI-cleaned text when the vetting pass produced one.
       const description = dj.description_clean || dj.description_raw || null;
       if (!description || description.length < 30) {
+        // description_raw === null means the backfill pass hasn't tried this
+        // job yet — leave it queued. Otherwise (backfill failed -> '' , or the
+        // source only gave a stub) hand it to a human instead of re-selecting
+        // it every run.
+        if (dj.description_raw !== null) {
+          await supabase
+            .from('discovered_jobs')
+            .update({ ingestion_status: 'review_required' })
+            .eq('id', dj.id);
+        }
         stats.skipped_no_description++;
         continue;
       }
