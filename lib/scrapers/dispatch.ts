@@ -28,7 +28,21 @@ export interface SourceDispatchResult {
   status: number;
   jobs?: number;
   error?: string;
+  /**
+   * True when the dispatcher stopped waiting before the worker answered. The
+   * worker keeps running in its own invocation and still ingests; its jobs
+   * are published by the next maintenance pass (/api/cron/pipeline-maintenance).
+   */
+  still_running?: boolean;
 }
+
+/**
+ * How long the dispatcher waits for per-source workers, measured from the
+ * start of the dispatch. The dispatcher and each worker share the same 300s
+ * limit, so waiting for the slowest worker used to kill the dispatcher before
+ * the inline publish step ran. This leaves ~130s for the maintenance pass.
+ */
+export const SCRAPE_WAIT_BUDGET_MS = 170_000;
 
 export interface RefreshDispatchOptions {
   /** Origin of the deployment, used to call the per-source worker route */
@@ -39,6 +53,8 @@ export interface RefreshDispatchOptions {
   earlyStop: boolean;
   /** Refresh the legacy external feed (remote intl jobs) in the same cycle */
   includeExternalFeed: boolean;
+  /** Override SCRAPE_WAIT_BUDGET_MS (tests) */
+  scrapeWaitBudgetMs?: number;
 }
 
 export interface RefreshDispatchSummary {
@@ -48,6 +64,7 @@ export interface RefreshDispatchSummary {
   scrape_dispatch: {
     dispatched: number;
     succeeded: number;
+    still_running: number;
     failed: number;
     total_jobs: number;
     results: SourceDispatchResult[];
@@ -60,6 +77,7 @@ export async function runRefreshJobsDispatch(
   options: RefreshDispatchOptions
 ): Promise<RefreshDispatchSummary> {
   const { origin, maxPages, earlyStop, includeExternalFeed } = options;
+  const dispatchStart = Date.now();
   const cronSecret = (process.env.CRON_SECRET || '').trim();
 
   // --- 1. Legacy external feed (remote/international; single fast pass) ---
@@ -96,14 +114,32 @@ export async function runRefreshJobsDispatch(
   const sources = [...AUTOMATED_SCRAPER_SOURCE_SLUGS, FACEBOOK_SCRAPER_SOURCE_SLUG];
   console.log(`[dispatch] Dispatching ${sources.length} per-source scrapes (maxPages=${maxPages}, earlyStop=${earlyStop})...`);
 
+  // Stop waiting at a fixed deadline so the publish step below always runs.
+  const budgetMs = options.scrapeWaitBudgetMs ?? SCRAPE_WAIT_BUDGET_MS;
+  const waitMs = Math.max(Math.min(5_000, budgetMs), budgetMs - (Date.now() - dispatchStart));
+  // Explicit (ref'd) timer rather than AbortSignal.timeout, whose unref'd
+  // timer doesn't keep the event loop alive on its own.
+  const waitController = new AbortController();
+  const waitTimer = setTimeout(() => waitController.abort(), waitMs);
+  const waitSignal = waitController.signal;
+
   const dispatch = await Promise.allSettled(
     sources.map(async (source): Promise<SourceDispatchResult> => {
       const url =
         `${origin}/api/cron/scrape-source?source=${encodeURIComponent(source)}` +
         `&maxPages=${maxPages}&earlyStop=${earlyStop ? '1' : '0'}`;
-      const res = await fetch(url, {
-        headers: cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {},
-      });
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          headers: cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {},
+          signal: waitSignal,
+        });
+      } catch (err) {
+        if (waitSignal.aborted) {
+          return { source, ok: true, status: 0, still_running: true };
+        }
+        throw err;
+      }
       const body = (await res.json().catch(() => null)) as
         | { jobs?: number; error?: string }
         | null;
@@ -117,6 +153,8 @@ export async function runRefreshJobsDispatch(
     }),
   );
 
+  clearTimeout(waitTimer);
+
   const scrapeResults: SourceDispatchResult[] = dispatch.map((d, i) =>
     d.status === 'fulfilled'
       ? d.value
@@ -124,7 +162,8 @@ export async function runRefreshJobsDispatch(
   );
   const scrapeSummary = {
     dispatched: sources.length,
-    succeeded: scrapeResults.filter((r) => r.ok).length,
+    succeeded: scrapeResults.filter((r) => r.ok && !r.still_running).length,
+    still_running: scrapeResults.filter((r) => r.still_running).length,
     failed: scrapeResults.filter((r) => !r.ok).length,
     total_jobs: scrapeResults.reduce((s, r) => s + (r.jobs || 0), 0),
     results: scrapeResults,
