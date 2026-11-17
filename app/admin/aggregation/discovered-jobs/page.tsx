@@ -6,7 +6,7 @@ import {
 } from '@/lib/aggregation/admin';
 import { PublishButton, BulkPublishButton, HideButton } from './JobActions';
 
-type QueueName = 'review' | 'suspicious' | 'claims' | 'published' | 'all';
+type QueueName = 'pending' | 'review' | 'suspicious' | 'claims' | 'published' | 'all';
 
 type DiscoveredJobRow = {
   id: string;
@@ -28,6 +28,7 @@ type DiscoveredJobRow = {
 const PAGE_SIZE = 50;
 
 const queueLabels: Record<QueueName, string> = {
+  pending: 'Awaiting Publish',
   review: 'Needs Review',
   suspicious: 'Suspicious',
   claims: 'Claims',
@@ -36,11 +37,20 @@ const queueLabels: Record<QueueName, string> = {
 };
 
 function normalizeQueue(value: string | undefined): QueueName {
-  if (value === 'suspicious' || value === 'claims' || value === 'published' || value === 'all') {
+  if (
+    value === 'review' ||
+    value === 'suspicious' ||
+    value === 'claims' ||
+    value === 'published' ||
+    value === 'all'
+  ) {
     return value;
   }
 
-  return 'review';
+  // Default: everything scraped but not yet live. Jobs that miss the
+  // auto-publish thresholds stay 'normalized' and were invisible in the old
+  // default ('review' = review_required only).
+  return 'pending';
 }
 
 function badgeClass(status: string) {
@@ -75,6 +85,9 @@ function ageBadge(days: number) {
 // threaded through a generic helper — filter untyped and return the same shape.
 function applyQueueFilter<T>(query: T, queue: QueueName): T {
   const q = query as any;
+  if (queue === 'pending') {
+    return q.is('native_job_id', null).not('ingestion_status', 'in', '("published","hidden")');
+  }
   if (queue === 'review') return q.eq('ingestion_status', 'review_required');
   if (queue === 'suspicious') return q.eq('verification_status', 'suspicious');
   if (queue === 'claims') return q.in('claim_status', ['claim_requested', 'claim_under_review']);
@@ -94,7 +107,7 @@ export default async function AdminDiscoveredJobsPage({
   const supabase = createServerSupabaseClient();
 
   // Per-queue counts for the tab chips
-  const countQueues: QueueName[] = ['review', 'suspicious', 'claims', 'published', 'all'];
+  const countQueues: QueueName[] = ['pending', 'review', 'suspicious', 'claims', 'published', 'all'];
   const countResults = await Promise.all(
     countQueues.map((entry) =>
       applyQueueFilter(
